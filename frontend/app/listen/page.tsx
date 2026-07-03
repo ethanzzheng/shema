@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
-import { WsClient, ServerMessage, AudioMsg, TranslationMsg } from '@/lib/ws-client';
+import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg } from '@/lib/ws-client';
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
+import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 
 function getWsUrl(): string {
   if (process.env.NEXT_PUBLIC_BACKEND_WS_URL) {
@@ -65,7 +66,7 @@ class BrowserTTS {
 export default function ListenPage() {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
-  const [ttsMode, setTtsMode] = useState<TtsMode>('browser');
+  const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -73,7 +74,9 @@ export default function ListenPage() {
   const [spokenCount, setSpokenCount] = useState(0);
 
   const wsRef = useRef<WsClient | null>(null);
-  const playbackRef = useRef<AudioPlaybackQueue | null>(null);
+  const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
+  const playbackRef = useRef<AudioPlaybackQueue | null>(null); // per-clip queue (fallback)
+  const fallbackAccumRef = useRef<{ seq: number; parts: Uint8Array[] } | null>(null);
   const browserTtsRef = useRef<BrowserTTS | null>(null);
   const lastSpokenSeqRef = useRef(0);
   const handleMessageRef = useRef<(msg: ServerMessage) => void>(() => {});
@@ -98,9 +101,16 @@ export default function ListenPage() {
   const initAudio = () => {
     if (audioStarted) return;
 
-    const q = new AudioPlaybackQueue();
-    q.start();
-    playbackRef.current = q;
+    // Prefer progressive MediaSource streaming; fall back to per-clip playback.
+    if (AudioStreamPlayer.isSupported()) {
+      const s = new AudioStreamPlayer();
+      s.start();
+      streamRef.current = s;
+    } else {
+      const q = new AudioPlaybackQueue();
+      q.start();
+      playbackRef.current = q;
+    }
 
     browserTtsRef.current = new BrowserTTS();
 
@@ -127,9 +137,11 @@ export default function ListenPage() {
 
     return () => {
       client.disconnect();
+      streamRef.current?.stop();
       playbackRef.current?.stop();
       browserTtsRef.current?.cancel();
       wsRef.current = null;
+      streamRef.current = null;
       playbackRef.current = null;
       browserTtsRef.current = null;
     };
@@ -143,7 +155,12 @@ export default function ListenPage() {
           const s = msg as { type: 'status'; active?: boolean };
           if (typeof s.active === 'boolean') {
             setBroadcastActive(s.active);
-            if (!s.active) {
+            if (s.active) {
+              // New broadcast — reset playback state.
+              streamRef.current?.reset();
+              playbackRef.current?.reset();
+              fallbackAccumRef.current = null;
+            } else {
               browserTtsRef.current?.cancel();
             }
           }
@@ -174,11 +191,45 @@ export default function ListenPage() {
           break;
         }
 
-        case 'audio': {
-          const a = msg as AudioMsg;
-          if (ttsMode === 'elevenlabs' && playbackRef.current) {
+        case 'audio_start': {
+          const a = msg as { seq: number };
+          if (ttsMode === 'elevenlabs') {
             setAudioChunks((n) => n + 1);
-            playbackRef.current.enqueue(a.seq, a.data).catch(console.error);
+            // Fallback path accumulates chunks per clip; MSE path streams directly.
+            if (!streamRef.current) fallbackAccumRef.current = { seq: a.seq, parts: [] };
+          }
+          break;
+        }
+
+        case 'audio_chunk': {
+          if (ttsMode !== 'elevenlabs') break;
+          const a = msg as AudioChunkMsg;
+          const bytes = base64ToBytes(a.data);
+          if (streamRef.current) {
+            streamRef.current.appendChunk(bytes);
+          } else if (fallbackAccumRef.current) {
+            fallbackAccumRef.current.parts.push(bytes);
+          }
+          break;
+        }
+
+        case 'audio_end': {
+          if (ttsMode !== 'elevenlabs') break;
+          const a = msg as { seq: number };
+          // Fallback: reassemble the whole clip and hand it to the per-clip queue.
+          const accum = fallbackAccumRef.current;
+          if (!streamRef.current && playbackRef.current && accum && accum.seq === a.seq) {
+            fallbackAccumRef.current = null;
+            const total = accum.parts.reduce((n, p) => n + p.length, 0);
+            const merged = new Uint8Array(total);
+            let off = 0;
+            for (const p of accum.parts) {
+              merged.set(p, off);
+              off += p.length;
+            }
+            let bin = '';
+            for (let i = 0; i < merged.length; i++) bin += String.fromCharCode(merged[i]);
+            playbackRef.current.enqueue(a.seq, btoa(bin)).catch(console.error);
           }
           break;
         }

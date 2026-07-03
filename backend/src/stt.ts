@@ -12,6 +12,25 @@
  */
 
 import WebSocket from 'ws';
+import { endsWithTerminator } from './text';
+
+/**
+ * Korean biblical / sermon vocabulary fed to Deepgram as keyterms (nova-3
+ * keyterm prompting). Biases recognition toward these so names and church
+ * terms stop coming out as garbled tokens (e.g. 빌립 → "Gilim"). Override per
+ * sermon with the DEEPGRAM_KEYTERMS env var (comma-separated).
+ */
+const DEFAULT_KEYTERMS = [
+  // Names of God / titles
+  '예수', '예수님', '하나님', '성령', '그리스도', '예수 그리스도', '주님',
+  // Bible figures
+  '안드레', '빌립', '베드로', '요한', '바울', '모세', '다윗', '아브라함', '이사야',
+  // Core terms
+  '복음', '은혜', '믿음', '구원', '기도', '말씀', '제자', '사도', '기적',
+  '오병이어', '보리떡', '물고기', '천국', '십자가', '부활', '회개', '축복',
+  // House-church terms (this congregation) — STT garbles these without biasing
+  '목장', '목자', '목녀', '한마음교회', '큐티', '성령님', '은사',
+];
 
 export interface TranscriptEvent {
   text: string;
@@ -33,7 +52,6 @@ export class ElevenLabsSTT {
 
   // Buffer final (non-speech_final) results to build up utterances
   private utteranceBuffer = '';
-  private lastEmitAt = 0;
   // Track recent utterances to prevent exact duplicates only
   private recentUtterances: string[] = [];
 
@@ -69,15 +87,26 @@ export class ElevenLabsSTT {
       language: 'ko',
       punctuate: 'true',
       interim_results: 'true',
-      endpointing: '400',        // 400ms silence = end of utterance (was 800ms)
-      utterance_end_ms: '1200',  // also emit if utterance exceeds 1.2s of audio
+      endpointing: '400',        // finalize utterances promptly; the chunker reassembles sentences
+      utterance_end_ms: '1000',  // also emit if utterance exceeds 1.0s of trailing silence
       encoding: 'linear16',
       sample_rate: '16000',
       channels: '1',
       smart_format: 'true',
     });
 
+    // nova-3 keyterm prompting — bias recognition toward sermon/biblical
+    // vocabulary so names & terms stop coming out garbled. Repeat per term.
+    const keyterms = (process.env.DEEPGRAM_KEYTERMS
+      ? process.env.DEEPGRAM_KEYTERMS.split(',')
+      : DEFAULT_KEYTERMS
+    )
+      .map((k) => k.trim())
+      .filter(Boolean);
+    for (const kt of keyterms) params.append('keyterm', kt);
+
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+    console.log(`[STT] Connecting to Deepgram (nova-3, ko, ${keyterms.length} keyterms)`);
 
     this.ws = new WebSocket(url, {
       headers: {
@@ -136,19 +165,14 @@ export class ElevenLabsSTT {
       // Accumulate final segments into the utterance buffer
       this.utteranceBuffer += (this.utteranceBuffer ? ' ' : '') + transcript;
 
-      const bufLen = this.utteranceBuffer.trim().length;
-      const timeSinceEmit = Date.now() - this.lastEmitAt;
-
-      if (speechFinal) {
-        // Natural pause detected by Deepgram — emit immediately
-        this.emitBuffer();
-      } else if (bufLen >= 25 && timeSinceEmit >= 1500) {
-        // 25 Korean chars ≈ 8–12 spoken words ≈ 4–6 seconds of speech
-        // (Korean is ~3x more compact than English per char)
-        console.log(`[STT] Proactive emit: ${bufLen} chars, ${timeSinceEmit}ms since last emit`);
+      if (speechFinal || endsWithTerminator(this.utteranceBuffer)) {
+        // Genuine sentence end — either Deepgram detected a natural pause
+        // (endpointing) or the buffer ends on sentence-final punctuation /
+        // a Korean sentence ender. Emit the complete sentence.
         this.emitBuffer();
       } else {
-        // Fallback flush — never wait more than 1.5s
+        // Mid-sentence: wait for the sentence to complete, with a safety net
+        // so we never hold a run-on utterance indefinitely.
         this.resetFlushTimer();
       }
     }
@@ -159,8 +183,6 @@ export class ElevenLabsSTT {
     this.cancelFlushTimer();
     const fullUtterance = this.utteranceBuffer.trim();
     this.utteranceBuffer = '';
-
-    this.lastEmitAt = Date.now();
 
     if (fullUtterance && !this.isDuplicate(fullUtterance)) {
       this.recentUtterances.push(fullUtterance);
@@ -175,17 +197,18 @@ export class ElevenLabsSTT {
     }
   }
 
-  /** Force emit after 2.5s even if speaker hasn't paused (was 5s) */
+  /** Safety net: force emit if a sentence never resolves within 3s */
   private flushTimer: NodeJS.Timeout | null = null;
+  private static readonly SAFETY_FLUSH_MS = 3000;
 
   private resetFlushTimer(): void {
     this.cancelFlushTimer();
     this.flushTimer = setTimeout(() => {
       if (this.utteranceBuffer.trim()) {
-        console.log('[STT] Flush timer triggered (no speech_final for 1.5s)');
+        console.log('[STT] Safety flush triggered (no sentence end for 3s)');
         this.emitBuffer();
       }
-    }, 1500);
+    }, ElevenLabsSTT.SAFETY_FLUSH_MS);
   }
 
   private cancelFlushTimer(): void {

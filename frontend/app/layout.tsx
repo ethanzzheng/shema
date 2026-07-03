@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'JC Translate — Live Korean Sermon Translation',
+  title: 'Shema — Live Korean Sermon Translation',
   description: 'Real-time Korean sermon to English translation',
 };
 

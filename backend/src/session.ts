@@ -21,7 +21,7 @@ export interface DebugMetrics {
 
 export class Session {
   isActive = false;
-  mode: 'fast' | 'smooth' = 'fast';
+  mode: 'fast' | 'smooth' = 'smooth';
 
   koreanBuffer = '';
   translationHistory: TranslationChunk[] = [];
@@ -40,14 +40,18 @@ export class Session {
     return ++this.seq;
   }
 
-  addTranslation(chunk: Omit<TranslationChunk, 'seq'>): TranslationChunk {
-    const full: TranslationChunk = { ...chunk, seq: this.nextSeq() };
+  /**
+   * Record a completed translation. The seq is assigned earlier, at dispatch
+   * time (spoken order), by the chunker via nextSeq() — NOT here — so it
+   * reflects spoken order rather than translation-completion order.
+   */
+  addTranslation(chunk: TranslationChunk): TranslationChunk {
     // Keep last 50 chunks in memory
-    this.translationHistory.push(full);
+    this.translationHistory.push(chunk);
     if (this.translationHistory.length > 50) {
       this.translationHistory.shift();
     }
-    return full;
+    return chunk;
   }
 
   reset(): void {

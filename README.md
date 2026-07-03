@@ -1,6 +1,6 @@
-# JC Translate — Live Korean Sermon → English Translation
+# Shema — Live Korean Sermon → English Translation
 
-Real-time pipeline: **Korean mic** → ElevenLabs STT → Claude translation → ElevenLabs TTS → **English audio on listener device**.
+Real-time pipeline: **Korean mic** → Deepgram STT → Claude translation → ElevenLabs TTS → **English audio on listener device**.
 
 Target end-to-end latency: **2–5 seconds**.
 
@@ -14,7 +14,7 @@ Laptop A (Broadcaster)            Backend (Node.js)              Laptop B (Liste
 Mic → PCM chunks
       │
       ▼ WebSocket (binary)
-              ──────────►  ElevenLabs STT WebSocket
+              ──────────►  Deepgram STT WebSocket
                            ↓ Korean transcript
                            KoreanChunker
                            ↓ semantic chunks
@@ -38,13 +38,14 @@ Debug panel ◄────
 
 - Node.js 18+
 - npm 9+
-- API keys for Anthropic and ElevenLabs
+- API keys for Anthropic, Deepgram (STT), and ElevenLabs (TTS)
+- Two laptops on the **same Wi-Fi network**
 
 ### 1. Clone and install
 
 ```bash
 git clone <repo-url>
-cd jctranslate
+cd shema
 
 # Install backend dependencies
 cd backend && npm install && cd ..
@@ -64,6 +65,7 @@ Edit `backend/.env`:
 
 ```env
 ANTHROPIC_API_KEY=sk-ant-your-key-here
+DEEPGRAM_API_KEY=your-deepgram-key-here
 ELEVENLABS_API_KEY=your-elevenlabs-key-here
 ELEVENLABS_VOICE_ID=pNInz6obpgDQGcFmaJgB   # or your preferred voice ID
 PORT=3001
@@ -89,7 +91,7 @@ npm run dev
 
 You should see:
 ```
-🎙️  JC Translate backend running on port 3001
+🎙️  Shema backend running on port 3001
    WebSocket: ws://localhost:3001/ws?role=broadcaster|listener
    Health:    http://localhost:3001/health
 ```
@@ -105,20 +107,79 @@ npm run dev
 
 Open **http://localhost:3000** in your browser.
 
-### 6. Use the app
+### 6. Run the two-laptop setup
 
-**Laptop A (Broadcaster):**
-1. Open http://localhost:3000/broadcast
+The **server laptop** runs the backend + frontend and also plays the English
+audio (Listener). The **broadcaster laptop** only needs a browser — it captures
+the Korean mic. Both laptops must be on the **same Wi-Fi network**.
+
+First, find the server laptop's local IP:
+
+```bash
+# macOS
+ipconfig getifaddr en0     # e.g. 192.168.1.242
+# Linux
+hostname -I | awk '{print $1}'
+```
+
+Substitute that address for `SERVER_IP` below.
+
+---
+
+#### 💻 Server laptop (Listener — hears the English)
+
+**Terminal 1 — backend:**
+```bash
+cd backend
+npm run dev
+# → 🎙️  Shema backend running on port 3001
+```
+
+**Terminal 2 — frontend:**
+```bash
+cd frontend
+npm run dev
+# → ready on http://localhost:3000
+```
+
+**Browser (this laptop):**
+1. Open **http://localhost:3000/listen**
+2. Click **Enable Audio** (browsers block autoplay until you click)
+3. Turn the volume up — English audio plays here
+
+---
+
+#### 🎤 Broadcaster laptop (mic — speaks Korean)
+
+Browsers block microphone access on a plain-`http://` address unless it's
+`localhost`. Since this laptop loads the page over the network, allow the mic
+**once** in Chrome:
+
+1. Open **`chrome://flags/#unsafely-treat-insecure-origin-as-secure`**
+2. Add **`http://SERVER_IP:3000`** to the box, set to **Enabled**, click **Relaunch**
+
+Then start broadcasting:
+
+1. Open **http://SERVER_IP:3000/broadcast**
 2. Click **Start Broadcast**
-3. Allow microphone access
-4. Speak Korean — transcripts and translations appear in real time
+3. **Allow** microphone access when prompted
+4. Speak Korean — transcripts + translations appear here, and English audio
+   plays on the **server laptop** a few seconds later
 
-**Laptop B (Listener):**
-1. Open http://[Laptop-A-IP]:3000/listen
-2. Click **Enable Audio**
-3. Hear English audio and see sermon translation
+---
 
-> For two laptops on the same network, replace `localhost` with your laptop's local IP (e.g., `192.168.1.x`).
+#### ✅ Sanity checks
+
+- **Backend reachable from broadcaster?** Visit `http://SERVER_IP:3001/health`
+- **Nothing happens after speaking?** Check the backend terminal for errors
+  (usually a missing/invalid API key)
+- **No mic prompt?** Re-check the Chrome flag URL is exactly `http://SERVER_IP:3000`
+  and that you relaunched
+- **No sound?** Make sure you clicked **Enable Audio** on the Listener page
+
+> Single-laptop test: run both roles on the server laptop using
+> `http://localhost:3000/broadcast` and `http://localhost:3000/listen` in two
+> tabs — `localhost` needs no Chrome flag.
 
 ---
 
@@ -144,7 +205,12 @@ Toggle during a live broadcast — the change takes effect immediately.
 Model used: `claude-3-5-haiku-20241022` (fastest, lowest cost).
 Swap to `claude-3-5-sonnet-20241022` in `backend/src/translation.ts` for higher quality.
 
-### ElevenLabs (STT + TTS)
+### Deepgram (STT)
+
+1. Go to https://console.deepgram.com/
+2. Create an API key → `DEEPGRAM_API_KEY`
+
+### ElevenLabs (TTS)
 
 1. Go to https://elevenlabs.io/app/settings/api-keys
 2. Create an API key → `ELEVENLABS_API_KEY`
@@ -223,6 +289,9 @@ cd backend
 npm run dev      # Development (ts-node-dev, hot reload)
 npm run build    # Compile TypeScript → dist/
 npm start        # Run compiled output
+npm test         # Tier A: deterministic unit tests (no API key, no network)
+npm run eval     # Tier B: scored translation evals (needs ANTHROPIC_API_KEY)
+                 #   add -- --judge for LLM-graded faithfulness/fluency
 
 # Frontend
 cd frontend
@@ -236,7 +305,7 @@ npm start        # Serve production build
 ## Project Structure
 
 ```
-jctranslate/
+shema/
 ├── backend/
 │   ├── src/
 │   │   ├── index.ts          # Express + WebSocket server

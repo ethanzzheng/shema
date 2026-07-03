@@ -1,0 +1,28 @@
+{"id":"normal-01","korean":"오늘 우리는 오병이어의 기적에 대해서 이야기하려고 합니다.","notes":"plain complete sentence"}
+{"id":"normal-02","korean":"예수님은 겸손해서 나귀 새끼 타셨다 그러니까 남녀노소 누구든지 다가올 수 있는 겁니다.","notes":"sermon commentary"}
+{"id":"normal-03","korean":"하나님은 변하지 않습니다. 하나님은 겸손의 왕이시고 마귀는 교만의 왕인 거예요.","notes":"two sentences"}
+{"id":"normal-04","korean":"우리가 성령의 열매를 맺으려면 성령의 음성을 기다려야 되고 음성을 들었을 때 바로 행동해야 합니다.","notes":"long sentence"}
+{"id":"filler-01","korean":"음 어 그 아","expectEmpty":true,"notes":"pure filler"}
+{"id":"filler-02","korean":"어어 그 저 스브스 크크 므흐흐","expectEmpty":true,"notes":"ASR noise"}
+{"id":"garbled-01","korean":"얀지 그 뭐냐 그 사람이 한 말을 들어보면","forbidden":["Yanzi","Yanji"],"notes":"garbled name-like token must not become a proper noun"}
+{"id":"garbled-02","korean":"마귀 새끼도 어른 한 사람은 태울 수 있습니다.","context":[{"korean":"예수님은 나귀 새끼 타고 예루살렘에 입성하셨습니다.","english":"Jesus entered Jerusalem riding on a young donkey."}],"forbidden":["devil"],"notes":"마귀=나귀 STT garble; surrounding context says donkey"}
+{"id":"fragment-01","korean":"안드레는 예수님께 나아와서 이렇게 말했습니다. 여기 한 아이가","notes":"ends mid-thought; must stop cleanly"}
+{"id":"fragment-02","korean":"우리의 모든 죄를 짊어지고","notes":"connective fragment"}
+{"id":"scripture-01","korean":"너희 안에 이 마음을 품어라 곧 그리스도 예수의 마음이니","scripture":{"book":"Philippians","chapter":2,"verse":5},"notes":"Phil 2:5 quote with ref anchored"}
+{"id":"scripture-02","korean":"하나님이 세상을 이처럼 사랑하사 독생자를 주셨으니 이는 그를 믿는 자마다 멸망하지 않고 영생을 얻게 하려 하심이라","scripture":{"book":"John","chapter":3,"verse":16},"notes":"John 3:16"}
+{"id":"scripture-03","korean":"여호와는 나의 목자시니 내게 부족함이 없으리로다","scripture":{"book":"Psalms","chapter":23,"verse":1},"notes":"Psalm 23:1"}
+{"id":"scripture-04","korean":"그는 주 앞에서 자랑하기를 연한 숨 갖고 마른 땅에서 나온 줄기 같아서 고운 모양도 없고 풍채어도 없은즉","scripture":{"book":"Isaiah","chapter":53,"verse":2},"notes":"badly garbled Isaiah 53:2 — lookup must rescue it"}
+{"id":"idiom-01","korean":"낮은 사람들을 찾고 그들을 통해서 역사를 이루어 가시는 겁니다.","forbidden":["history"],"notes":"역사를 이루다 = accomplish his work, not history"}
+{"id":"idiom-02","korean":"사람들은 세상에서 스카우트 할 때 유능한 사람을 사용하려고 하지 않습니까?","forbidden":["scout"],"notes":"Konglish 스카우트 = recruit"}
+{"id":"glossary-01","korean":"이 십 일 년은 목장에서 섬기고 그중에 십육 년을 목자로 섬기면서 참 느낀 게 많아요.","mustContainAny":["Mokjang"],"notes":"목장 must render as Mokjang"}
+{"id":"glossary-02","korean":"목자로 섬기면서 목녀들과 함께 목장 식구들을 돌봤습니다.","mustContainAny":["shepherd"],"notes":"목자 = shepherd"}
+{"id":"glossary-03","korean":"금요일 저녁에 세상의 즐거움을 뒤로하고 목장 예배에 참석하는 것.","forbidden":["cell group","small group","house church"],"notes":"never cell/small group"}
+{"id":"number-01","korean":"제가 이 교회를 섬긴 지가 벌써 이 십 팔 년이 됐더라고요.","mustContainAny":["28","twenty-eight"],"notes":"sino-korean number"}
+{"id":"church-01","korean":"주님은 겸손하신 분이기 때문에 겸손한 사람들을 찾는 거예요.","notes":"typical line"}
+{"id":"church-02","korean":"발을 씻기는 것은 종이 하는 일인데 만왕이 왕되신 주께서 제자들의 발을 씻기셨다 그 말입니다.","notes":"garbled 만왕이 왕되신 = King of kings"}
+{"id":"church-03","korean":"성령은 바람과 같아서 눈에 보이지 않고 우리가 성령을 틀에 가둘 수도 없어요.","notes":"metaphor"}
+{"id":"church-04","korean":"마음을 높이면 영혼에 평강이 없고 영혼에 쉼이 있을 수도 없습니다.","notes":"parallel clauses"}
+{"id":"garbled-03","korean":"예수님 제 아들이 그렇게 똑똑한 건 아니죠. 왜 어부들이었잖아요.","forbidden":["my son","his son"],"notes":"제 아들 = 제자들 (disciples) garble"}
+{"id":"garbled-04","korean":"삼 마리 여자는 여섯 번째 남편하고 살고 있습니다.","mustContainAny":["Samaritan"],"notes":"삼 마리 = 사마리아 garble"}
+{"id":"long-01","korean":"제가 십 육 년 전에 목자 안수식 받을 때 나의 힘이 아니라 성령이 함께 하신다는 그런 확신이 제 마음에 가득했는데 신실하신 하나님이 지금까지 함께 해 주셨습니다.","notes":"long testimony sentence"}
+{"id":"question-01","korean":"왜 사람들이 마음에 안식이 없고 쉼이 없냐 하면은 예수님의 겸손과 주님의 멍에를 매지 않기 때문입니다.","notes":"rhetorical question-answer"}

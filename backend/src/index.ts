@@ -1,5 +1,5 @@
 /**
- * JC Translate — Backend Entry Point
+ * Shema — Backend Entry Point
  *
  * Express HTTP server + WebSocket server (ws library).
  * WebSocket roles:
@@ -72,7 +72,7 @@ wss.on('connection', (ws, req) => {
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🎙️  JC Translate backend running on port ${PORT}`);
+  console.log(`\n🎙️  Shema backend running on port ${PORT}`);
   console.log(`   WebSocket: ws://localhost:${PORT}/ws?role=broadcaster|listener`);
   console.log(`   Health:    http://localhost:${PORT}/health\n`);
 });

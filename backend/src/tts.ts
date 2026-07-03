@@ -69,4 +69,44 @@ export class ElevenLabsTTS {
     const arrayBuffer = await response.arrayBuffer();
     return Buffer.from(arrayBuffer);
   }
+
+  /**
+   * Synthesise text and forward MP3 chunks to `onChunk` AS THEY ARRIVE from
+   * ElevenLabs, instead of buffering the whole clip first. This is what lets
+   * the listener start playing audio before synthesis finishes.
+   * Resolves once the full stream has been consumed. Throws on HTTP error.
+   */
+  async synthesiseStream(text: string, onChunk: (chunk: Buffer) => void): Promise<void> {
+    const url = `${TTS_BASE}/${this.voiceId}/stream?output_format=mp3_44100_128`;
+
+    const body = JSON.stringify({
+      text,
+      model_id: this.modelId,
+      voice_settings: DEFAULT_VOICE_SETTINGS,
+    });
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': this.apiKey,
+        'Content-Type': 'application/json',
+        Accept: 'audio/mpeg',
+      },
+      body,
+    });
+
+    if (!response.ok) {
+      const errText = await response.text().catch(() => '');
+      throw new Error(`ElevenLabs TTS HTTP ${response.status}: ${errText}`);
+    }
+    if (!response.body) throw new Error('ElevenLabs TTS returned no body');
+
+    // response.body is a web ReadableStream in Node 18+; read incrementally.
+    const reader = (response.body as ReadableStream<Uint8Array>).getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value && value.length) onChunk(Buffer.from(value));
+    }
+  }
 }

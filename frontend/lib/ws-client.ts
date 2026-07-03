@@ -1,5 +1,5 @@
 /**
- * Typed WebSocket client for the JC Translate backend.
+ * Typed WebSocket client for the Shema backend.
  * Handles reconnection and message dispatch.
  */
 
@@ -30,6 +30,23 @@ export interface AudioMsg {
   format: 'mp3';
 }
 
+// ── Streaming TTS protocol (MP3 chunks forwarded as they synthesise) ────────
+export interface AudioStartMsg {
+  type: 'audio_start';
+  seq: number;
+}
+
+export interface AudioChunkMsg {
+  type: 'audio_chunk';
+  seq: number;
+  data: string; // base64 MP3 chunk
+}
+
+export interface AudioEndMsg {
+  type: 'audio_end';
+  seq: number;
+}
+
 export interface StatusMsg {
   type: 'status';
   active?: boolean;
@@ -54,6 +71,9 @@ export type ServerMessage =
   | TranscriptMsg
   | TranslationMsg
   | AudioMsg
+  | AudioStartMsg
+  | AudioChunkMsg
+  | AudioEndMsg
   | StatusMsg
   | DebugMsg
   | ErrorMsg

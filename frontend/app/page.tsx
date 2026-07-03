@@ -26,7 +26,7 @@ export default function Home() {
           marginBottom: '0.75rem',
         }}
       >
-        JC Translate
+        Shema
       </h1>
 
       <p

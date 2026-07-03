@@ -41,7 +41,7 @@ const DEFAULT_DEBUG: DebugPanel = {
 export default function BroadcastPage() {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcasting, setBroadcasting] = useState(false);
-  const [mode, setMode] = useState<Mode>('fast');
+  const [mode, setMode] = useState<Mode>('smooth');
   const [script, setScript] = useState<ScriptEntry[]>([]);
   const [liveKorean, setLiveKorean] = useState('');
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);

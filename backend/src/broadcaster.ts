@@ -23,6 +23,7 @@ import { KoreanChunker } from './chunker';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { broadcastToListeners } from './listener';
+import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
@@ -40,21 +41,39 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   let stt: ElevenLabsSTT | null = null;
   let chunker: KoreanChunker | null = null;
   const translator = new ClaudeTranslator(ANTHROPIC_API_KEY);
+
+  // Running Bible reference the pastor is reading from (anchors scripture to NIV).
+  let currentRef: ScriptureRef | null = null;
+  let refAgeChunks = 0;
   const tts = new ElevenLabsTTS({
     apiKey: ELEVENLABS_API_KEY,
     voiceId: ELEVENLABS_VOICE_ID,
   });
 
   // ── Pipeline: Korean text → Claude → broadcast text → TTS (background) ───
-  async function processChunk(koreanText: string): Promise<void> {
+  // `seq` is the spoken-order sequence number, assigned by the chunker at
+  // dispatch time. Translations run serialized (one at a time) so this order
+  // is preserved end-to-end.
+  async function processChunk(koreanText: string, seq: number): Promise<void> {
     const chunkStart = Date.now();
     session.metrics.lastChunkSize = koreanText.length;
-    console.log(`[Pipeline] Translating ${koreanText.length} chars...`);
+
+    // Track the Bible reference the pastor announced; expire it after a while
+    // so old references don't wrongly anchor later commentary.
+    const detected = detectReference(koreanText);
+    if (detected) {
+      currentRef = mergeReference(currentRef, detected);
+      refAgeChunks = 0;
+    } else if (currentRef && ++refAgeChunks > 12) {
+      currentRef = null;
+    }
+    const refName = formatReference(currentRef);
+    console.log(`[Pipeline] Translating ${koreanText.length} chars${refName ? ` (ref: ${refName})` : ''}...`);
 
     // 1. Translate (this is the only blocking step)
     let translation;
     try {
-      translation = await translator.translate(koreanText);
+      translation = await translator.translate(koreanText, currentRef);
     } catch (err) {
       console.error('[Pipeline] Translation failed:', err);
       return;
@@ -71,6 +90,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     }
 
     const chunk = session.addTranslation({
+      seq,
       korean: koreanText,
       direct: translation.direct_translation,
       sermon: translation.sermon_translation,
@@ -95,40 +115,68 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       timestamp: chunkStart,
     });
 
-    // 3. Generate TTS in background — don't block the pipeline
-    generateTTS(translation.sermon_translation, chunk.seq, koreanText.length, translationLatencyMs, chunkStart);
+    // 3. Hand off to the serial TTS worker (keeps audio ordered while
+    //    translation runs ahead). Don't block the translation pipeline.
+    enqueueTTS(chunk.seq, translation.sermon_translation, koreanText.length, translationLatencyMs, chunkStart);
   }
 
-  // Fire-and-forget TTS generation
-  function generateTTS(sermonText: string, seq: number, chunkSize: number, translationLatencyMs: number, chunkStart: number): void {
-    tts.synthesise(sermonText)
-      .then((audioBuffer) => {
-        const ttsLatencyMs = Date.now() - chunkStart - translationLatencyMs;
-        session.metrics.ttsLatencyMs = ttsLatencyMs;
-        session.metrics.e2eLatencyMs = Date.now() - chunkStart;
+  // ── Serial streaming-TTS worker ──────────────────────────────────────────
+  // Translations arrive in spoken order; we synthesise them one at a time and
+  // stream each clip's MP3 chunks to listeners as they arrive from ElevenLabs.
+  // Serialising here guarantees the forwarded audio stream stays in order,
+  // which is what the listener's MediaSource playback needs.
+  interface TtsJob { seq: number; text: string; chunkSize: number; translationLatencyMs: number; chunkStart: number; }
+  const ttsQueue: TtsJob[] = [];
+  let ttsRunning = false;
 
-        send(ws, {
-          type: 'debug',
-          chunkSize,
-          translationLatencyMs,
-          ttsLatencyMs,
-          e2eLatencyMs: session.metrics.e2eLatencyMs,
-          sttConnected: session.metrics.sttConnected,
-        });
+  function enqueueTTS(seq: number, text: string, chunkSize: number, translationLatencyMs: number, chunkStart: number): void {
+    ttsQueue.push({ seq, text, chunkSize, translationLatencyMs, chunkStart });
+    void pumpTTS();
+  }
 
-        broadcastToListeners({
-          type: 'audio',
-          seq,
-          data: audioBuffer.toString('base64'),
-          format: 'mp3',
-        });
+  async function pumpTTS(): Promise<void> {
+    if (ttsRunning) return;
+    ttsRunning = true;
+    try {
+      while (ttsQueue.length > 0) {
+        const job = ttsQueue.shift()!;
+        await streamTTS(job);
+      }
+    } finally {
+      ttsRunning = false;
+    }
+  }
 
-        console.log(`[Pipeline] TTS done for seq ${seq} (${session.metrics.e2eLatencyMs}ms e2e)`);
-      })
-      .catch((err) => {
-        console.error('[Pipeline] TTS failed:', err);
-        send(ws, { type: 'error', message: 'TTS generation failed' });
+  async function streamTTS(job: TtsJob): Promise<void> {
+    const { seq, text, chunkSize, translationLatencyMs, chunkStart } = job;
+    const ttsStart = Date.now();
+    let firstChunkAt = 0;
+
+    broadcastToListeners({ type: 'audio_start', seq });
+    try {
+      await tts.synthesiseStream(text, (chunk) => {
+        if (!firstChunkAt) firstChunkAt = Date.now();
+        broadcastToListeners({ type: 'audio_chunk', seq, data: chunk.toString('base64') });
       });
+    } catch (err) {
+      console.error('[Pipeline] TTS stream failed:', err);
+      send(ws, { type: 'error', message: 'TTS generation failed' });
+    }
+    broadcastToListeners({ type: 'audio_end', seq });
+
+    const ttsLatencyMs = Date.now() - ttsStart;
+    session.metrics.ttsLatencyMs = ttsLatencyMs;
+    session.metrics.e2eLatencyMs = Date.now() - chunkStart;
+    send(ws, {
+      type: 'debug',
+      chunkSize,
+      translationLatencyMs,
+      ttsLatencyMs,
+      e2eLatencyMs: session.metrics.e2eLatencyMs,
+      sttConnected: session.metrics.sttConnected,
+    });
+    const ttfb = firstChunkAt ? firstChunkAt - ttsStart : -1;
+    console.log(`[Pipeline] TTS streamed seq ${seq} (first byte ${ttfb}ms, total ${ttsLatencyMs}ms, ${session.metrics.e2eLatencyMs}ms e2e)`);
   }
 
   // ── Start broadcast session ────────────────────────────────────────────────
@@ -138,14 +186,17 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     session.isActive = true;
     session.mode = mode;
     translator.resetContext();
+    currentRef = null;
+    refAgeChunks = 0;
 
     // Broadcast status to listeners
     broadcastToListeners({ type: 'status', active: true });
 
-    // Set up chunker
+    // Set up chunker. seq is allocated here, at dispatch time, in spoken order.
     chunker = new KoreanChunker({
       mode,
       onChunk: processChunk,
+      nextSeq: () => session.nextSeq(),
     });
 
     // Set up ElevenLabs STT
