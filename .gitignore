@@ -8,3 +8,7 @@ coverage
 .DS_Store
 backend/evals/results/
 *.tsbuildinfo
+
+# Local test media (sermon recordings)
+*.mp4
+*.wav

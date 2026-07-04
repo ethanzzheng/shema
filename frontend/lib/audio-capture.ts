@@ -65,11 +65,17 @@ export class AudioCapture {
           `add "${window.location.origin}", set it to Enabled, and relaunch Chrome.`,
       );
     }
+    // Voice-call DSP OFF: echo cancellation / noise suppression / auto-gain
+    // are tuned for conference-call speech and audibly mangle sermon audio
+    // (music, reverb, line-fed sources like BlackHole). An STT bake-off on the
+    // same recording showed these filters — not Deepgram — caused most live
+    // garbling (성령님 → 섭렵님 etc.); raw capture transcribes near-cleanly.
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
         sampleRate: TARGET_SAMPLE_RATE,
       },
       video: false,
