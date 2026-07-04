@@ -28,6 +28,12 @@ const MIN_DISPATCH_CHARS = 10;
 // not a coincidental syllable match.
 const MIN_STT_OVERLAP_CHARS = 6;
 
+// An incomplete tail shorter than this is a shard ("그렇죠? 그리고 금요일에")
+// that reads as a dangling fragment if force-shipped alone. It carries no
+// standalone meaning, so give its continuation twice as long to arrive —
+// this delays nothing meaningful (the merged sentence lands when it lands).
+const TINY_FRAGMENT_CHARS = 25;
+
 export type ChunkCallback = (text: string, seq: number) => Promise<void>;
 
 interface ModeConfig {
@@ -179,7 +185,15 @@ export class KoreanChunker {
   /** (Re)start the pending-buffer timer based on how complete the tail looks. */
   private armTimer(): void {
     this.cancelTimer();
-    const delay = looksComplete(this.buffer) ? this.cfg.completeMs : this.cfg.incompleteMaxMs;
+    let delay: number;
+    if (looksComplete(this.buffer)) {
+      delay = this.cfg.completeMs;
+    } else {
+      delay =
+        this.buffer.length < TINY_FRAGMENT_CHARS
+          ? this.cfg.incompleteMaxMs * 2 // graded patience: hold tiny shards longer
+          : this.cfg.incompleteMaxMs;
+    }
     this.timer = setTimeout(() => this.dispatchBuffer(), delay);
   }
 

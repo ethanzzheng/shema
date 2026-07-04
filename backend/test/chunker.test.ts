@@ -116,11 +116,13 @@ test('mid-sentence dramatic pauses do NOT cut — fragments merge into one sente
   }
 });
 
-test('an unfinished thought is force-dispatched only after incompleteMaxMs', async () => {
+test('a normal-length unfinished thought force-dispatches after incompleteMaxMs', async () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
     const { chunker, dispatched } = makeChunker('smooth');
-    await chunker.feed('그래서 주님은', true);
+    // ≥ TINY_FRAGMENT_CHARS and no final ending → the standard 5s patience.
+    const text = '우리가 하나님의 은혜와 사랑을 늘 기억하면서 그리고';
+    await chunker.feed(text, true);
 
     mock.timers.tick(4999);
     await flush();
@@ -129,7 +131,46 @@ test('an unfinished thought is force-dispatched only after incompleteMaxMs', asy
     mock.timers.tick(1);
     await flush();
     assert.equal(dispatched.length, 1);
-    assert.equal(dispatched[0].text, '그래서 주님은');
+    assert.equal(dispatched[0].text, text);
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('graded patience: a tiny shard waits 2x incompleteMaxMs before force-shipping', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    await chunker.feed('그리고 금요일에', true); // < TINY_FRAGMENT_CHARS, incomplete
+
+    mock.timers.tick(9999);
+    await flush();
+    assert.equal(dispatched.length, 0, 'tiny shard must wait the doubled timeout');
+
+    mock.timers.tick(1);
+    await flush();
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].text, '그리고 금요일에');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('graded patience: the continuation arrives during the extended hold and merges', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    await chunker.feed('그리고 금요일에', true);
+
+    // 7s pause — past the old 5s cutoff that used to ship the dangler.
+    mock.timers.tick(7000);
+    await flush();
+    assert.equal(dispatched.length, 0);
+
+    await chunker.feed('목장에 우선순위를 두는 것입니다.', true);
+    await flush();
+    assert.equal(dispatched.length, 1, 'shard merges with its continuation');
+    assert.equal(dispatched[0].text, '그리고 금요일에 목장에 우선순위를 두는 것입니다.');
   } finally {
     mock.timers.reset();
   }
@@ -195,14 +236,15 @@ test('interim results re-arm the timer: no force-ship while speech is flowing', 
     await chunker.feed('십자가는', true); // incomplete tail, 5s clock starts
 
     // Deepgram keeps the continuation as interims for a while — the speaker is
-    // audibly mid-sentence, so the fragment must NOT ship at the 5s mark.
-    mock.timers.tick(4000);
+    // audibly mid-sentence, so the fragment must NOT ship on the original clock.
+    // ('십자가는' is tiny → graded patience gives it the doubled 10s timeout.)
+    mock.timers.tick(9000);
     await chunker.feed('하나님이 지극히', false); // interim: speech ongoing
-    mock.timers.tick(4000); // 8s total, but only 4s since last speech evidence
+    mock.timers.tick(9000); // 18s total, but only 9s since last speech evidence
     await flush();
     assert.equal(dispatched.length, 0, 'interim must re-arm the incomplete timer');
 
-    // True silence after the interim → fragment ships 5s later as a last resort.
+    // True silence after the interim → fragment ships as a last resort.
     mock.timers.tick(1000);
     await flush();
     assert.equal(dispatched.length, 1);
@@ -266,11 +308,12 @@ test('new speech resets the incomplete timer (no premature fragment)', async () 
   mock.timers.enable({ apis: ['setTimeout'] });
   try {
     const { chunker, dispatched } = makeChunker('smooth');
+    // Tiny buffers get the doubled (10s) graded-patience timeout throughout.
     await chunker.feed('마음을', true);
-    mock.timers.tick(4000);
+    mock.timers.tick(9000);
     await flush();
-    await chunker.feed('낮추면은', true); // resets the 5s clock
-    mock.timers.tick(4000);
+    await chunker.feed('낮추면은', true); // resets the clock
+    mock.timers.tick(9000);
     await flush();
     assert.equal(dispatched.length, 0, 'timer must reset on new speech');
 
