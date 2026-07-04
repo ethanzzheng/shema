@@ -30,6 +30,8 @@ const MAX_BUFFERED = 32;     // hard cap on out-of-order clips held in memory
 
 export class AudioPlaybackQueue {
   private ctx: AudioContext | null = null;
+  private masterGain: GainNode | null = null;
+  private volume = 1;
   private buffers = new Map<number, AudioBuffer>(); // seq → decoded audio, awaiting its turn
   private expectedSeq: number | null = null; // next seq to play (null until first clip seen)
   private nextPlayAt = 0; // ctx.currentTime at which the next clip should start
@@ -41,11 +43,20 @@ export class AudioPlaybackQueue {
     this.active = true;
     if (!this.ctx || this.ctx.state === 'closed') {
       this.ctx = new AudioContext();
+      this.masterGain = this.ctx.createGain();
+      this.masterGain.gain.value = this.volume;
+      this.masterGain.connect(this.ctx.destination);
     }
     if (this.ctx.state === 'suspended') {
       this.ctx.resume().catch(() => {});
     }
     this.reset();
+  }
+
+  /** Output volume, 0–1. Applies immediately and to future start() calls. */
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.masterGain) this.masterGain.gain.value = this.volume;
   }
 
   stop(): void {
@@ -56,6 +67,7 @@ export class AudioPlaybackQueue {
     if (this.ctx && this.ctx.state !== 'closed') {
       this.ctx.close().catch(() => {});
       this.ctx = null;
+      this.masterGain = null;
     }
   }
 
@@ -150,7 +162,7 @@ export class AudioPlaybackQueue {
       const startAt = Math.max(this.nextPlayAt, this.ctx.currentTime);
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
-      source.connect(this.ctx.destination);
+      source.connect(this.masterGain ?? this.ctx.destination);
       source.start(startAt);
 
       this.nextPlayAt = startAt + buffer.duration;

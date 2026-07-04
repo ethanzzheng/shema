@@ -16,6 +16,7 @@ export class AudioStreamPlayer {
   private objectUrl: string | null = null;
   private pending: Uint8Array[] = [];
   private active = false;
+  private volume = 1;
 
   static isSupported(): boolean {
     return (
@@ -32,6 +33,7 @@ export class AudioStreamPlayer {
 
     this.audioEl = new Audio();
     this.audioEl.autoplay = true;
+    this.audioEl.volume = this.volume;
     this.mediaSource = new MediaSource();
     this.objectUrl = URL.createObjectURL(this.mediaSource);
     this.audioEl.src = this.objectUrl;
@@ -118,6 +120,12 @@ export class AudioStreamPlayer {
     this.mediaSource = null;
     this.audioEl = null;
     this.objectUrl = null;
+  }
+
+  /** Output volume, 0–1. Applies immediately and to future start() calls. */
+  setVolume(v: number): void {
+    this.volume = Math.max(0, Math.min(1, v));
+    if (this.audioEl) this.audioEl.volume = this.volume;
   }
 
   get isActive(): boolean {
