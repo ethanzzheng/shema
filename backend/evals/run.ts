@@ -26,6 +26,10 @@ interface Fixture {
   expectEmpty?: boolean;
   forbidden?: string[];
   mustContainAny?: string[];
+  /** Case-insensitive regexes that must NOT match the output. */
+  forbiddenRegex?: string[];
+  /** Case-insensitive regexes that MUST all match the output. */
+  mustMatchRegex?: string[];
   scripture?: { book: string; chapter: number; verse: number; minSim?: number };
 }
 
@@ -91,6 +95,24 @@ function runChecks(fx: Fixture, output: string): CheckResult[] {
       name: `forbidden:${bad}`,
       pass: !text.toLowerCase().includes(bad.toLowerCase()),
       detail: text.toLowerCase().includes(bad.toLowerCase()) ? `found "${bad}" in: ${text}` : undefined,
+    });
+  }
+
+  for (const pattern of fx.forbiddenRegex ?? []) {
+    const hit = new RegExp(pattern, 'is').test(text);
+    checks.push({
+      name: `forbidden-regex:${pattern}`,
+      pass: !hit,
+      detail: hit ? `matched /${pattern}/ in: ${text}` : undefined,
+    });
+  }
+
+  for (const pattern of fx.mustMatchRegex ?? []) {
+    const hit = new RegExp(pattern, 'is').test(text);
+    checks.push({
+      name: `must-match:${pattern}`,
+      pass: hit,
+      detail: hit ? undefined : `no match for /${pattern}/ in: ${text}`,
     });
   }
 
