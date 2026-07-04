@@ -27,8 +27,12 @@ const DEFAULT_KEYTERMS = [
   // Core terms
   '복음', '은혜', '믿음', '구원', '기도', '말씀', '제자', '사도', '기적',
   '오병이어', '보리떡', '물고기', '천국', '십자가', '부활', '회개', '축복',
-  // House-church terms (this congregation) — STT garbles these without biasing
-  '목장', '목자', '목녀', '한마음교회', '큐티', '성령님', '은사',
+  // 교회 gets misheard as 기회 ("opportunity") in fast speech — bias hard.
+  '교회',
+  // House-church terms (this congregation) — STT garbles these without biasing.
+  // 목자님 (honorific) included separately: it was misheard as 목사님 ("pastor"),
+  // which collapses the shepherd/pastor distinction whole stories hang on.
+  '목장', '목자', '목자님', '목녀', '한마음교회', '큐티', '성령님', '은사',
 ];
 
 export interface TranscriptEvent {
