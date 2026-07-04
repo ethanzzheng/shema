@@ -22,7 +22,6 @@ import { ElevenLabsSTT } from './stt';
 import { KoreanChunker } from './chunker';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
-import { broadcastToListeners } from './listener';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
@@ -38,7 +37,8 @@ function send(ws: WebSocket, payload: unknown): void {
 }
 
 export function handleBroadcasterConnection(ws: WebSocket, session: Session): void {
-  console.log('[Broadcaster] New connection');
+  console.log(`[Broadcaster] New connection (room "${session.roomId}")`);
+  session.addBroadcaster(ws);
 
   let stt: ElevenLabsSTT | null = null;
   let chunker: KoreanChunker | null = null;
@@ -80,7 +80,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       timestamp: job.chunkStart,
     });
 
-    broadcastToListeners({
+    session.broadcast({
       type: 'translation',
       seq: chunk.seq,
       direct: job.direct,
@@ -170,13 +170,13 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   const ttsPipeline = new TtsPipeline<TtsJob>({
     prefetch: 2,
     synth: (text, onChunk) => tts.synthesiseStream(text, onChunk),
-    onStart: (job) => broadcastToListeners({ type: 'audio_start', seq: job.seq }),
+    onStart: (job) => session.broadcast({ type: 'audio_start', seq: job.seq }),
     onChunk: (job, chunk) =>
-      broadcastToListeners({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
+      session.broadcast({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
     onEnd: (job, stats) => {
       session.metrics.ttsLatencyMs = stats.ttsLatencyMs;
       session.metrics.e2eLatencyMs = Date.now() - job.chunkStart;
-      broadcastToListeners({ type: 'audio_end', seq: job.seq });
+      session.broadcast({ type: 'audio_end', seq: job.seq });
       send(ws, {
         type: 'debug',
         chunkSize: job.chunkSize,
@@ -218,8 +218,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     refAgeChunks = 0;
     emitter.reset();
 
-    // Broadcast status to listeners
-    broadcastToListeners({ type: 'status', active: true });
+    // Broadcast status to this room's listeners
+    session.broadcast({ type: 'status', active: true });
 
     // Set up chunker. seq is allocated here, at dispatch time, in spoken order.
     chunker = new KoreanChunker({
@@ -267,7 +267,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     stt?.disconnect();
     stt = null;
 
-    broadcastToListeners({ type: 'status', active: false });
+    session.broadcast({ type: 'status', active: false });
     console.log('[Broadcaster] Session stopped');
   }
 
@@ -318,8 +318,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   });
 
   ws.on('close', () => {
-    console.log('[Broadcaster] Disconnected');
+    console.log(`[Broadcaster] Disconnected (room "${session.roomId}")`);
     stopSession();
+    session.removeBroadcaster(ws);
   });
 
   ws.on('error', (err) => {

@@ -1,17 +1,16 @@
 /**
- * Handles listener WebSocket connections and provides a broadcast function
- * used by the broadcaster pipeline to push translation text + audio.
+ * Handles listener WebSocket connections. Each listener joins ONE room's
+ * Session; translation text + audio reach it via session.broadcast(), so
+ * fan-out never crosses rooms.
  *
  * Messages to listeners:
  *   { type: "status", active: boolean }
  *   { type: "translation", seq, direct, sermon, timestamp }
- *   { type: "audio", seq, data: base64, format: "mp3" }
+ *   { type: "audio_start" | "audio_chunk" | "audio_end", seq, ... }
  */
 
 import { WebSocket } from 'ws';
-
-// Global registry of active listener sockets
-const listeners = new Set<WebSocket>();
+import { Session } from './session';
 
 function safeSend(ws: WebSocket, payload: unknown): void {
   if (ws.readyState === WebSocket.OPEN) {
@@ -19,39 +18,20 @@ function safeSend(ws: WebSocket, payload: unknown): void {
   }
 }
 
-export function handleListenerConnection(ws: WebSocket, session: { isActive: boolean }): void {
-  console.log('[Listener] New connection');
-  listeners.add(ws);
+export function handleListenerConnection(ws: WebSocket, session: Session): void {
+  console.log(`[Listener] New connection (room "${session.roomId}", ${session.listenerCount + 1} listening)`);
+  session.addListener(ws);
 
   // Immediately inform the new listener of current broadcast state
   safeSend(ws, { type: 'status', active: session.isActive });
 
   ws.on('close', () => {
-    console.log('[Listener] Disconnected');
-    listeners.delete(ws);
+    console.log(`[Listener] Disconnected (room "${session.roomId}")`);
+    session.removeListener(ws);
   });
 
   ws.on('error', (err) => {
-    console.error('[Listener] WS error:', err.message);
-    listeners.delete(ws);
+    console.error(`[Listener] WS error (room "${session.roomId}"):`, err.message);
+    session.removeListener(ws);
   });
-}
-
-/**
- * Broadcast a JSON payload to all connected listeners.
- * Stale (closed) sockets are removed automatically.
- */
-export function broadcastToListeners(payload: unknown): void {
-  const msg = JSON.stringify(payload);
-  for (const ws of listeners) {
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(msg);
-    } else {
-      listeners.delete(ws);
-    }
-  }
-}
-
-export function listenerCount(): number {
-  return listeners.size;
 }

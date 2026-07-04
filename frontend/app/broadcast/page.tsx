@@ -13,6 +13,11 @@ function getWsUrl(): string {
   return `${proto}://${window.location.hostname}:3001/ws`;
 }
 
+// Church room slug from ?room=<slug>; omitted → backend's "default" room.
+function getRoom(): string | undefined {
+  return new URLSearchParams(window.location.search).get('room') || undefined;
+}
+
 type Mode = 'fast' | 'smooth';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 
@@ -70,6 +75,7 @@ export default function BroadcastPage() {
     const client = new WsClient({
       url: getWsUrl(),
       role: 'broadcaster',
+      room: getRoom(),
       onOpen: () => setConnState('connected'),
       onClose: () => {
         setConnState('disconnected');

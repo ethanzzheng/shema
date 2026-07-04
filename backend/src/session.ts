@@ -1,7 +1,13 @@
 /**
- * In-memory session state for the single broadcast session.
- * No database, single session id = "default".
+ * In-memory state for one room's broadcast session.
+ * One Session per church room (keyed by slug, e.g. "grace-church");
+ * created lazily by SessionManager. No database.
+ *
+ * Each Session owns its own listener registry, so audio/text fan-out is
+ * scoped to the room — nothing ever crosses rooms.
  */
+
+import { WebSocket } from 'ws';
 
 export interface TranslationChunk {
   seq: number;
@@ -20,11 +26,21 @@ export interface DebugMetrics {
 }
 
 export class Session {
+  readonly roomId: string;
   isActive = false;
   mode: 'fast' | 'smooth' = 'smooth';
 
   koreanBuffer = '';
   translationHistory: TranslationChunk[] = [];
+
+  // Per-room socket registries. Broadcasters are tracked too so the
+  // SessionManager can tell when a room is fully empty and reclaim it.
+  private listeners = new Set<WebSocket>();
+  private broadcasters = new Set<WebSocket>();
+
+  constructor(roomId = 'default') {
+    this.roomId = roomId;
+  }
 
   metrics: DebugMetrics = {
     lastChunkSize: 0,
@@ -38,6 +54,51 @@ export class Session {
 
   nextSeq(): number {
     return ++this.seq;
+  }
+
+  // ── Room membership ────────────────────────────────────────────────────────
+
+  addListener(ws: WebSocket): void {
+    this.listeners.add(ws);
+  }
+
+  removeListener(ws: WebSocket): void {
+    this.listeners.delete(ws);
+  }
+
+  addBroadcaster(ws: WebSocket): void {
+    this.broadcasters.add(ws);
+  }
+
+  removeBroadcaster(ws: WebSocket): void {
+    this.broadcasters.delete(ws);
+  }
+
+  get listenerCount(): number {
+    return this.listeners.size;
+  }
+
+  get broadcasterCount(): number {
+    return this.broadcasters.size;
+  }
+
+  get isEmpty(): boolean {
+    return this.listeners.size === 0 && this.broadcasters.size === 0;
+  }
+
+  /**
+   * Push a JSON payload to every listener in THIS room.
+   * Stale (closed) sockets are removed automatically.
+   */
+  broadcast(payload: unknown): void {
+    const msg = JSON.stringify(payload);
+    for (const ws of this.listeners) {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(msg);
+      } else {
+        this.listeners.delete(ws);
+      }
+    }
   }
 
   /**

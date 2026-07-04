@@ -84,6 +84,8 @@ export type ServerMessage =
 export interface WsClientOptions {
   url: string;
   role: WsRole;
+  /** Church room slug (e.g. "grace-church"). Backend defaults to "default". */
+  room?: string;
   onMessage: (msg: ServerMessage) => void;
   onOpen?: () => void;
   onClose?: () => void;
@@ -117,7 +119,9 @@ export class WsClient {
       this.ws = null;
     }
 
-    const url = `${this.opts.url}?role=${this.opts.role}`;
+    const params = new URLSearchParams({ role: this.opts.role });
+    if (this.opts.room) params.set('room', this.opts.room);
+    const url = `${this.opts.url}?${params.toString()}`;
 
     const ws = new WebSocket(url);
     ws.binaryType = 'arraybuffer';
