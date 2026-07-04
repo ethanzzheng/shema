@@ -160,7 +160,7 @@ Browsers block microphone access on a plain-`http://` address unless it's
 
 Then start broadcasting:
 
-1. Open **http://SERVER_IP:3000/broadcast**
+1. Open **http://SERVER_IP:3000/speak**
 2. Click **Start Broadcast**
 3. **Allow** microphone access when prompted
 4. Speak Korean — transcripts + translations appear here, and English audio
@@ -178,7 +178,7 @@ Then start broadcasting:
 - **No sound?** Make sure you clicked **Enable Audio** on the Listener page
 
 > Single-laptop test: run both roles on the server laptop using
-> `http://localhost:3000/broadcast` and `http://localhost:3000/listen` in two
+> `http://localhost:3000/speak` and `http://localhost:3000/listen` in two
 > tabs — `localhost` needs no Chrome flag.
 
 ---
@@ -232,7 +232,7 @@ throughout (local dev needs none of these env vars).
 ```
 tryshema.app                → DNS at Cloudflare (points at everything below)
   ├─ /                      → marketing bundle   ┐
-  ├─ /broadcast /listen     → product routes     ├─ ONE Next.js app on VERCEL
+  ├─ /speak /listen/[church] → product routes    ├─ ONE Next.js app on VERCEL
   ├─ /api/contact           → Next rewrite → contact Worker on CLOUDFLARE
   └─ api.tryshema.app       → Node WebSocket backend on RAILWAY (all API keys live here)
 ```
@@ -283,7 +283,7 @@ branch you want live is pushed.
      Worker URL yet, deploy without it and add it after step 4 (then
      **Redeploy** — env vars only take effect on a fresh build).
 4. **Deploy**. Check the generated `*.vercel.app` URL: `/` shows the marketing
-   page, `/broadcast` and `/listen` load (they'll connect once DNS is live).
+   page, `/speak` and `/listen` load (they'll connect once DNS is live).
 5. Project → **Settings** → **Domains** → add `tryshema.app` and
    `www.tryshema.app`. Vercel will display the exact DNS records it wants —
    keep that page open for step 4.
@@ -323,8 +323,9 @@ still verified under Cloudflare → Email → Email Routing.
 ### 5. Verify
 
 - `https://tryshema.app` → marketing page; `https://api.tryshema.app/health` → JSON
-- `https://tryshema.app/listen` on a phone on **cellular** (not your Wi-Fi) —
-  it should connect and, during a broadcast from `/broadcast`, play audio
+- `https://tryshema.app/listen/<church>` on a phone on **cellular** (not your
+  Wi-Fi) — it should connect and, during a broadcast from `/speak` in the same
+  church, play audio
 - Contact form on the marketing page sends (check shematranslate@gmail.com)
 - DNS propagation can take minutes to a few hours — `dig tryshema.app` /
   `dig api.tryshema.app` to watch it flip
@@ -407,8 +408,10 @@ shema/
 │   │   ├── layout.tsx
 │   │   ├── globals.css
 │   │   ├── page.tsx          # Landing page (/)
-│   │   ├── broadcast/page.tsx # Broadcaster UI (/broadcast)
-│   │   └── listen/page.tsx   # Listener UI (/listen)
+│   │   ├── speak/page.tsx    # Broadcaster UI (/speak) + QR share
+│   │   ├── listen/page.tsx   # Church-code entry (/listen, /listen?church=)
+│   │   ├── listen/[church]/  # Listener UI (/listen/<church>, the QR link)
+│   │   └── play/[church]/    # Kiosk output (placeholder until Step 6)
 │   ├── lib/
 │   │   ├── ws-client.ts      # Typed WebSocket client
 │   │   ├── audio-capture.ts  # Mic → PCM 16kHz chunks
