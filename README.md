@@ -57,8 +57,8 @@ cd frontend && npm install && cd ..
 ### 2. Configure API keys
 
 ```bash
-# In the backend directory, create .env from the example
-cp .env.example backend/.env
+# Create backend/.env from the example
+cp backend/.env.example backend/.env
 ```
 
 Edit `backend/.env`:
@@ -73,14 +73,14 @@ PORT=3001
 
 ### 3. Configure frontend (optional for local dev)
 
-For local development, no frontend `.env.local` is needed — `next.config.js` defaults to `ws://localhost:3001/ws`.
+For local development, no frontend `.env.local` is needed — backend URLs are
+derived from the page's hostname (`ws://<host>:3001/ws`, see
+`frontend/lib/backend-config.ts`), which also keeps the two-laptop LAN setup
+working with zero config.
 
-For production, create `frontend/.env.local`:
-
-```env
-NEXT_PUBLIC_BACKEND_WS_URL=wss://your-backend.railway.app/ws
-NEXT_PUBLIC_BACKEND_HTTP_URL=https://your-backend.railway.app
-```
+In production these come from `NEXT_PUBLIC_BACKEND_WS_URL` /
+`NEXT_PUBLIC_BACKEND_HTTP_URL` (see `frontend/.env.example` and the
+[Deploy](#deploy-tryshemaapp) section).
 
 ### 4. Run backend
 
@@ -222,28 +222,112 @@ Recommended voices for sermon delivery:
 
 ---
 
-## Deployment
+## Deploy (tryshema.app)
 
-### Backend → Railway
+One Next.js app (marketing + product) on **Vercel**, the WebSocket backend on
+**Railway**, and **Cloudflare** as registrar/DNS + host of the small
+contact-form Worker. Follow the steps in order; the app stays runnable locally
+throughout (local dev needs none of these env vars).
 
-1. Create a new project at https://railway.app
-2. Connect your GitHub repo and select the `backend/` directory
-3. Set environment variables in Railway dashboard:
+```
+tryshema.app                → DNS at Cloudflare (points at everything below)
+  ├─ /                      → marketing bundle   ┐
+  ├─ /broadcast /listen     → product routes     ├─ ONE Next.js app on VERCEL
+  ├─ /api/contact           → Next rewrite → contact Worker on CLOUDFLARE
+  └─ api.tryshema.app       → Node WebSocket backend on RAILWAY (all API keys live here)
+```
+
+**Secrets rule:** API keys live ONLY on Railway. The frontend carries nothing
+but public `NEXT_PUBLIC_*` URLs.
+
+### 1. Push the repo to GitHub
+
+Vercel and Railway both deploy straight from the GitHub repo — make sure the
+branch you want live is pushed.
+
+### 2. Backend → Railway
+
+1. Go to https://railway.app → **New Project** → **Deploy from GitHub repo** →
+   pick this repo (authorize GitHub access if asked).
+2. Click the created service → **Settings** → **Source** → set
+   **Root Directory** to `backend`. Railway then auto-detects Node and runs
+   `npm install` → `npm run build` → `npm start` (already wired: `build`
+   compiles to `dist/`, `start` runs `node dist/index.js`).
+3. **Variables** tab → add:
    - `ANTHROPIC_API_KEY`
+   - `DEEPGRAM_API_KEY`
    - `ELEVENLABS_API_KEY`
    - `ELEVENLABS_VOICE_ID`
-   - `PORT=3001`
-   - `FRONTEND_URL=https://your-vercel-app.vercel.app`
-4. Railway auto-deploys on push
+   - `FRONTEND_URL=https://tryshema.app,https://www.tryshema.app`
+   - `NODE_ENV=production` (usually set automatically; setting it explicitly
+     is what arms the CORS/WebSocket origin allowlist)
+   - Do **NOT** set `PORT` — Railway injects its own and the server reads it.
+4. **Settings** → **Networking** → **Generate Domain**. Note the
+   `something.up.railway.app` URL and check `https://<it>/health` returns JSON.
+5. Same Networking panel → **Custom Domain** → add `api.tryshema.app`.
+   Railway shows you a CNAME target — you'll create that record in
+   Cloudflare in step 4.
 
-### Frontend → Vercel
+### 3. Frontend → Vercel
 
-1. Import your repo at https://vercel.com/new
-2. Set **Root Directory** to `frontend`
-3. Set environment variables:
-   - `NEXT_PUBLIC_BACKEND_WS_URL=wss://your-backend.railway.app/ws`
-   - `NEXT_PUBLIC_BACKEND_HTTP_URL=https://your-backend.railway.app`
-4. Deploy
+1. Go to https://vercel.com/new → **Import** this repo.
+2. Set **Root Directory** to `frontend` (framework auto-detects as Next.js).
+3. **Environment Variables** → add:
+   - `NEXT_PUBLIC_BACKEND_WS_URL=wss://api.tryshema.app/ws`
+   - `NEXT_PUBLIC_BACKEND_HTTP_URL=https://api.tryshema.app`
+   - `CONTACT_WORKER_ORIGIN=<the contact Worker's own origin>` — its
+     `https://….workers.dev` URL from step 4. ⚠️ This must be the Worker's OWN
+     origin: **not** `https://tryshema.app` (that's Vercel itself — the
+     rewrite would loop forever) and **not** `api.tryshema.app` (that's the
+     Railway backend, which has no contact endpoint). If you don't have the
+     Worker URL yet, deploy without it and add it after step 4 (then
+     **Redeploy** — env vars only take effect on a fresh build).
+4. **Deploy**. Check the generated `*.vercel.app` URL: `/` shows the marketing
+   page, `/broadcast` and `/listen` load (they'll connect once DNS is live).
+5. Project → **Settings** → **Domains** → add `tryshema.app` and
+   `www.tryshema.app`. Vercel will display the exact DNS records it wants —
+   keep that page open for step 4.
+
+### 4. Cloudflare — contact Worker + DNS
+
+**Deploy the contact-form Worker:**
+
+The Worker deploys as-is to its own `*.workers.dev` origin — it claims no
+custom domain (`tryshema.app` belongs to Vercel via DNS):
+
+```bash
+cd marketing-worker
+npx wrangler deploy   # log in with your Cloudflare account when prompted
+```
+
+Note the printed `https://tryshema.<your-account>.workers.dev` URL → that is
+`CONTACT_WORKER_ORIGIN` for Vercel (step 3.3; set it and redeploy).
+Email delivery uses Cloudflare **Email Routing** on the `tryshema.app` zone —
+it was already configured for the old site; verify the destination address is
+still verified under Cloudflare → Email → Email Routing.
+
+**DNS records** (Cloudflare dashboard → tryshema.app → DNS):
+
+1. First remove any old records/Worker routes pointing `tryshema.app` at the
+   old Cloudflare-hosted site.
+2. Add what Vercel's Domains page told you — typically:
+   - `A` record, name `@` (tryshema.app) → Vercel's IP (e.g. `76.76.21.21`)
+   - `CNAME`, name `www` → `cname.vercel-dns.com`
+3. Add the backend record from Railway (step 2.5):
+   - `CNAME`, name `api` → the target Railway displayed
+4. Set ALL THREE records to **DNS only** (click the orange cloud so it turns
+   **grey**). Cloudflare's proxy must stay out of the way: Vercel manages its
+   own TLS, and proxied WebSocket connections to Railway add an unnecessary
+   failure point.
+
+### 5. Verify
+
+- `https://tryshema.app` → marketing page; `https://api.tryshema.app/health` → JSON
+- `https://tryshema.app/listen` on a phone on **cellular** (not your Wi-Fi) —
+  it should connect and, during a broadcast from `/broadcast`, play audio
+- Contact form on the marketing page sends (check shematranslate@gmail.com)
+- DNS propagation can take minutes to a few hours — `dig tryshema.app` /
+  `dig api.tryshema.app` to watch it flip
 
 ---
 

@@ -5,14 +5,7 @@ import Link from 'next/link';
 import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg } from '@/lib/ws-client';
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
-
-function getWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_BACKEND_WS_URL) {
-    return process.env.NEXT_PUBLIC_BACKEND_WS_URL;
-  }
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.hostname}:3001/ws`;
-}
+import { getBackendWsUrl } from '@/lib/backend-config';
 
 // Church room slug from ?room=<slug>; omitted → backend's "default" room.
 function getRoom(): string | undefined {
@@ -125,7 +118,7 @@ export default function ListenPage() {
   // ── WebSocket lifecycle ──────────────────────────────────────────────
   useEffect(() => {
     const client = new WsClient({
-      url: getWsUrl(),
+      url: getBackendWsUrl(),
       role: 'listener',
       room: getRoom(),
       onOpen: () => setConnState('connected'),

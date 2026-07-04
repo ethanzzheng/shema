@@ -26,12 +26,30 @@ if (missing.length) {
   process.exit(1);
 }
 
+// ── Origin allowlist ────────────────────────────────────────────────────────
+// In production, browser clients (CORS + WS upgrades) must come from
+// FRONTEND_URL (comma-separated origins, e.g. "https://tryshema.app,https://www.tryshema.app").
+// In dev, or when FRONTEND_URL is unset, everything is allowed. Requests with
+// no Origin header (curl, health probes, server-to-server) always pass —
+// origin checks only defend against cross-site browser pages.
+const IS_PROD = process.env.NODE_ENV === 'production';
+const ALLOWED_ORIGINS = (process.env.FRONTEND_URL ?? '')
+  .split(',')
+  .map((o) => o.trim().replace(/\/+$/, ''))
+  .filter(Boolean);
+
+function originAllowed(origin: string | undefined): boolean {
+  if (!IS_PROD || ALLOWED_ORIGINS.length === 0) return true;
+  if (!origin) return true;
+  return ALLOWED_ORIGINS.includes(origin.replace(/\/+$/, ''));
+}
+
 // ── App setup ──────────────────────────────────────────────────────────────
 const app = express();
 
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL ?? '*',
+    origin: IS_PROD && ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : '*',
     methods: ['GET', 'POST', 'OPTIONS'],
   }),
 );
@@ -55,6 +73,13 @@ const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
 wss.on('connection', (ws, req) => {
+  const origin = req.headers.origin;
+  if (!originAllowed(origin)) {
+    console.warn('[Server] Rejected WS from disallowed origin:', origin);
+    ws.close(1008, 'Origin not allowed');
+    return;
+  }
+
   let role: string | null = null;
   let roomId: string;
   try {

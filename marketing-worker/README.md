@@ -24,10 +24,9 @@ cd marketing-worker
 npx wrangler deploy
 ```
 
-`wrangler.jsonc` currently claims the custom domain `tryshema.app`. If the site itself
-moves to Vercel, change that route to a dedicated origin for the Worker (e.g.
-`api.tryshema.app` or the default `*.workers.dev` URL) and point `CONTACT_WORKER_ORIGIN`
-at it.
+The Worker deploys to its own `tryshema.<account>.workers.dev` origin and claims no
+custom domain — the site itself lives on Vercel (`tryshema.app` points there via
+DNS-only records). Point `CONTACT_WORKER_ORIGIN` on Vercel at the `*.workers.dev` URL.
 
 - Destination inbox: `shematranslate@gmail.com`
 - From: `noreply@tryshema.app`

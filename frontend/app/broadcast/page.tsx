@@ -4,14 +4,7 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import Link from 'next/link';
 import { WsClient, ServerMessage, DebugMsg, TranslationMsg } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
-
-function getWsUrl(): string {
-  if (process.env.NEXT_PUBLIC_BACKEND_WS_URL) {
-    return process.env.NEXT_PUBLIC_BACKEND_WS_URL;
-  }
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.hostname}:3001/ws`;
-}
+import { getBackendWsUrl } from '@/lib/backend-config';
 
 // Church room slug from ?room=<slug>; omitted → backend's "default" room.
 function getRoom(): string | undefined {
@@ -73,7 +66,7 @@ export default function BroadcastPage() {
   // ── WebSocket lifecycle ──────────────────────────────────────────────────
   useEffect(() => {
     const client = new WsClient({
-      url: getWsUrl(),
+      url: getBackendWsUrl(),
       role: 'broadcaster',
       room: getRoom(),
       onOpen: () => setConnState('connected'),

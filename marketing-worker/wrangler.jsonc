@@ -1,15 +1,13 @@
+// Standalone contact-form Worker: deploys to tryshema.<account>.workers.dev.
+// That .workers.dev URL is what CONTACT_WORKER_ORIGIN on Vercel points at.
+// It deliberately claims NO custom domain — tryshema.app belongs to Vercel
+// (DNS-only record) — and the old assets binding died when the marketing site
+// moved into frontend/public/marketing.html.
 {
   "name": "tryshema",
-  "main": "src/worker.js",
+  "main": "worker.js",
   "compatibility_date": "2025-06-01",
-  "assets": {
-    "directory": "./public",
-    "run_worker_first": ["/api/*"]
-  },
   "send_email": [
     { "name": "CONTACT_EMAIL", "destination_address": "shematranslate@gmail.com" }
-  ],
-  "routes": [
-    { "pattern": "tryshema.app", "custom_domain": true }
   ]
 }
