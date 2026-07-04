@@ -12,7 +12,6 @@
  */
 
 import WebSocket from 'ws';
-import { endsWithTerminator } from './text';
 
 /**
  * Korean biblical / sermon vocabulary fed to Deepgram as keyterms (nova-3
@@ -50,8 +49,6 @@ export class ElevenLabsSTT {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private keepAliveTimer: NodeJS.Timeout | null = null;
 
-  // Buffer final (non-speech_final) results to build up utterances
-  private utteranceBuffer = '';
   // Track recent utterances to prevent exact duplicates only
   private recentUtterances: string[] = [];
 
@@ -157,65 +154,19 @@ export class ElevenLabsSTT {
 
     const transcript = msg.channel?.alternatives?.[0]?.transcript || '';
     const isFinal = msg.is_final === true;
-    const speechFinal = msg.speech_final === true;
 
-    if (!transcript) return;
+    if (!transcript || !isFinal) return;
 
-    if (isFinal) {
-      // Accumulate final segments into the utterance buffer
-      this.utteranceBuffer += (this.utteranceBuffer ? ' ' : '') + transcript;
+    // Forward every finalized segment IMMEDIATELY — the chunker owns sentence
+    // assembly. This layer used to hold text until it ended on a sentence
+    // boundary, but during a rapid ramble Deepgram finalizes mid-clause and
+    // new finals kept resetting the flush timer, so completed sentences sat
+    // here for 10s+ before the pipeline ever saw them.
+    if (this.isDuplicate(transcript)) return;
+    this.recentUtterances.push(transcript);
+    if (this.recentUtterances.length > 5) this.recentUtterances.shift();
 
-      if (speechFinal || endsWithTerminator(this.utteranceBuffer)) {
-        // Genuine sentence end — either Deepgram detected a natural pause
-        // (endpointing) or the buffer ends on sentence-final punctuation /
-        // a Korean sentence ender. Emit the complete sentence.
-        this.emitBuffer();
-      } else {
-        // Mid-sentence: wait for the sentence to complete, with a safety net
-        // so we never hold a run-on utterance indefinitely.
-        this.resetFlushTimer();
-      }
-    }
-  }
-
-  /** Emit the utterance buffer if it has content */
-  private emitBuffer(): void {
-    this.cancelFlushTimer();
-    const fullUtterance = this.utteranceBuffer.trim();
-    this.utteranceBuffer = '';
-
-    if (fullUtterance && !this.isDuplicate(fullUtterance)) {
-      this.recentUtterances.push(fullUtterance);
-      if (this.recentUtterances.length > 5) this.recentUtterances.shift();
-
-      console.log(`[STT] Utterance: "${fullUtterance.slice(0, 100)}${fullUtterance.length > 100 ? '…' : ''}"`);
-      this.onTranscript({
-        text: fullUtterance,
-        isFinal: true,
-        timestamp: Date.now(),
-      });
-    }
-  }
-
-  /** Safety net: force emit if a sentence never resolves within 3s */
-  private flushTimer: NodeJS.Timeout | null = null;
-  private static readonly SAFETY_FLUSH_MS = 3000;
-
-  private resetFlushTimer(): void {
-    this.cancelFlushTimer();
-    this.flushTimer = setTimeout(() => {
-      if (this.utteranceBuffer.trim()) {
-        console.log('[STT] Safety flush triggered (no sentence end for 3s)');
-        this.emitBuffer();
-      }
-    }, ElevenLabsSTT.SAFETY_FLUSH_MS);
-  }
-
-  private cancelFlushTimer(): void {
-    if (this.flushTimer) {
-      clearTimeout(this.flushTimer);
-      this.flushTimer = null;
-    }
+    this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now() });
   }
 
   private isDuplicate(text: string): boolean {
@@ -235,15 +186,11 @@ export class ElevenLabsSTT {
   disconnect(): void {
     this.running = false;
     this.stopKeepAlive();
-    this.cancelFlushTimer();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
-
-    // Emit any remaining utterance
-    this.emitBuffer();
 
     this.recentUtterances = [];
 

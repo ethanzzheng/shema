@@ -24,6 +24,7 @@ import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { broadcastToListeners } from './listener';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
+import { OrderedEmitter } from './ordered-emitter';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
@@ -45,6 +46,49 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // Running Bible reference the pastor is reading from (anchors scripture to NIV).
   let currentRef: ScriptureRef | null = null;
   let refAgeChunks = 0;
+
+  // ── Ordered emitter ────────────────────────────────────────────────────────
+  // Translations may complete out of order (the chunker allows a bounded number
+  // in flight during backlogs). Completions are parked and emitted — text
+  // broadcast + TTS enqueue — strictly in seq (spoken) order.
+  interface EmitJob {
+    seq: number;
+    korean: string;
+    direct: string;
+    sermon: string;
+    chunkStart: number;
+    translationLatencyMs: number;
+  }
+  const emitter = new OrderedEmitter<EmitJob>(emitTranslation);
+
+  function emitTranslation(job: EmitJob): void {
+    const chunk = session.addTranslation({
+      seq: job.seq,
+      korean: job.korean,
+      direct: job.direct,
+      sermon: job.sermon,
+      timestamp: job.chunkStart,
+    });
+
+    send(ws, {
+      type: 'translation',
+      seq: chunk.seq,
+      korean: job.korean,
+      direct: job.direct,
+      sermon: job.sermon,
+      timestamp: job.chunkStart,
+    });
+
+    broadcastToListeners({
+      type: 'translation',
+      seq: chunk.seq,
+      direct: job.direct,
+      sermon: job.sermon,
+      timestamp: job.chunkStart,
+    });
+
+    enqueueTTS(chunk.seq, job.sermon, job.korean.length, job.translationLatencyMs, job.chunkStart);
+  }
   const tts = new ElevenLabsTTS({
     apiKey: ELEVENLABS_API_KEY,
     voiceId: ELEVENLABS_VOICE_ID,
@@ -52,11 +96,17 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
   // ── Pipeline: Korean text → Claude → broadcast text → TTS (background) ───
   // `seq` is the spoken-order sequence number, assigned by the chunker at
-  // dispatch time. Translations run serialized (one at a time) so this order
-  // is preserved end-to-end.
+  // dispatch time. The chunker may run up to 2 translations concurrently
+  // during a backlog; finishSeq() re-orders completions so emission (text +
+  // TTS + playback) is always in spoken order.
   async function processChunk(koreanText: string, seq: number): Promise<void> {
     const chunkStart = Date.now();
     session.metrics.lastChunkSize = koreanText.length;
+
+    // Entry runs in dispatch (spoken) order even with parallelism — the
+    // chunker starts jobs sequentially — so both the emitter anchor and the
+    // reference tracking below stay in spoken order.
+    emitter.anchor(seq);
 
     // Track the Bible reference the pastor announced; expire it after a while
     // so old references don't wrongly anchor later commentary.
@@ -68,56 +118,37 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       currentRef = null;
     }
     const refName = formatReference(currentRef);
-    console.log(`[Pipeline] Translating ${koreanText.length} chars${refName ? ` (ref: ${refName})` : ''}...`);
+    console.log(`[Pipeline] Translating seq ${seq} (${koreanText.length} chars${refName ? `, ref: ${refName}` : ''})...`);
 
-    // 1. Translate (this is the only blocking step)
+    // Translate (the only blocking step), then park the result for in-order
+    // emission. Failures park a skip marker so the emitter never stalls.
     let translation;
     try {
       translation = await translator.translate(koreanText, currentRef);
     } catch (err) {
       console.error('[Pipeline] Translation failed:', err);
+      emitter.finish(seq, null);
       return;
     }
 
     const translationLatencyMs = Date.now() - chunkStart;
     session.metrics.translationLatencyMs = translationLatencyMs;
-    console.log(`[Pipeline] Translation done in ${translationLatencyMs}ms`);
+    console.log(`[Pipeline] Translation done for seq ${seq} in ${translationLatencyMs}ms`);
 
-    // Skip error translations
     if (translation.sermon_translation === '[Translation error]') {
       console.error('[Pipeline] Translation returned error, skipping');
+      emitter.finish(seq, null);
       return;
     }
 
-    const chunk = session.addTranslation({
+    emitter.finish(seq, {
       seq,
       korean: koreanText,
       direct: translation.direct_translation,
       sermon: translation.sermon_translation,
-      timestamp: chunkStart,
+      chunkStart,
+      translationLatencyMs,
     });
-
-    // 2. Broadcast translation text IMMEDIATELY (don't wait for TTS)
-    send(ws, {
-      type: 'translation',
-      seq: chunk.seq,
-      korean: koreanText,
-      direct: translation.direct_translation,
-      sermon: translation.sermon_translation,
-      timestamp: chunkStart,
-    });
-
-    broadcastToListeners({
-      type: 'translation',
-      seq: chunk.seq,
-      direct: translation.direct_translation,
-      sermon: translation.sermon_translation,
-      timestamp: chunkStart,
-    });
-
-    // 3. Hand off to the serial TTS worker (keeps audio ordered while
-    //    translation runs ahead). Don't block the translation pipeline.
-    enqueueTTS(chunk.seq, translation.sermon_translation, koreanText.length, translationLatencyMs, chunkStart);
   }
 
   // ── Serial streaming-TTS worker ──────────────────────────────────────────
@@ -188,6 +219,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     translator.resetContext();
     currentRef = null;
     refAgeChunks = 0;
+    emitter.reset();
 
     // Broadcast status to listeners
     broadcastToListeners({ type: 'status', active: true });

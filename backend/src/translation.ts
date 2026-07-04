@@ -37,9 +37,10 @@ ABSOLUTE RULES:
 - CLARITY (important): Translate the MEANING into natural, clear, everyday American English — the way a native English-speaking pastor would say it to an ordinary US congregation. Do NOT translate word-for-word when that produces awkward, stilted, or confusing English; rephrase so it is easy to understand the first time it's heard. Avoid archaic words (say "long for", not "yearn"). Faithfulness to the meaning still comes first — simplify the wording, never the message.
 - Render Korean church idioms by their real meaning, not a literal gloss. Examples: "역사를 이루다 / 역사하다" = "work" or "accomplish (his work)", NOT "make history"; "은혜를 받다" = "be blessed / receive grace"; "말씀" (in context) = "the Word" or "what God says". Don't leave Konglish loanwords literal — use "recruit", not "scout". The listener should never hear a phrase that sounds like translated-ese.
 - CHURCH GLOSSARY (use these exact renderings, consistently): 목장 = "Mokjang" (NEVER "cell group", "small group", or "house church" — the congregation knows this word); 목자 = "shepherd" (the person who leads a Mokjang); 목녀 = "shepherdess"; 목장 모임 = "Mokjang meeting"; QT/큐티 = "QT (quiet time)". The STT often garbles these (e.g. 먹자 → 목자) — recognize them from context.
+- CHURCH OFFICES (titles the congregation knows — keep them short and consistent, do NOT over-formalize): 목사(님) = "Pastor"; 전도사(님) = "the evangelist" (an associate/assistant minister); 장로(님) = "elder"; 권사(님) = "Kwonsa" (a senior appointed lay office, usually an older woman — use "Kwonsa", NEVER "deaconess", which is a different office); 집사(님) = "deacon" (a woman may be "deaconess"). 권사 and 집사 are DIFFERENT offices — never merge them.
 - Keep standard Christian terms (grace, salvation, Holy Spirit, faith, repentance) and Bible references exactly (e.g. John 6:9).
 - SCRIPTURE: This pastor quotes the Bible constantly, and the transcription of quoted verses is often badly garbled. When a segment is clearly quoting or reading Scripture, do NOT re-translate the garbled Korean and do NOT paraphrase. If the user message supplies the canonical English text of the passage, use that EXACT wording. Otherwise reproduce the passage in its standard modern English wording (NIV-style) as you recall it, kept consistent across the whole sermon. Render ONLY the portion actually being quoted — never add surrounding verses or complete a verse the pastor hasn't reached. Translate the pastor's own commentary (everything that is not the quote) normally.
-- Silently drop Korean filler (음, 어, 그, 아) and false starts.
+- Silently drop Korean filler (음, 어, 그, 아) and false starts. If a segment ENDS on an abandoned false start — a bare subject or demonstrative with no predicate that the pastor drops before finishing the thought (e.g. "그 내가", "저 그거") — OMIT that dangling tail; do NOT emit a subjectless fragment like "That, I" or "So we". (This is different from a genuine mid-sentence cut that carries real content the next segment will continue — keep those and stop on the last real word.)
 - If the segment is empty, meaningless, or pure filler, return {"translation": ""}.
 - Your entire response must be the JSON object, starting with { and ending with }.`;
 
@@ -52,8 +53,22 @@ export function sanitizeForSpeech(text: string): string {
   t = t.replace(/\s*\.{2,}\s*$/g, '');
   // Turn remaining em/en dashes into natural comma pauses.
   t = t.replace(/\s*[—–]\s*/g, ', ');
-  // Remove a lone conjunction stranded at the end (e.g. "...faith and").
-  t = t.replace(/[\s,]+(and|but|or|so|nor|yet|the|a|an)[\s,]*$/i, '');
+  // Peel trailing stranded tokens to a fixed point: removing a dangling subject
+  // ("...and we" → "...and") can expose a stranded conjunction, so repeat until
+  // nothing more strips.
+  let prev: string;
+  do {
+    prev = t;
+    // Remove a lone conjunction/article stranded at the end (e.g. "...faith and").
+    t = t.replace(/[\s,]+(and|but|or|so|nor|yet|the|a|an)[\s,]*$/i, '');
+    // Remove a stranded subject/false-start at the very end. The pastor abandons a
+    // thought ("...Right? That, I") and the model renders the dangling subject
+    // literally; a subjectless fragment read aloud is worse than a tiny omission.
+    // Kept deliberately narrow: a demonstrative+comma+pronoun tail, or a bare
+    // trailing "I"/"we" — real English sentences essentially never end on those.
+    t = t.replace(/[\s,]+(?:that|this)\s*,\s*(?:I|we|you)\s*$/i, '');
+    t = t.replace(/[\s,]+(?:I|we)\s*$/i, '');
+  } while (t !== prev);
   // Tidy doubled punctuation/spacing the above may create.
   t = t.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
   return t.trim();

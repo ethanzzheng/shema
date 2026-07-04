@@ -26,6 +26,17 @@ test('sanitizeForSpeech: stranded conjunction at end removed', () => {
   assert.equal(sanitizeForSpeech('we must wait.'), 'we must wait.');
 });
 
+test('sanitizeForSpeech: strips an abandoned false-start subject at the end', () => {
+  // The observed live bug: pastor abandons "그 내가" → model emits "That, I".
+  assert.equal(sanitizeForSpeech('Right? That, I'), 'Right?');
+  assert.equal(sanitizeForSpeech('So we need to align ourselves, and we'), 'So we need to align ourselves');
+  assert.equal(sanitizeForSpeech('I need to stop and wait, I'), 'I need to stop and wait');
+  // real sentences ending in a content word or object are untouched
+  assert.equal(sanitizeForSpeech('I never knew that'), 'I never knew that');
+  assert.equal(sanitizeForSpeech('Love your neighbor as yourself.'), 'Love your neighbor as yourself.');
+  assert.equal(sanitizeForSpeech('He will meet that need for you.'), 'He will meet that need for you.');
+});
+
 test('sanitizeForSpeech: tidies doubled punctuation and spacing', () => {
   assert.equal(sanitizeForSpeech('faith,  , hope'), 'faith, hope');
   assert.equal(sanitizeForSpeech('grace  and   truth .'), 'grace and truth.');

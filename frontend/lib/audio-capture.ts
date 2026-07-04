@@ -58,6 +58,13 @@ export class AudioCapture {
   }
 
   async start(): Promise<void> {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error(
+        'Mic blocked: browsers only allow microphone access on https:// or localhost. ' +
+          `On this laptop, open chrome://flags/#unsafely-treat-insecure-origin-as-secure, ` +
+          `add "${window.location.origin}", set it to Enabled, and relaunch Chrome.`,
+      );
+    }
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         channelCount: 1,

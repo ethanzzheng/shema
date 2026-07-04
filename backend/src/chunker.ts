@@ -13,11 +13,15 @@
  *     stopped, so dispatch whatever has accumulated.
  *   - Hard length cap (`maxChars`)               → bound latency on run-ons.
  *
- * Ordering (unchanged): seq is assigned at dispatch time (spoken order) and
- * translations run serialized, so context and order are preserved end-to-end.
+ * Ordering: seq is assigned at dispatch time (spoken order). Translations run
+ * with bounded parallelism (see pump); the broadcaster re-orders completions by
+ * seq before emitting text/TTS, so listeners always hear spoken order.
  */
 
-import { looksComplete } from './text';
+import { looksComplete, splitSentences } from './text';
+
+// Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
+const MIN_DISPATCH_CHARS = 10;
 
 export type ChunkCallback = (text: string, seq: number) => Promise<void>;
 
@@ -58,9 +62,12 @@ export class KoreanChunker {
 
   private timer: NodeJS.Timeout | null = null;
 
-  // Serialized dispatch queue — sentences translate one at a time, in order.
+  // Bounded-parallel dispatch queue. 2 = at most one sentence translates ahead
+  // of the current one, so context loss during bursts is limited to the
+  // immediately-preceding sentence; normal pacing stays effectively serial.
+  private static readonly MAX_PARALLEL = 2;
   private pending: { text: string; seq: number }[] = [];
-  private running = false;
+  private inFlight = 0;
 
   constructor(opts: ChunkerOptions) {
     this.onChunk = opts.onChunk;
@@ -78,17 +85,37 @@ export class KoreanChunker {
     this.buffer += (this.buffer ? ' ' : '') + text.trim();
     this.cancelTimer();
 
+    // Extract fully-punctuated sentences NOW. During a rapid ramble the buffer
+    // tail is perpetually mid-sentence, and waiting on the tail used to hold
+    // completed sentences hostage for 10s+. Interior sentences are safe to cut
+    // immediately — the speech has already moved past them. Tiny sentences are
+    // grouped up to MIN_DISPATCH_CHARS so "네." never ships alone.
+    const { sentences, remainder } = splitSentences(this.buffer);
+    if (sentences.length > 0) {
+      let group = '';
+      for (const s of sentences) {
+        group += (group ? ' ' : '') + s;
+        if (group.length >= MIN_DISPATCH_CHARS) {
+          this.dispatchText(group);
+          group = '';
+        }
+      }
+      // An undersized trailing group rides along with the remainder.
+      this.buffer = group ? group + (remainder ? ' ' + remainder : '') : remainder;
+    }
+    if (!this.buffer) return;
+
     // Run-on safety: dispatch immediately once we exceed the hard cap.
     if (this.buffer.length >= this.cfg.maxChars) {
       this.dispatchBuffer();
       return;
     }
 
-    // Dispatch only at grammatically COMPLETE sentences (short beat). If the
-    // sentence isn't finished, wait a long time for it to complete — new speech
-    // resets this timer, so we ride straight through mid-sentence pauses and
-    // only cut at real sentence ends. A fragment is dispatched only if the
-    // pastor never completes the thought within incompleteMaxMs.
+    // The remaining tail has no terminal punctuation. If Korean grammar says
+    // it's a complete sentence (final ending), dispatch after a short beat;
+    // otherwise wait for it to complete — new speech resets this timer, so we
+    // ride straight through mid-sentence dramatic pauses and only cut at real
+    // sentence ends. A fragment ships only after incompleteMaxMs of quiet.
     const delay = looksComplete(this.buffer) ? this.cfg.completeMs : this.cfg.incompleteMaxMs;
 
     this.timer = setTimeout(() => this.dispatchBuffer(), delay);
@@ -98,7 +125,7 @@ export class KoreanChunker {
   async forceFlush(): Promise<void> {
     this.cancelTimer();
     this.dispatchBuffer();
-    while (this.running || this.pending.length > 0) {
+    while (this.inFlight > 0 || this.pending.length > 0) {
       await new Promise((r) => setTimeout(r, 50));
     }
   }
@@ -111,33 +138,41 @@ export class KoreanChunker {
 
   // ── internals ──────────────────────────────────────────────────────────────
 
+  /** Queue one chunk for translation, assigning its spoken-order seq now. */
+  private dispatchText(text: string): void {
+    const seq = this.nextSeq();
+    this.pending.push({ text, seq });
+    this.pump();
+  }
+
   /** Dispatch the whole accumulated buffer as one coherent chunk. */
   private dispatchBuffer(): void {
     this.cancelTimer();
     const text = this.buffer.trim();
     this.buffer = '';
-    if (!text) return;
-
-    const seq = this.nextSeq();
-    this.pending.push({ text, seq });
-    void this.pump();
+    if (text) this.dispatchText(text);
   }
 
-  private async pump(): Promise<void> {
-    if (this.running) return;
-    this.running = true;
-    try {
-      while (this.pending.length > 0) {
-        const { text, seq } = this.pending.shift()!;
-        console.log(`[Chunker] Dispatching seq ${seq}: ${text.length} chars`);
-        try {
-          await this.onChunk(text, seq);
-        } catch (err) {
-          console.error('[Chunker] onChunk error:', err);
-        }
-      }
-    } finally {
-      this.running = false;
+  /**
+   * Start queued sentences in spoken order, allowing up to MAX_PARALLEL
+   * translations in flight. With an empty queue this behaves exactly like the
+   * old serial pump (one at a time, full context). During a backlog — a rapid
+   * ramble where Deepgram releases several sentences at once — the overlap
+   * drains the queue in ~max(translation time) instead of the sum, which is
+   * what shortens the long between-burst pauses. Downstream emission is
+   * re-ordered by seq in the broadcaster, so playback order never changes.
+   */
+  private pump(): void {
+    while (this.pending.length > 0 && this.inFlight < KoreanChunker.MAX_PARALLEL) {
+      const { text, seq } = this.pending.shift()!;
+      this.inFlight++;
+      console.log(`[Chunker] Dispatching seq ${seq}: ${text.length} chars (${this.inFlight} in flight)`);
+      this.onChunk(text, seq)
+        .catch((err) => console.error('[Chunker] onChunk error:', err))
+        .finally(() => {
+          this.inFlight--;
+          this.pump();
+        });
     }
   }
 
