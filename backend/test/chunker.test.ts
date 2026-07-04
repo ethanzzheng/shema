@@ -188,6 +188,80 @@ test('seq in spoken order; up to 2 translations overlap; 3rd waits for a slot', 
   }
 });
 
+test('interim results re-arm the timer: no force-ship while speech is flowing', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    await chunker.feed('십자가는', true); // incomplete tail, 5s clock starts
+
+    // Deepgram keeps the continuation as interims for a while — the speaker is
+    // audibly mid-sentence, so the fragment must NOT ship at the 5s mark.
+    mock.timers.tick(4000);
+    await chunker.feed('하나님이 지극히', false); // interim: speech ongoing
+    mock.timers.tick(4000); // 8s total, but only 4s since last speech evidence
+    await flush();
+    assert.equal(dispatched.length, 0, 'interim must re-arm the incomplete timer');
+
+    // True silence after the interim → fragment ships 5s later as a last resort.
+    mock.timers.tick(1000);
+    await flush();
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].text, '십자가는', 'interim text itself is never buffered');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('duplicated STT final: re-sent overlap is trimmed, not translated twice', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    // Deepgram emits a clause as a final, then re-sends it at the head of the
+    // next final (observed live: the clause got doubled and translated twice).
+    await chunker.feed('하나님과 이웃을 향한 사랑이 있는지', true);
+    await chunker.feed('하나님과 이웃을 향한 사랑이 있는지 우리는 확인해야 합니다.', true);
+    await flush();
+
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].text, '하나님과 이웃을 향한 사랑이 있는지 우리는 확인해야 합니다.');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('a final that is a pure duplicate of the buffer is ignored', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    await chunker.feed('우리의 삶 속에 성령의 열매가', true);
+    await chunker.feed('우리의 삶 속에 성령의 열매가', true); // exact re-send
+    await chunker.feed('있는지 확인해야 합니다.', true);
+    await flush();
+
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].text, '우리의 삶 속에 성령의 열매가 있는지 확인해야 합니다.');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('short coincidental overlaps are NOT trimmed', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('smooth');
+    // "은혜" legitimately ends one clause and begins the next — 2 chars is far
+    // below MIN_STT_OVERLAP_CHARS, so nothing may be trimmed.
+    await chunker.feed('우리가 받은 것은 은혜', true);
+    await chunker.feed('은혜 위에 은혜입니다.', true);
+    await flush();
+
+    assert.equal(dispatched.length, 1);
+    assert.equal(dispatched[0].text, '우리가 받은 것은 은혜 은혜 위에 은혜입니다.');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test('new speech resets the incomplete timer (no premature fragment)', async () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   try {

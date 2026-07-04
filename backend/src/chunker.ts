@@ -23,6 +23,11 @@ import { looksComplete, splitSentences } from './text';
 // Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
 const MIN_DISPATCH_CHARS = 10;
 
+// STT sometimes re-emits the tail of the previous final at the start of the
+// next one; only trim when the overlap is long enough to be a real re-send,
+// not a coincidental syllable match.
+const MIN_STT_OVERLAP_CHARS = 6;
+
 export type ChunkCallback = (text: string, seq: number) => Promise<void>;
 
 interface ModeConfig {
@@ -80,9 +85,26 @@ export class KoreanChunker {
   }
 
   async feed(text: string, isFinal: boolean): Promise<void> {
-    if (!isFinal || !text.trim()) return;
+    if (!text.trim()) return;
 
-    this.buffer += (this.buffer ? ' ' : '') + text.trim();
+    if (!isFinal) {
+      // An interim result means the speaker is mid-word RIGHT NOW. Re-arm any
+      // pending timer so the incomplete-fragment timeout measures TRUE silence,
+      // not Deepgram's finalization lag — force-shipping while speech was still
+      // flowing is what cut sentences into shards even though the pastor never
+      // actually paused that long.
+      if (this.timer && this.buffer) this.armTimer();
+      return;
+    }
+
+    // Deepgram occasionally re-emits the previous final's text at the start of
+    // the next one. Appending blindly doubles the clause ("...사랑이 있는지
+    // 사랑이 있는지 우리는...") and the doubled Korean gets faithfully — and
+    // nonsensically — translated. Trim the re-sent overlap before appending.
+    const fresh = this.stripOverlap(text.trim());
+    if (!fresh) return; // pure duplicate of what we already have
+
+    this.buffer += (this.buffer ? ' ' : '') + fresh;
     this.cancelTimer();
 
     // Extract fully-punctuated sentences NOW. During a rapid ramble the buffer
@@ -113,12 +135,11 @@ export class KoreanChunker {
 
     // The remaining tail has no terminal punctuation. If Korean grammar says
     // it's a complete sentence (final ending), dispatch after a short beat;
-    // otherwise wait for it to complete — new speech resets this timer, so we
-    // ride straight through mid-sentence dramatic pauses and only cut at real
-    // sentence ends. A fragment ships only after incompleteMaxMs of quiet.
-    const delay = looksComplete(this.buffer) ? this.cfg.completeMs : this.cfg.incompleteMaxMs;
-
-    this.timer = setTimeout(() => this.dispatchBuffer(), delay);
+    // otherwise wait for it to complete — new speech (finals AND interims)
+    // resets this timer, so we ride straight through mid-sentence dramatic
+    // pauses and only cut at real sentence ends. A fragment ships only after
+    // incompleteMaxMs of true quiet.
+    this.armTimer();
   }
 
   /** Flush + dispatch everything, then wait for in-flight translations to finish. */
@@ -137,6 +158,30 @@ export class KoreanChunker {
   }
 
   // ── internals ──────────────────────────────────────────────────────────────
+
+  /**
+   * Trim the longest STT re-send overlap: the longest prefix of `incoming`
+   * that is already the suffix of the buffer. Returns the genuinely new text
+   * ('' if the whole final is a duplicate). Overlaps shorter than
+   * MIN_STT_OVERLAP_CHARS are kept — too short to distinguish a re-send from
+   * a legitimately repeated syllable.
+   */
+  private stripOverlap(incoming: string): string {
+    const max = Math.min(this.buffer.length, incoming.length);
+    for (let k = max; k >= MIN_STT_OVERLAP_CHARS; k--) {
+      if (this.buffer.endsWith(incoming.slice(0, k))) {
+        return incoming.slice(k).trim();
+      }
+    }
+    return incoming;
+  }
+
+  /** (Re)start the pending-buffer timer based on how complete the tail looks. */
+  private armTimer(): void {
+    this.cancelTimer();
+    const delay = looksComplete(this.buffer) ? this.cfg.completeMs : this.cfg.incompleteMaxMs;
+    this.timer = setTimeout(() => this.dispatchBuffer(), delay);
+  }
 
   /** Queue one chunk for translation, assigning its spoken-order seq now. */
   private dispatchText(text: string): void {

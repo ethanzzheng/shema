@@ -135,7 +135,10 @@ export class ClaudeTranslator {
         const response = await this.client.messages.create({
           model: this.model,
           max_tokens: 512,
-          system: SYSTEM_PROMPT,
+          // Cache the (large, static) system prompt: every sentence of the
+          // sermon reuses it, so cache hits cut time-to-first-token — this is
+          // per-sentence latency the listener hears as part of each gap.
+          system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
           messages: [
             {
               role: 'user',

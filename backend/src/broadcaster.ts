@@ -25,6 +25,7 @@ import { ElevenLabsTTS } from './tts';
 import { broadcastToListeners } from './listener';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 import { OrderedEmitter } from './ordered-emitter';
+import { TtsPipeline } from './tts-pipeline';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
 const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
@@ -151,63 +152,59 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     });
   }
 
-  // ── Serial streaming-TTS worker ──────────────────────────────────────────
-  // Translations arrive in spoken order; we synthesise them one at a time and
-  // stream each clip's MP3 chunks to listeners as they arrive from ElevenLabs.
-  // Serialising here guarantees the forwarded audio stream stays in order,
-  // which is what the listener's MediaSource playback needs.
+  // ── Pipelined streaming-TTS worker ────────────────────────────────────────
+  // Translations arrive in spoken order. Up to `prefetch` clips synthesise
+  // concurrently (so the next clip's first-byte wait overlaps the current
+  // clip's stream — the source of the silent gaps between sentences), but the
+  // TtsPipeline forwards audio strictly in enqueue order, which is what the
+  // listener's MediaSource playback needs. prefetch stays at 2 to fit
+  // ElevenLabs' lowest concurrency limit.
   interface TtsJob { seq: number; text: string; chunkSize: number; translationLatencyMs: number; chunkStart: number; }
-  const ttsQueue: TtsJob[] = [];
-  let ttsRunning = false;
+
+  // Gap attribution: when the pipeline drains, the listener is about to run out
+  // of audio; whatever time passes until the next clip arrives is upstream
+  // latency (chunker hold + translation), heard as silence. Log it so live
+  // tests show exactly which stage each pause comes from.
+  let audioStarvedSince = Date.now();
+
+  const ttsPipeline = new TtsPipeline<TtsJob>({
+    prefetch: 2,
+    synth: (text, onChunk) => tts.synthesiseStream(text, onChunk),
+    onStart: (job) => broadcastToListeners({ type: 'audio_start', seq: job.seq }),
+    onChunk: (job, chunk) =>
+      broadcastToListeners({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
+    onEnd: (job, stats) => {
+      session.metrics.ttsLatencyMs = stats.ttsLatencyMs;
+      session.metrics.e2eLatencyMs = Date.now() - job.chunkStart;
+      broadcastToListeners({ type: 'audio_end', seq: job.seq });
+      send(ws, {
+        type: 'debug',
+        chunkSize: job.chunkSize,
+        translationLatencyMs: job.translationLatencyMs,
+        ttsLatencyMs: stats.ttsLatencyMs,
+        e2eLatencyMs: session.metrics.e2eLatencyMs,
+        sttConnected: session.metrics.sttConnected,
+      });
+      console.log(`[Pipeline] TTS streamed seq ${job.seq} (first byte ${stats.firstByteMs}ms, total ${stats.ttsLatencyMs}ms, ${session.metrics.e2eLatencyMs}ms e2e)`);
+      if (ttsPipeline.depth === 0) audioStarvedSince = Date.now();
+    },
+    onError: (job, err) => {
+      console.error(`[Pipeline] TTS stream failed (seq ${job.seq}):`, err);
+      send(ws, { type: 'error', message: 'TTS generation failed' });
+    },
+  });
 
   function enqueueTTS(seq: number, text: string, chunkSize: number, translationLatencyMs: number, chunkStart: number): void {
-    ttsQueue.push({ seq, text, chunkSize, translationLatencyMs, chunkStart });
-    void pumpTTS();
-  }
-
-  async function pumpTTS(): Promise<void> {
-    if (ttsRunning) return;
-    ttsRunning = true;
-    try {
-      while (ttsQueue.length > 0) {
-        const job = ttsQueue.shift()!;
-        await streamTTS(job);
+    if (ttsPipeline.depth === 0 && audioStarvedSince) {
+      const starvedMs = Date.now() - audioStarvedSince;
+      if (starvedMs > 500) {
+        console.log(
+          `[Gap] audio starved ~${starvedMs}ms before seq ${seq} ` +
+            `(translation ${translationLatencyMs}ms; rest = chunker hold / speaker pause)`,
+        );
       }
-    } finally {
-      ttsRunning = false;
     }
-  }
-
-  async function streamTTS(job: TtsJob): Promise<void> {
-    const { seq, text, chunkSize, translationLatencyMs, chunkStart } = job;
-    const ttsStart = Date.now();
-    let firstChunkAt = 0;
-
-    broadcastToListeners({ type: 'audio_start', seq });
-    try {
-      await tts.synthesiseStream(text, (chunk) => {
-        if (!firstChunkAt) firstChunkAt = Date.now();
-        broadcastToListeners({ type: 'audio_chunk', seq, data: chunk.toString('base64') });
-      });
-    } catch (err) {
-      console.error('[Pipeline] TTS stream failed:', err);
-      send(ws, { type: 'error', message: 'TTS generation failed' });
-    }
-    broadcastToListeners({ type: 'audio_end', seq });
-
-    const ttsLatencyMs = Date.now() - ttsStart;
-    session.metrics.ttsLatencyMs = ttsLatencyMs;
-    session.metrics.e2eLatencyMs = Date.now() - chunkStart;
-    send(ws, {
-      type: 'debug',
-      chunkSize,
-      translationLatencyMs,
-      ttsLatencyMs,
-      e2eLatencyMs: session.metrics.e2eLatencyMs,
-      sttConnected: session.metrics.sttConnected,
-    });
-    const ttfb = firstChunkAt ? firstChunkAt - ttsStart : -1;
-    console.log(`[Pipeline] TTS streamed seq ${seq} (first byte ${ttfb}ms, total ${ttsLatencyMs}ms, ${session.metrics.e2eLatencyMs}ms e2e)`);
+    ttsPipeline.enqueue({ seq, text, chunkSize, translationLatencyMs, chunkStart });
   }
 
   // ── Start broadcast session ────────────────────────────────────────────────
@@ -257,9 +254,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
   function stopSession(): void {
     session.isActive = false;
-    chunker?.forceFlush().catch(() => {});
-    chunker?.destroy();
+    const c = chunker;
     chunker = null;
+    if (c) {
+      // Drain queued + in-flight translations before teardown. Destroying
+      // immediately used to clear the pending queue and silently drop the
+      // final chunk(s) whenever two translations were still in flight.
+      c.forceFlush()
+        .catch(() => {})
+        .finally(() => c.destroy());
+    }
     stt?.disconnect();
     stt = null;
 
