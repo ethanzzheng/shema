@@ -17,7 +17,7 @@
 {"id":"glossary-01","korean":"이 십 일 년은 목장에서 섬기고 그중에 십육 년을 목자로 섬기면서 참 느낀 게 많아요.","mustContainAny":["Mokjang"],"notes":"목장 must render as Mokjang"}
 {"id":"glossary-02","korean":"목자로 섬기면서 목녀들과 함께 목장 식구들을 돌봤습니다.","mustContainAny":["shepherd"],"notes":"목자 = shepherd"}
 {"id":"glossary-03","korean":"금요일 저녁에 세상의 즐거움을 뒤로하고 목장 예배에 참석하는 것.","forbidden":["cell group","small group","house church"],"notes":"never cell/small group"}
-{"id":"number-01","korean":"제가 이 교회를 섬긴 지가 벌써 이 십 팔 년이 됐더라고요.","mustContainAny":["28","twenty-eight"],"notes":"sino-korean number"}
+{"id":"number-01","korean":"제가 이 교회를 섬긴 지가 벌써 이 십 팔 년이 됐더라고요.","mustContainAny":["28","twenty-eight","twenty eight"],"notes":"sino-korean number"}
 {"id":"church-01","korean":"주님은 겸손하신 분이기 때문에 겸손한 사람들을 찾는 거예요.","notes":"typical line"}
 {"id":"church-02","korean":"발을 씻기는 것은 종이 하는 일인데 만왕이 왕되신 주께서 제자들의 발을 씻기셨다 그 말입니다.","notes":"garbled 만왕이 왕되신 = King of kings"}
 {"id":"church-03","korean":"성령은 바람과 같아서 눈에 보이지 않고 우리가 성령을 틀에 가둘 수도 없어요.","notes":"metaphor"}
@@ -29,3 +29,6 @@
 {"id":"redundant-marker-01","korean":"예를 들어서 이제 이제 예를 몇 개 드리겠는데 이거는 큐티에 나오는 간증이에요","forbiddenRegex":["example[\\s\\S]{0,40}example"],"mustContainAny":["example"],"notes":"doubled 예를 들어 marker must collapse to ONE example-phrase (observed live: 'For example, let me give you a few examples.')"}
 {"id":"redundant-marker-02","korean":"그러니까 이제 그러니까 우리가 이런 결정을 내려야 될 때 기도해야 됩니다","forbiddenRegex":["^so,?\\s+so\\b"],"mustContainAny":["pray"],"notes":"doubled 그러니까 must not become 'So, so...'"}
 {"id":"rhetorical-repeat-01","korean":"하나님과 이웃을 향한 사랑이 있는지 하나님과 이웃을 향한 사랑이 있는지 우리는 확인해야 합니다","mustMatchRegex":["love[\\s\\S]+love"],"notes":"deliberate full-clause repetition for emphasis must be PRESERVED, not collapsed"}
+{"id":"pov-01","korean":"내가 그 교회를 가서 그 목사님 친구를 섬기는 게 맞는 건지 아니면은 한마음교회에 남는 게 맞는 건지","context":[{"korean":"전에 우리 교회를 섬기셨던 조정환 목자님이란 분이 계셨는데 그분의 보스턴 친구가 있어요","english":"There was a shepherd, Shepherd Jo Jeong-hwan, who used to serve at our church, and he has a friend in Boston."},{"korean":"근데 그 목사님 친구의 교회가 어려워져서 정환이가 고민을 하는 거예요","english":"But his pastor friend's church was going through a hard time, so Jeong-hwan was wrestling with it."}],"mustMatchRegex":["\\b(he|him|his|jeong-hwan)\\b"],"notes":"unmarked inner monologue mid-story must be framed or pronoun-normalized, not floating bare first person"}
+{"id":"pov-02","korean":"반면에 저는 이제 제 얘기를 드릴게요 저는 그때 기도 부탁을 안 했어요","mustMatchRegex":["\\b(i|my)\\b"],"forbiddenRegex":["\\bhe (said|thought)"],"notes":"the pastor's OWN first-person testimony must stay first person — POV rule must not touch it"}
+{"id":"referent-01","korean":"이때 조정환 목사님은 혼자 결정 안 하고 교회에 기도 부탁을 했어요","context":[{"korean":"전에 우리 교회를 섬기셨던 조정환 목자님이란 분이 계셨는데 그분의 보스턴 친구가 있어요","english":"There was a shepherd, Shepherd Jo Jeong-hwan, who used to serve at our church, and he has a friend in Boston."},{"korean":"그 목사님 친구의 교회가 어려워져서 정환이가 고민을 하는 거예요","english":"But his pastor friend's church was going through a hard time, so Jeong-hwan was wrestling with it."}],"forbiddenRegex":["pastor jo"],"notes":"STT swapped 목자→목사 for Jo mid-story; established role (shepherd) must win"}
