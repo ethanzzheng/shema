@@ -1,0 +1,14 @@
+'use client';
+
+// Registers the app-shell service worker (production only — a SW in dev
+// masks hot reloads and confuses debugging).
+import { useEffect } from 'react';
+
+export default function RegisterSW() {
+  useEffect(() => {
+    if (process.env.NODE_ENV !== 'production') return;
+    if (!('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  }, []);
+  return null;
+}

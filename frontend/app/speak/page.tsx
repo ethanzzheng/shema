@@ -324,7 +324,7 @@ export default function SpeakPage() {
           <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>
             ←
           </Link>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800 }}>Broadcaster</h1>
+          <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Broadcaster</h1>
         </div>
 
         <div className="pill" style={{ background: 'var(--surface2)', color: stateColor }}>
@@ -351,22 +351,14 @@ export default function SpeakPage() {
         <div>
           <div className="label" style={{ marginBottom: '0.3rem' }}>Church</div>
           <input
+            className="field"
             value={churchDraft}
             onChange={(e) => setChurchDraft(e.target.value)}
             onBlur={commitChurch}
             onKeyDown={(e) => { if (e.key === 'Enter') commitChurch(); }}
             disabled={broadcasting}
             placeholder="e.g. grace-church"
-            style={{
-              background: 'var(--surface2)',
-              border: '1px solid var(--surface2)',
-              borderRadius: 8,
-              padding: '0.5rem 0.75rem',
-              color: 'var(--text)',
-              fontSize: '0.9rem',
-              width: 170,
-              opacity: broadcasting ? 0.6 : 1,
-            }}
+            style={{ width: 170 }}
           />
         </div>
 
@@ -374,20 +366,12 @@ export default function SpeakPage() {
         <div>
           <div className="label" style={{ marginBottom: '0.3rem' }}>Input</div>
           <select
+            className="field"
             value={deviceId}
             onChange={(e) => selectDevice(e.target.value)}
             disabled={broadcasting}
             title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
-            style={{
-              background: 'var(--surface2)',
-              border: '1px solid var(--surface2)',
-              borderRadius: 8,
-              padding: '0.5rem 0.75rem',
-              color: 'var(--text)',
-              fontSize: '0.9rem',
-              maxWidth: 230,
-              opacity: broadcasting ? 0.6 : 1,
-            }}
+            style={{ maxWidth: 230 }}
           >
             <option value="">System default</option>
             {devices
@@ -481,7 +465,8 @@ export default function SpeakPage() {
             gap: '1.25rem',
             flexWrap: 'wrap',
             flexShrink: 0,
-            borderColor: 'rgba(99,102,241,.4)',
+            borderColor: 'rgba(201,169,97,.45)',
+            background: 'rgba(201,169,97,.05)',
           }}
         >
           {qrDataUrl && (
@@ -491,7 +476,7 @@ export default function SpeakPage() {
               alt={`QR code for ${listenUrl}`}
               width={120}
               height={120}
-              style={{ borderRadius: 8, background: '#fff', padding: 4 }}
+              style={{ borderRadius: 2, background: '#fff', padding: 4 }}
             />
           )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 220, flex: 1 }}>
@@ -510,13 +495,13 @@ export default function SpeakPage() {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="card"
+        className="card prose-serif"
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
           padding: '1.5rem',
-          lineHeight: 1.8,
+          lineHeight: 1.85,
         }}
       >
         {script.length > 0 || liveKorean ? (

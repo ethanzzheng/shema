@@ -4,21 +4,27 @@
   padding: 0;
 }
 
+/*
+ * Design tokens — mirrors the marketing site (public/marketing.html):
+ * ink navy ground, warm cream type, gold accents, sage for "live/ok",
+ * hairline cream borders, sharp editorial radii, serif display type.
+ */
 :root {
-  --bg: #0f1117;
-  --surface: #1a1d27;
-  --surface2: #242736;
-  --border: #2e3248;
-  --text: #e8eaf0;
-  --text-muted: #6b7280;
-  --accent: #6366f1;
-  --accent-hover: #818cf8;
-  --green: #22c55e;
-  --red: #ef4444;
-  --yellow: #eab308;
+  --bg: #0A0E1A;
+  --surface: rgba(245, 241, 232, 0.025);
+  --surface2: rgba(245, 241, 232, 0.07);
+  --border: rgba(245, 241, 232, 0.12);
+  --text: #F5F1E8;
+  --text-muted: rgba(245, 241, 232, 0.55);
+  --accent: #C9A961;
+  --accent-hover: #D8BC7E;
+  --green: #8FB09B;
+  --red: #ff8a80;
+  --yellow: #D8BC7E;
   --orange: #f97316;
-  --radius: 10px;
-  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --radius: 6px;
+  --radius-sm: 2px;
+  --font: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
 }
 
 body {
@@ -27,6 +33,12 @@ body {
   font-family: var(--font);
   line-height: 1.6;
   min-height: 100vh;
+}
+
+h1, h2, h3 {
+  font-family: var(--font-display, serif);
+  font-weight: 600;
+  letter-spacing: 0.005em;
 }
 
 a {
@@ -45,6 +57,10 @@ button {
   outline: none;
 }
 
+input, select {
+  font-family: var(--font);
+}
+
 /* ── Utility classes ──────────────────────────────────────────────────────── */
 
 .card {
@@ -55,9 +71,10 @@ button {
 }
 
 .label {
-  font-size: 0.7rem;
-  font-weight: 700;
-  letter-spacing: 0.1em;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.62rem;
+  font-weight: 500;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   color: var(--text-muted);
   margin-bottom: 0.4rem;
@@ -66,23 +83,28 @@ button {
 .pill {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-  padding: 0.2rem 0.65rem;
-  border-radius: 999px;
-  font-size: 0.75rem;
-  font-weight: 600;
+  gap: 0.4rem;
+  padding: 0.25rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.pill-green { background: rgba(34,197,94,.15); color: var(--green); }
-.pill-red   { background: rgba(239,68,68,.15);  color: var(--red); }
-.pill-yellow{ background: rgba(234,179,8,.15);  color: var(--yellow); }
+.pill-green { background: rgba(143,176,155,.12); border-color: rgba(143,176,155,.4); color: var(--green); }
+.pill-red   { background: rgba(255,138,128,.10); border-color: rgba(255,138,128,.4); color: var(--red); }
+.pill-yellow{ background: rgba(201,169,97,.10);  border-color: rgba(201,169,97,.4);  color: var(--yellow); }
 .pill-muted { background: var(--surface2); color: var(--text-muted); }
 
 .dot {
-  width: 7px;
-  height: 7px;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
+  flex-shrink: 0;
 }
 
 .dot-pulse {
@@ -101,67 +123,97 @@ button {
   align-items: center;
   justify-content: center;
   gap: 0.5rem;
-  padding: 0.65rem 1.4rem;
-  border-radius: var(--radius);
-  font-size: 0.95rem;
+  padding: 0.7rem 1.5rem;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
   font-weight: 600;
-  transition: background 0.15s, transform 0.1s;
+  letter-spacing: 0.01em;
+  transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.1s;
   user-select: none;
 }
 
-.btn:active { transform: scale(0.97); }
+.btn:active { transform: scale(0.98); }
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
+  color: #0A0E1A;
 }
-.btn-primary:hover { background: var(--accent-hover); }
+.btn-primary:hover { background: var(--accent-hover); color: #0A0E1A; }
 
 .btn-danger {
-  background: rgba(239,68,68,.15);
+  background: rgba(255,138,128,.10);
   color: var(--red);
-  border: 1px solid rgba(239,68,68,.3);
+  border: 1px solid rgba(255,138,128,.4);
 }
-.btn-danger:hover { background: rgba(239,68,68,.25); }
+.btn-danger:hover { background: rgba(255,138,128,.2); }
 
 .btn-ghost {
-  background: var(--surface2);
+  background: transparent;
   color: var(--text);
   border: 1px solid var(--border);
 }
-.btn-ghost:hover { background: var(--border); }
+.btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: rgba(245,241,232,0.25); }
 
 .btn-lg {
   padding: 1rem 2rem;
   font-size: 1.05rem;
-  border-radius: 12px;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Toggle ──────────────────────────────────────────────────────────────── */
 
 .toggle-group {
   display: flex;
-  background: var(--surface2);
+  background: transparent;
   border: 1px solid var(--border);
-  border-radius: var(--radius);
-  padding: 3px;
-  gap: 3px;
+  border-radius: var(--radius-sm);
+  padding: 2px;
+  gap: 2px;
 }
 
 .toggle-opt {
   flex: 1;
-  padding: 0.35rem 0.8rem;
-  border-radius: 7px;
-  font-size: 0.8rem;
-  font-weight: 600;
+  padding: 0.4rem 0.85rem;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.68rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   color: var(--text-muted);
   background: transparent;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.2s, color 0.2s;
+  white-space: nowrap;
 }
 
 .toggle-opt.active {
   background: var(--accent);
-  color: #fff;
+  color: #0A0E1A;
+}
+
+/* ── Form fields ─────────────────────────────────────────────────────────── */
+
+.field {
+  background: rgba(245, 241, 232, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.55rem 0.8rem;
+  color: var(--text);
+  font-size: 0.92rem;
+  transition: border-color 0.25s;
+}
+
+.field:focus {
+  outline: none;
+  border-color: rgba(201, 169, 97, 0.6);
+}
+
+.field:disabled { opacity: 0.55; }
+
+/* ── Reading text (transcripts / captions) ───────────────────────────────── */
+
+.prose-serif {
+  font-family: var(--font-serif, Georgia, serif);
 }
 
 /* ── Scrollable text panels ───────────────────────────────────────────────── */
@@ -177,6 +229,7 @@ button {
 
 .panel-text.korean {
   font-size: 1.05rem;
+  font-family: var(--font-serif, serif);
 }
 
 /* ── Debug table ─────────────────────────────────────────────────────────── */
@@ -189,7 +242,7 @@ button {
 
 .debug-item {
   background: var(--surface2);
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   padding: 0.5rem 0.7rem;
 }
 
@@ -200,8 +253,9 @@ button {
 }
 
 .debug-key {
-  font-size: 0.68rem;
+  font-family: var(--font-mono, monospace);
+  font-size: 0.62rem;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.15em;
 }

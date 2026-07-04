@@ -13,6 +13,7 @@ type TtsMode = 'elevenlabs' | 'browser' | 'off';
 interface TranscriptEntry {
   seq: number;
   sermon: string;
+  direct: string;
 }
 
 // ── Browser TTS helper ─────────────────────────────────────────────────────
@@ -62,6 +63,9 @@ export default function ListenerView({ church }: { church: string }) {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
   const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
+  // Captions default to the polished sermon rendering; "direct" is the more
+  // literal pass for anyone who wants to track the Korean phrasing closely.
+  const [captionMode, setCaptionMode] = useState<'sermon' | 'direct'>('sermon');
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -170,7 +174,7 @@ export default function ListenerView({ church }: { church: string }) {
           setTranscript((prev) => {
             // Skip if we already have this seq
             if (prev.some((e) => e.seq === t.seq)) return prev;
-            return [...prev, { seq: t.seq, sermon: t.sermon }];
+            return [...prev, { seq: t.seq, sermon: t.sermon, direct: t.direct ?? t.sermon }];
           });
 
           // Browser TTS
@@ -262,7 +266,7 @@ export default function ListenerView({ church }: { church: string }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
           <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>←</Link>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 800 }}>Listener</h1>
+          <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Listener</h1>
           <span className="pill" style={{ background: 'var(--surface2)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
             {church}
           </span>
@@ -273,15 +277,19 @@ export default function ListenerView({ church }: { church: string }) {
         </div>
       </div>
 
-      {/* Audio init */}
+      {/* Audio init — one tap unlocks autoplay for the whole service */}
       {!audioStarted && (
-        <div className="card" style={{ textAlign: 'center', padding: '2rem', borderColor: 'rgba(99,102,241,.4)', background: 'rgba(99,102,241,.06)', flexShrink: 0 }}>
-          <p style={{ marginBottom: '1rem', color: 'var(--text-muted)' }}>
-            Tap to enable audio (required by browser autoplay policy)
-          </p>
-          <button className="btn btn-primary btn-lg" onClick={initAudio}>
-            Enable Audio
+        <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem', borderColor: 'rgba(201,169,97,.45)', background: 'rgba(201,169,97,.05)', flexShrink: 0 }}>
+          <button
+            className="btn btn-primary"
+            onClick={initAudio}
+            style={{ width: '100%', maxWidth: 380, padding: '1.1rem 1.5rem', fontSize: '1.2rem', fontWeight: 600 }}
+          >
+            🔊 Tap to listen
           </button>
+          <p style={{ marginTop: '0.9rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+            One tap starts the English audio — your browser blocks sound until you do.
+          </p>
         </div>
       )}
 
@@ -315,6 +323,27 @@ export default function ListenerView({ church }: { church: string }) {
             </div>
           </div>
 
+          {/* Caption source */}
+          <div>
+            <div className="label" style={{ marginBottom: '0.3rem' }}>Captions</div>
+            <div className="toggle-group">
+              <button
+                className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
+                onClick={() => setCaptionMode('sermon')}
+                title="Natural spoken-English rendering (matches the audio)"
+              >
+                Sermon
+              </button>
+              <button
+                className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
+                onClick={() => setCaptionMode('direct')}
+                title="More literal translation of the Korean"
+              >
+                Direct
+              </button>
+            </div>
+          </div>
+
           {/* Status pill */}
           {ttsMode === 'browser' && (
             <div className="pill pill-green" style={{ alignSelf: 'flex-end' }}>
@@ -334,12 +363,12 @@ export default function ListenerView({ church }: { church: string }) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="card"
+        className="card prose-serif"
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          fontSize: '1.15rem',
+          fontSize: '1.18rem',
           lineHeight: 1.9,
           padding: '1.5rem',
         }}
@@ -348,7 +377,7 @@ export default function ListenerView({ church }: { church: string }) {
           <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
             {transcript.map((entry, i) => (
               <span key={entry.seq}>
-                {entry.sermon}
+                {captionMode === 'direct' ? entry.direct : entry.sermon}
                 {i < transcript.length - 1 ? ' ' : ''}
               </span>
             ))}

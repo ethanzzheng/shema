@@ -36,7 +36,7 @@ export default function ListenEntryPage() {
     <div style={{ maxWidth: 460, margin: '0 auto', padding: '4rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
         <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>←</Link>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 800 }}>Join your church</h1>
+        <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Join your church</h1>
       </div>
 
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', padding: '1.5rem' }}>
@@ -44,20 +44,13 @@ export default function ListenEntryPage() {
           Enter the church code from your bulletin or QR sign.
         </p>
         <input
-          className="input"
+          className="field"
           autoFocus
           placeholder="e.g. grace-church"
           value={code}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) join(); }}
-          style={{
-            background: 'var(--surface2)',
-            border: '1px solid var(--surface2)',
-            borderRadius: 8,
-            padding: '0.7rem 0.9rem',
-            color: 'var(--text)',
-            fontSize: '1rem',
-          }}
+          style={{ padding: '0.7rem 0.9rem', fontSize: '1rem' }}
         />
         <button className="btn btn-primary btn-lg" onClick={join} disabled={!code.trim()} style={{ opacity: code.trim() ? 1 : 0.5 }}>
           Listen
