@@ -9,6 +9,7 @@ import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
+const DEVICE_STORAGE_KEY = 'shema-input-device';
 
 type Mode = 'fast' | 'smooth';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
@@ -52,6 +53,13 @@ export default function SpeakPage() {
   const [copied, setCopied] = useState(false);
   const [listenUrl, setListenUrl] = useState('');
 
+  // Input device picker: '' = system default. Labels only populate once the
+  // origin has mic permission; until then we offer a one-click unlock.
+  const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
+  const [deviceId, setDeviceId] = useState('');
+  const [needsPermission, setNeedsPermission] = useState(false);
+  const [liveDeviceLabel, setLiveDeviceLabel] = useState('');
+
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -73,6 +81,50 @@ export default function SpeakPage() {
     setChurchDraft(slug);
     if (slug !== church) setChurch(slug); // triggers a reconnect to the new room
     try { window.localStorage.setItem(CHURCH_STORAGE_KEY, slug); } catch {}
+  };
+
+  // ── Input devices: enumerate, persist choice, react to (un)plugs ────────
+  const refreshDevices = useCallback(async () => {
+    if (!navigator.mediaDevices?.enumerateDevices) return;
+    try {
+      const list = (await navigator.mediaDevices.enumerateDevices()).filter(
+        (d) => d.kind === 'audioinput',
+      );
+      setDevices(list);
+      const hasLabels = list.some((d) => d.label);
+      setNeedsPermission(list.length > 0 && !hasLabels);
+      // Drop a saved selection whose device is gone — but only once labels are
+      // populated (before permission, enumerateDevices hides real deviceIds).
+      if (hasLabels) {
+        setDeviceId((prev) => (prev && !list.some((d) => d.deviceId === prev) ? '' : prev));
+      }
+    } catch {
+      /* enumeration is best-effort */
+    }
+  }, []);
+
+  useEffect(() => {
+    setDeviceId(window.localStorage.getItem(DEVICE_STORAGE_KEY) ?? '');
+    refreshDevices();
+    const onChange = () => refreshDevices();
+    navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
+    return () => navigator.mediaDevices?.removeEventListener?.('devicechange', onChange);
+  }, [refreshDevices]);
+
+  const selectDevice = (id: string) => {
+    setDeviceId(id);
+    try { window.localStorage.setItem(DEVICE_STORAGE_KEY, id); } catch {}
+  };
+
+  // One-off permission grab so device labels populate in the dropdown.
+  const unlockDeviceLabels = async () => {
+    try {
+      const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+      s.getTracks().forEach((t) => t.stop());
+      await refreshDevices();
+    } catch (err) {
+      setErrors((prev) => [...prev.slice(-4), `Mic permission error: ${(err as Error).message}`]);
+    }
   };
 
   // Auto-scroll
@@ -180,13 +232,24 @@ export default function SpeakPage() {
     try {
       const capture = new AudioCapture({
         chunkIntervalMs: 200,
+        deviceId: deviceId || undefined,
         onChunk: (pcm) => {
           wsRef.current?.sendBinary(pcm);
+        },
+        onDeviceEnded: () => {
+          setErrors((prev) => [
+            ...prev.slice(-4),
+            'Input device disconnected — pick a device and start again.',
+          ]);
+          stopBroadcast();
+          refreshDevices();
         },
       });
 
       await capture.start();
       captureRef.current = capture;
+      setLiveDeviceLabel(capture.trackLabel);
+      refreshDevices(); // permission just granted → labels populate
 
       wsRef.current.sendJSON({ type: 'start', mode });
       setBroadcasting(true);
@@ -195,10 +258,18 @@ export default function SpeakPage() {
       setLiveKorean('');
       setErrors([]);
     } catch (err) {
-      setErrors((prev) => [
-        ...prev.slice(-4),
-        `Mic error: ${(err as Error).message}`,
-      ]);
+      const e = err as Error;
+      if (e.name === 'OverconstrainedError' || e.name === 'NotFoundError') {
+        // Saved device no longer exists — fall back to default and re-list.
+        selectDevice('');
+        refreshDevices();
+        setErrors((prev) => [
+          ...prev.slice(-4),
+          'Selected input device is unavailable — switched to System default. Start again.',
+        ]);
+      } else {
+        setErrors((prev) => [...prev.slice(-4), `Mic error: ${e.message}`]);
+      }
     }
   };
 
@@ -211,6 +282,7 @@ export default function SpeakPage() {
     stopCapture();
     wsRef.current?.sendJSON({ type: 'stop' });
     setBroadcasting(false);
+    setLiveDeviceLabel('');
   };
 
   const handleModeChange = (m: Mode) => {
@@ -298,6 +370,46 @@ export default function SpeakPage() {
           />
         </div>
 
+        {/* Input device */}
+        <div>
+          <div className="label" style={{ marginBottom: '0.3rem' }}>Input</div>
+          <select
+            value={deviceId}
+            onChange={(e) => selectDevice(e.target.value)}
+            disabled={broadcasting}
+            title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
+            style={{
+              background: 'var(--surface2)',
+              border: '1px solid var(--surface2)',
+              borderRadius: 8,
+              padding: '0.5rem 0.75rem',
+              color: 'var(--text)',
+              fontSize: '0.9rem',
+              maxWidth: 230,
+              opacity: broadcasting ? 0.6 : 1,
+            }}
+          >
+            <option value="">System default</option>
+            {devices
+              .filter((d) => d.deviceId && d.deviceId !== 'default')
+              .map((d, i) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Microphone ${i + 1}`}
+                </option>
+              ))}
+          </select>
+          {needsPermission && !broadcasting && (
+            <button
+              className="btn btn-ghost"
+              onClick={unlockDeviceLabels}
+              style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', marginLeft: 6 }}
+              title="Grant mic access once so device names show up"
+            >
+              List devices
+            </button>
+          )}
+        </div>
+
         {!broadcasting ? (
           <button
             className="btn btn-primary"
@@ -311,6 +423,17 @@ export default function SpeakPage() {
           <button className="btn btn-danger" onClick={stopBroadcast} style={{ alignSelf: 'flex-end' }}>
             Stop
           </button>
+        )}
+
+        {/* Live input indicator */}
+        {broadcasting && liveDeviceLabel && (
+          <div
+            className="pill"
+            style={{ background: 'var(--surface2)', color: 'var(--text-muted)', alignSelf: 'flex-end', maxWidth: 240 }}
+            title={liveDeviceLabel}
+          >
+            🎙 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{liveDeviceLabel}</span>
+          </div>
         )}
 
         {/* STT indicator */}

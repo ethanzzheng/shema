@@ -13,6 +13,13 @@ export interface AudioCaptureOptions {
   onChunk: (pcm: ArrayBuffer) => void;
   /** Milliseconds of audio per chunk; default 250 */
   chunkIntervalMs?: number;
+  /** Specific input device (from enumerateDevices); omit for system default. */
+  deviceId?: string;
+  /**
+   * Fired when the track ends outside our control — device unplugged or
+   * permission revoked mid-broadcast. NOT fired by our own stop().
+   */
+  onDeviceEnded?: () => void;
 }
 
 const TARGET_SAMPLE_RATE = 16000;
@@ -48,13 +55,19 @@ export class AudioCapture {
   private sampleBuffer: Float32Array[] = [];
   private samplesPerChunk: number;
   private totalBuffered = 0;
-  private opts: Required<AudioCaptureOptions>;
+  private opts: AudioCaptureOptions & { chunkIntervalMs: number };
+  private stopping = false;
 
   constructor(opts: AudioCaptureOptions) {
     this.opts = { chunkIntervalMs: 250, ...opts };
     this.samplesPerChunk = Math.floor(
       (TARGET_SAMPLE_RATE * this.opts.chunkIntervalMs) / 1000,
     );
+  }
+
+  /** Label of the live input track (e.g. "BlackHole 2ch"), '' before start. */
+  get trackLabel(): string {
+    return this.stream?.getAudioTracks()[0]?.label ?? '';
   }
 
   async start(): Promise<void> {
@@ -72,6 +85,7 @@ export class AudioCapture {
     // garbling (성령님 → 섭렵님 etc.); raw capture transcribes near-cleanly.
     this.stream = await navigator.mediaDevices.getUserMedia({
       audio: {
+        ...(this.opts.deviceId ? { deviceId: { exact: this.opts.deviceId } } : {}),
         channelCount: 1,
         echoCancellation: false,
         noiseSuppression: false,
@@ -80,6 +94,16 @@ export class AudioCapture {
       },
       video: false,
     });
+
+    // Unplug / permission-revoke detection. Our own stop() calls track.stop(),
+    // which per spec does NOT fire 'ended' — but guard with `stopping` anyway
+    // for browsers that misbehave.
+    const track = this.stream.getAudioTracks()[0];
+    if (track) {
+      track.addEventListener('ended', () => {
+        if (!this.stopping) this.opts.onDeviceEnded?.();
+      });
+    }
 
     // Try to create context at 16kHz; browser may honour or not
     this.audioCtx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE });
@@ -125,6 +149,7 @@ export class AudioCapture {
   }
 
   stop(): void {
+    this.stopping = true;
     this.processor?.disconnect();
     this.source?.disconnect();
     this.stream?.getTracks().forEach((t) => t.stop());
