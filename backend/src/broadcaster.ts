@@ -22,7 +22,7 @@ import { ElevenLabsSTT } from './stt';
 import { KoreanChunker } from './chunker';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
-import { isHostKeyValid } from './host-key';
+import { isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
@@ -291,21 +291,24 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       const msg = JSON.parse((data as Buffer).toString());
 
       switch (msg.type) {
-        case 'start':
-          // Phase A auth: a room with a configured host key only starts for
-          // a broadcaster that presents it. Listeners are never gated.
-          if (!isHostKeyValid(session.roomId, msg.hostKey)) {
-            console.warn(`[Broadcaster] Rejected start for room "${session.roomId}": bad host key`);
-            send(ws, {
-              type: 'error',
-              message: 'Invalid host key — broadcasting is locked for this church. Check the key and try again.',
-            });
-            ws.close(4003, 'Invalid host key');
+        case 'start': {
+          // Phase A auth: with AUTH_USERS configured, starting a broadcast
+          // requires a valid session token from POST /login. Listeners are
+          // never gated; open mode (no auth env) allows everything.
+          const auth = isStartAuthorized(msg.token);
+          if (!auth.ok) {
+            console.warn(`[Broadcaster] Rejected start for room "${session.roomId}": ${auth.reason}`);
+            send(ws, { type: 'error', message: auth.reason });
+            ws.close(4003, 'Unauthorized');
             break;
+          }
+          if (auth.username) {
+            console.log(`[Broadcaster] Start authorized for "${auth.username}" in room "${session.roomId}"`);
           }
           startSession(msg.mode === 'smooth' ? 'smooth' : 'fast');
           send(ws, { type: 'started', mode: session.mode });
           break;
+        }
 
         case 'stop':
           stopSession();

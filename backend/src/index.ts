@@ -16,6 +16,7 @@ import cors from 'cors';
 import { SessionManager, normalizeRoomId } from './session-manager';
 import { handleBroadcasterConnection } from './broadcaster';
 import { handleListenerConnection } from './listener';
+import { login, authEnabled } from './auth';
 
 // ── Validate required env vars at startup ─────────────────────────────────
 const REQUIRED = ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID', 'DEEPGRAM_API_KEY'];
@@ -67,6 +68,24 @@ app.get('/health', (_req, res) => {
     roomDetails: sessions.stats(),
     uptime: Math.floor(process.uptime()),
   });
+});
+
+// Staff login: username/password from AUTH_USERS → 12h session JWT.
+// The token is what authorizes starting a broadcast (checked on the WS).
+app.post('/login', (req, res) => {
+  if (!authEnabled()) {
+    res.status(503).json({ error: 'Login is not configured on this server.' });
+    return;
+  }
+  const { username, password } = req.body ?? {};
+  const token = login(username, password);
+  if (!token) {
+    console.warn('[Auth] Failed login attempt for user:', typeof username === 'string' ? username : '?');
+    res.status(401).json({ error: 'Invalid username or password.' });
+    return;
+  }
+  console.log('[Auth] Login OK:', username);
+  res.json({ token, username });
 });
 
 const server = createServer(app);

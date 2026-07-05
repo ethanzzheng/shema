@@ -259,8 +259,8 @@ branch you want live is pushed.
    - `ELEVENLABS_API_KEY`
    - `ELEVENLABS_VOICE_ID`
    - `FRONTEND_URL=https://tryshema.app,https://www.tryshema.app`
-   - `BROADCAST_HOST_KEY=<a long random string>` — locks broadcasting (see
-     [Host keys](#host-keys-broadcast-protection) below)
+   - `AUTH_USERS` + `AUTH_SECRET` — locks broadcasting behind staff login (see
+     [Staff login](#staff-login-broadcast-protection) below)
    - `NODE_ENV=production` (usually set automatically; setting it explicitly
      is what arms the CORS/WebSocket origin allowlist)
    - Do **NOT** set `PORT` — Railway injects its own and the server reads it.
@@ -334,28 +334,28 @@ still verified under Cloudflare → Email → Email Routing.
 
 ---
 
-## Host keys (broadcast protection)
+## Staff login (broadcast protection)
 
-Phase A auth: starting a broadcast requires a **host key**; listening never
-does. No accounts, no database — keys live in backend env vars:
+Phase A auth: staff log in with a **username + password** (`POST /login`) and
+receive a 12-hour session token; starting a broadcast requires that token.
+Listening never needs auth. No accounts database — users live in backend env
+vars:
 
 ```env
-# One shared key for every room (simplest for the pilot):
-BROADCAST_HOST_KEY=pick-a-long-random-string
+# JSON map of username → bcrypt password hash. Generate a hash:
+#   cd backend && node -e "console.log(require('bcryptjs').hashSync('your-password', 10))"
+AUTH_USERS={"hanmaum":"$2b$10$...your-hash..."}
 
-# Or per-room keys (win over the shared key for the rooms they name):
-ROOM_HOST_KEYS=grace-church:abc123,hanmaeum:xyz789
+# Signs the session tokens — any long random string (openssl rand -hex 32):
+AUTH_SECRET=pick-a-long-random-string
 ```
 
-- With **neither** set (typical local dev), rooms are open and /speak works
-  with the Host key field left blank.
-- With a key set, the staff member enters it in the **Host key** field on
-  `/speak` before hitting Start Broadcast. A wrong or missing key gets a clear
-  error and the connection is closed. The browser remembers the key for the
-  current tab session only (sessionStorage) — it is never persisted.
-- To rotate a key: change the env var and restart/redeploy the backend
-  (Railway → Variables → edit → redeploy).
-- Generate a decent key: `openssl rand -hex 16`
+- With **neither** set (typical local dev), broadcasting stays open and no
+  login is needed.
+- With both set, staff log in once at `/login`; a wrong or expired session
+  gets a clear error and the connection is closed.
+- Add a staff member / rotate a password: regenerate the hash, update
+  `AUTH_USERS`, redeploy the backend (Railway → Variables → edit → Apply).
 
 Real accounts + billing (Phase B) replace this once a second church signs on.
 
