@@ -22,6 +22,7 @@ import { ElevenLabsSTT } from './stt';
 import { KoreanChunker } from './chunker';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
+import { isHostKeyValid } from './host-key';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
@@ -291,6 +292,17 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
       switch (msg.type) {
         case 'start':
+          // Phase A auth: a room with a configured host key only starts for
+          // a broadcaster that presents it. Listeners are never gated.
+          if (!isHostKeyValid(session.roomId, msg.hostKey)) {
+            console.warn(`[Broadcaster] Rejected start for room "${session.roomId}": bad host key`);
+            send(ws, {
+              type: 'error',
+              message: 'Invalid host key — broadcasting is locked for this church. Check the key and try again.',
+            });
+            ws.close(4003, 'Invalid host key');
+            break;
+          }
           startSession(msg.mode === 'smooth' ? 'smooth' : 'fast');
           send(ws, { type: 'started', mode: session.mode });
           break;

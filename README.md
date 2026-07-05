@@ -259,6 +259,8 @@ branch you want live is pushed.
    - `ELEVENLABS_API_KEY`
    - `ELEVENLABS_VOICE_ID`
    - `FRONTEND_URL=https://tryshema.app,https://www.tryshema.app`
+   - `BROADCAST_HOST_KEY=<a long random string>` — locks broadcasting (see
+     [Host keys](#host-keys-broadcast-protection) below)
    - `NODE_ENV=production` (usually set automatically; setting it explicitly
      is what arms the CORS/WebSocket origin allowlist)
    - Do **NOT** set `PORT` — Railway injects its own and the server reads it.
@@ -329,6 +331,33 @@ still verified under Cloudflare → Email → Email Routing.
 - Contact form on the marketing page sends (check shematranslate@gmail.com)
 - DNS propagation can take minutes to a few hours — `dig tryshema.app` /
   `dig api.tryshema.app` to watch it flip
+
+---
+
+## Host keys (broadcast protection)
+
+Phase A auth: starting a broadcast requires a **host key**; listening never
+does. No accounts, no database — keys live in backend env vars:
+
+```env
+# One shared key for every room (simplest for the pilot):
+BROADCAST_HOST_KEY=pick-a-long-random-string
+
+# Or per-room keys (win over the shared key for the rooms they name):
+ROOM_HOST_KEYS=grace-church:abc123,hanmaeum:xyz789
+```
+
+- With **neither** set (typical local dev), rooms are open and /speak works
+  with the Host key field left blank.
+- With a key set, the staff member enters it in the **Host key** field on
+  `/speak` before hitting Start Broadcast. A wrong or missing key gets a clear
+  error and the connection is closed. The browser remembers the key for the
+  current tab session only (sessionStorage) — it is never persisted.
+- To rotate a key: change the env var and restart/redeploy the backend
+  (Railway → Variables → edit → redeploy).
+- Generate a decent key: `openssl rand -hex 16`
+
+Real accounts + billing (Phase B) replace this once a second church signs on.
 
 ---
 

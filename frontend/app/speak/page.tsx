@@ -10,6 +10,9 @@ import { normalizeChurchSlug } from '@/lib/slug';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
 const DEVICE_STORAGE_KEY = 'shema-input-device';
+// sessionStorage on purpose: the host key is a secret, so it survives
+// refreshes during a service but not closing the tab.
+const HOST_KEY_STORAGE_KEY = 'shema-host-key';
 
 type Mode = 'fast' | 'smooth';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
@@ -59,6 +62,7 @@ export default function SpeakPage() {
   const [deviceId, setDeviceId] = useState('');
   const [needsPermission, setNeedsPermission] = useState(false);
   const [liveDeviceLabel, setLiveDeviceLabel] = useState('');
+  const [hostKey, setHostKey] = useState('');
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -74,7 +78,13 @@ export default function SpeakPage() {
     );
     setChurch(slug);
     setChurchDraft(slug);
+    try { setHostKey(window.sessionStorage.getItem(HOST_KEY_STORAGE_KEY) ?? ''); } catch {}
   }, []);
+
+  const changeHostKey = (v: string) => {
+    setHostKey(v);
+    try { window.sessionStorage.setItem(HOST_KEY_STORAGE_KEY, v); } catch {}
+  };
 
   const commitChurch = () => {
     const slug = normalizeChurchSlug(churchDraft);
@@ -194,6 +204,14 @@ export default function SpeakPage() {
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
+      case 'status':
+        // Deepgram connect/disconnect — the debug message also carries this,
+        // but only after a full pipeline round-trip; this is the live signal.
+        if ('sttConnected' in msg) {
+          setDebug((prev) => ({ ...prev, sttConnected: msg.sttConnected as boolean }));
+        }
+        break;
+
       case 'transcript':
         if ('korean' in msg) setLiveKorean(msg.korean as string);
         break;
@@ -251,7 +269,7 @@ export default function SpeakPage() {
       setLiveDeviceLabel(capture.trackLabel);
       refreshDevices(); // permission just granted → labels populate
 
-      wsRef.current.sendJSON({ type: 'start', mode });
+      wsRef.current.sendJSON({ type: 'start', mode, hostKey: hostKey || undefined });
       setBroadcasting(true);
 
       setScript([]);
@@ -359,6 +377,21 @@ export default function SpeakPage() {
             disabled={broadcasting}
             placeholder="e.g. grace-church"
             style={{ width: 170 }}
+          />
+        </div>
+
+        {/* Host key (only needed when the room is locked server-side) */}
+        <div>
+          <div className="label" style={{ marginBottom: '0.3rem' }}>Host key</div>
+          <input
+            className="field"
+            type="password"
+            value={hostKey}
+            onChange={(e) => changeHostKey(e.target.value)}
+            disabled={broadcasting}
+            placeholder="if required"
+            autoComplete="off"
+            style={{ width: 130 }}
           />
         </div>
 
