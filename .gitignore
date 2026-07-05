@@ -12,3 +12,4 @@ backend/evals/results/
 # Local test media (sermon recordings)
 *.mp4
 *.wav
+.wrangler/
