@@ -53,6 +53,12 @@ export interface StatusMsg {
   sttConnected?: boolean;
 }
 
+/** Sent to broadcasters whenever the room's listener count changes. */
+export interface ListenersMsg {
+  type: 'listeners';
+  count: number;
+}
+
 export interface DebugMsg {
   type: 'debug';
   chunkSize: number;
@@ -75,6 +81,7 @@ export type ServerMessage =
   | AudioChunkMsg
   | AudioEndMsg
   | StatusMsg
+  | ListenersMsg
   | DebugMsg
   | ErrorMsg
   | { type: string; [key: string]: unknown };

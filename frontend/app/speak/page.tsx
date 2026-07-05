@@ -48,6 +48,7 @@ export default function SpeakPage() {
   const [liveKorean, setLiveKorean] = useState('');
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);
   const [errors, setErrors] = useState<string[]>([]);
+  const [listenerCount, setListenerCount] = useState(0);
 
   // Committed church room (drives the WS connection); null until read from
   // the URL/localStorage on mount. churchDraft is the input's live text.
@@ -209,6 +210,10 @@ export default function SpeakPage() {
       case 'transcript':
         if ('korean' in msg) setLiveKorean(msg.korean as string);
         break;
+
+      case 'listeners':
+        if ('count' in msg) setListenerCount(msg.count as number);
+        break;
       case 'translation': {
         const t = msg as TranslationMsg;
         setScript((prev) => {
@@ -352,17 +357,32 @@ export default function SpeakPage() {
         </div>
       </div>
 
-      {/* ── Controls bar ───────────────────────────────────────────────── */}
+      {/* ── Control panel ──────────────────────────────────────────────── */}
       <div
         className="card"
         style={{
           display: 'flex',
-          alignItems: 'center',
+          alignItems: 'flex-end',
           gap: '1rem',
           flexWrap: 'wrap',
           flexShrink: 0,
         }}
       >
+        {!broadcasting ? (
+          <button
+            className="btn btn-primary"
+            onClick={startBroadcast}
+            disabled={connState !== 'connected'}
+            style={{ opacity: connState !== 'connected' ? 0.5 : 1, padding: '0.8rem 2rem', fontSize: '1rem' }}
+          >
+            ● Start Broadcast
+          </button>
+        ) : (
+          <button className="btn btn-danger" onClick={stopBroadcast} style={{ padding: '0.8rem 2rem', fontSize: '1rem' }}>
+            ■ Stop
+          </button>
+        )}
+
         {/* Church room */}
         <div>
           <div className="label" style={{ marginBottom: '0.3rem' }}>Church</div>
@@ -374,7 +394,7 @@ export default function SpeakPage() {
             onKeyDown={(e) => { if (e.key === 'Enter') commitChurch(); }}
             disabled={broadcasting}
             placeholder="e.g. grace-church"
-            style={{ width: 170 }}
+            style={{ width: 150 }}
           />
         </div>
 
@@ -387,7 +407,7 @@ export default function SpeakPage() {
             onChange={(e) => selectDevice(e.target.value)}
             disabled={broadcasting}
             title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
-            style={{ maxWidth: 230 }}
+            style={{ maxWidth: 210 }}
           >
             <option value="">System default</option>
             {devices
@@ -410,69 +430,62 @@ export default function SpeakPage() {
           )}
         </div>
 
-        {!broadcasting ? (
-          <button
-            className="btn btn-primary"
-            onClick={startBroadcast}
-            disabled={connState !== 'connected'}
-            style={{ opacity: connState !== 'connected' ? 0.5 : 1, alignSelf: 'flex-end' }}
-          >
-            Start Broadcast
-          </button>
-        ) : (
-          <button className="btn btn-danger" onClick={stopBroadcast} style={{ alignSelf: 'flex-end' }}>
-            Stop
-          </button>
-        )}
-
-        {/* Live input indicator */}
-        {broadcasting && liveDeviceLabel && (
-          <div
-            className="pill"
-            style={{ background: 'var(--surface2)', color: 'var(--text-muted)', alignSelf: 'flex-end', maxWidth: 240 }}
-            title={liveDeviceLabel}
-          >
-            🎙 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{liveDeviceLabel}</span>
+        {/* Pacing */}
+        <div>
+          <div className="label" style={{ marginBottom: '0.3rem' }}>Pacing</div>
+          <div className="toggle-group">
+            <button
+              className={`toggle-opt${mode === 'fast' ? ' active' : ''}`}
+              onClick={() => handleModeChange('fast')}
+              title="Lower latency; rougher sentence edges"
+            >
+              Fast
+            </button>
+            <button
+              className={`toggle-opt${mode === 'smooth' ? ' active' : ''}`}
+              onClick={() => handleModeChange('smooth')}
+              title="Waits for natural pauses; cleanest sentences"
+            >
+              Smooth
+            </button>
           </div>
-        )}
-
-        {/* STT indicator */}
-        {broadcasting && (
-          <div
-            className="pill"
-            style={{
-              background: debug.sttConnected
-                ? 'rgba(34,197,94,.15)'
-                : 'rgba(239,68,68,.15)',
-              color: debug.sttConnected ? 'var(--green)' : 'var(--red)',
-              alignSelf: 'flex-end',
-            }}
-          >
-            <span className={`dot${debug.sttConnected ? ' dot-pulse' : ''}`} />
-            STT {debug.sttConnected ? 'Active' : 'Waiting'}
-          </div>
-        )}
-
-        {/* Debug metrics inline */}
-        {broadcasting && debug.e2eLatencyMs > 0 && (
-          <div className="pill" style={{ background: 'var(--surface2)', color: 'var(--text-muted)', alignSelf: 'flex-end' }}>
-            {debug.e2eLatencyMs}ms e2e
-          </div>
-        )}
+        </div>
 
         <a
           href={church ? `/listen/${church}` : '/listen'}
           target="_blank"
           rel="noopener noreferrer"
           className="btn btn-ghost"
-          style={{ marginLeft: 'auto', fontSize: '0.85rem', padding: '0.5rem 1rem', alignSelf: 'flex-end' }}
+          style={{ marginLeft: 'auto', fontSize: '0.85rem', padding: '0.5rem 1rem' }}
         >
           Open Listener
         </a>
       </div>
 
+      {/* ── Status row (live) ──────────────────────────────────────────── */}
+      {broadcasting && (
+        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', flexShrink: 0 }}>
+          <div className={`pill ${debug.sttConnected ? 'pill-green' : 'pill-red'}`}>
+            <span className={`dot${debug.sttConnected ? ' dot-pulse' : ''}`} />
+            STT {debug.sttConnected ? 'Active' : 'Waiting'}
+          </div>
+          <div className="pill pill-yellow">
+            <span className="dot" />
+            {listenerCount} listening
+          </div>
+          {debug.e2eLatencyMs > 0 && (
+            <div className="pill pill-muted">{(debug.e2eLatencyMs / 1000).toFixed(1)}s delay</div>
+          )}
+          {liveDeviceLabel && (
+            <div className="pill pill-muted" style={{ maxWidth: 260 }} title={liveDeviceLabel}>
+              🎙 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{liveDeviceLabel}</span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── Share card (QR + link for congregants) ─────────────────────── */}
-      {broadcasting && church && (
+      {church && (
         <div
           className="card"
           style={{
@@ -547,6 +560,39 @@ export default function SpeakPage() {
           </p>
         )}
       </div>
+
+      {/* ── Debug (collapsed by default — out of a volunteer's way) ────── */}
+      <details className="card" style={{ flexShrink: 0, padding: '0.8rem 1.25rem' }}>
+        <summary className="label" style={{ cursor: 'pointer', marginBottom: 0, userSelect: 'none' }}>
+          Debug
+        </summary>
+        <div className="debug-grid" style={{ marginTop: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
+          <div className="debug-item">
+            <div className="debug-val">{debug.chunkSize}</div>
+            <div className="debug-key">last chunk (chars)</div>
+          </div>
+          <div className="debug-item">
+            <div className="debug-val">{debug.translationLatencyMs}ms</div>
+            <div className="debug-key">translation</div>
+          </div>
+          <div className="debug-item">
+            <div className="debug-val">{debug.ttsLatencyMs}ms</div>
+            <div className="debug-key">tts</div>
+          </div>
+          <div className="debug-item">
+            <div className="debug-val">{debug.e2eLatencyMs}ms</div>
+            <div className="debug-key">end-to-end</div>
+          </div>
+          <div className="debug-item">
+            <div className="debug-val">{debug.sttConnected ? 'yes' : 'no'}</div>
+            <div className="debug-key">stt connected</div>
+          </div>
+          <div className="debug-item">
+            <div className="debug-val">{listenerCount}</div>
+            <div className="debug-key">listeners</div>
+          </div>
+        </div>
+      </details>
 
       {/* ── Errors ──────────────────────────────────────────────────────── */}
       {errors.length > 0 && (

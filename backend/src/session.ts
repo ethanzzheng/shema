@@ -60,14 +60,27 @@ export class Session {
 
   addListener(ws: WebSocket): void {
     this.listeners.add(ws);
+    this.notifyListenerCount();
   }
 
   removeListener(ws: WebSocket): void {
-    this.listeners.delete(ws);
+    if (this.listeners.delete(ws)) this.notifyListenerCount();
   }
 
   addBroadcaster(ws: WebSocket): void {
     this.broadcasters.add(ws);
+    // Late-joining operator sees the current room size immediately.
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: 'listeners', count: this.listeners.size }));
+    }
+  }
+
+  /** Tell every broadcaster how many congregants are connected right now. */
+  private notifyListenerCount(): void {
+    const msg = JSON.stringify({ type: 'listeners', count: this.listeners.size });
+    for (const ws of this.broadcasters) {
+      if (ws.readyState === WebSocket.OPEN) ws.send(msg);
+    }
   }
 
   removeBroadcaster(ws: WebSocket): void {

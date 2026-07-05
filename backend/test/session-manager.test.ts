@@ -98,6 +98,25 @@ describe('SessionManager', () => {
     assert.equal(mgr.roomCount, 0);
   });
 
+  test('broadcasters are told the listener count as it changes', () => {
+    const mgr = new SessionManager();
+    const room = mgr.getOrCreate('a');
+    const broadcaster = fakeSocket();
+    room.addBroadcaster(broadcaster as any);
+    // Initial count on join
+    assert.match(broadcaster.sent[0], /"type":"listeners".*"count":0/);
+
+    const listener = fakeSocket();
+    room.addListener(listener as any);
+    assert.match(broadcaster.sent[1], /"count":1/);
+
+    room.removeListener(listener as any);
+    assert.match(broadcaster.sent[2], /"count":0/);
+    // Removing a socket that was never added notifies nobody
+    room.removeListener(fakeSocket() as any);
+    assert.equal(broadcaster.sent.length, 3);
+  });
+
   test('stats reports per-room listener counts', () => {
     const mgr = new SessionManager();
     const roomA = mgr.getOrCreate('a');

@@ -65,6 +65,11 @@ export default function ListenerView({ church }: { church: string }) {
   // Captions default to the polished sermon rendering; "direct" is the more
   // literal pass for anyone who wants to track the Korean phrasing closely.
   const [captionMode, setCaptionMode] = useState<'sermon' | 'direct'>('sermon');
+  // Caption size — accessibility for older members. Persisted per device.
+  const [textSize, setTextSize] = useState<'s' | 'm' | 'l'>('m');
+  // Pause = output muted; the stream keeps flowing so resuming stays near-live.
+  const [paused, setPaused] = useState(false);
+  const pausedRef = useRef(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
@@ -91,6 +96,25 @@ export default function ListenerView({ church }: { church: string }) {
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     // If user is within 60px of bottom, keep auto-scrolling
     autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 60;
+  };
+
+  useEffect(() => {
+    const saved = window.localStorage.getItem('shema-caption-size');
+    if (saved === 's' || saved === 'm' || saved === 'l') setTextSize(saved);
+  }, []);
+
+  const changeTextSize = (size: 's' | 'm' | 'l') => {
+    setTextSize(size);
+    try { window.localStorage.setItem('shema-caption-size', size); } catch {}
+  };
+
+  const togglePause = () => {
+    const next = !paused;
+    setPaused(next);
+    pausedRef.current = next;
+    streamRef.current?.setVolume(next ? 0 : 1);
+    playbackRef.current?.setVolume(next ? 0 : 1);
+    if (next) browserTtsRef.current?.cancel();
   };
 
   // ── Init audio (requires user gesture) ────────────────────────────────
@@ -178,6 +202,7 @@ export default function ListenerView({ church }: { church: string }) {
           if (
             ttsMode === 'browser' &&
             audioStarted &&
+            !pausedRef.current &&
             browserTtsRef.current &&
             t.seq > lastSpokenSeqRef.current
           ) {
@@ -257,18 +282,24 @@ export default function ListenerView({ church }: { church: string }) {
   return (
     <div style={{ maxWidth: 700, margin: '0 auto', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100dvh', boxSizing: 'border-box' }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Listener</h1>
-          <span className="pill" style={{ background: 'var(--surface2)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-            {church}
-          </span>
-        </div>
-        <div className="pill" style={{ background: 'var(--surface2)', color: connColor }}>
-          <span className={`dot${broadcastActive ? ' dot-pulse' : ''}`} />
+      {/* Header — church name + subtle status, nothing else */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', flexShrink: 0 }}>
+        <h1 style={{ fontSize: '1.6rem', fontWeight: 600 }}>{church}</h1>
+        <span
+          style={{
+            fontFamily: 'var(--font-mono)',
+            fontSize: '0.68rem',
+            letterSpacing: '0.12em',
+            textTransform: 'uppercase',
+            color: connColor,
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: '0.4rem',
+          }}
+        >
+          <span className={`dot${broadcastActive ? ' dot-pulse' : ''}`} style={{ background: 'currentColor' }} />
           {connLabel}
-        </div>
+        </span>
       </div>
 
       {/* Audio init — one tap unlocks autoplay for the whole service */}
@@ -287,61 +318,55 @@ export default function ListenerView({ church }: { church: string }) {
         </div>
       )}
 
-      {/* Controls row */}
+      {/* Controls row — pause, text size, caption source */}
       {audioStarted && (
-        <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
-          {/* TTS mode */}
-          <div>
-            <div className="label" style={{ marginBottom: '0.3rem' }}>Voice</div>
-            <div className="toggle-group">
-              <button
-                className={`toggle-opt${ttsMode === 'browser' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('browser'); browserTtsRef.current?.cancel(); }}
-                title="Free — uses your browser's built-in speech"
-              >
-                Browser
-              </button>
-              <button
-                className={`toggle-opt${ttsMode === 'elevenlabs' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('elevenlabs'); browserTtsRef.current?.cancel(); }}
-                title="Requires ElevenLabs paid plan"
-              >
-                ElevenLabs
-              </button>
-              <button
-                className={`toggle-opt${ttsMode === 'off' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('off'); browserTtsRef.current?.cancel(); }}
-              >
-                Off
-              </button>
-            </div>
+        <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
+          <button
+            className={paused ? 'btn btn-primary' : 'btn btn-ghost'}
+            onClick={togglePause}
+            style={{ padding: '0.55rem 1.3rem', fontSize: '0.95rem' }}
+          >
+            {paused ? (
+              <svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor" aria-hidden>
+                <path d="M0 0 L11 6 L0 12 Z" />
+              </svg>
+            ) : (
+              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden>
+                <rect x="0" y="0" width="3.5" height="12" />
+                <rect x="6.5" y="0" width="3.5" height="12" />
+              </svg>
+            )}
+            {paused ? 'Listen' : 'Pause'}
+          </button>
+
+          {/* Caption size */}
+          <div className="toggle-group" aria-label="Caption text size">
+            <button className={`toggle-opt${textSize === 's' ? ' active' : ''}`} onClick={() => changeTextSize('s')} style={{ fontSize: '0.62rem' }}>A</button>
+            <button className={`toggle-opt${textSize === 'm' ? ' active' : ''}`} onClick={() => changeTextSize('m')} style={{ fontSize: '0.74rem' }}>A</button>
+            <button className={`toggle-opt${textSize === 'l' ? ' active' : ''}`} onClick={() => changeTextSize('l')} style={{ fontSize: '0.88rem' }}>A</button>
           </div>
 
           {/* Caption source */}
-          <div>
-            <div className="label" style={{ marginBottom: '0.3rem' }}>Captions</div>
-            <div className="toggle-group">
-              <button
-                className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
-                onClick={() => setCaptionMode('sermon')}
-                title="Natural spoken-English rendering (matches the audio)"
-              >
-                Sermon
-              </button>
-              <button
-                className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
-                onClick={() => setCaptionMode('direct')}
-                title="More literal translation of the Korean"
-              >
-                Direct
-              </button>
-            </div>
+          <div className="toggle-group" style={{ marginLeft: 'auto' }}>
+            <button
+              className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
+              onClick={() => setCaptionMode('sermon')}
+              title="Natural spoken-English rendering (matches the audio)"
+            >
+              Sermon
+            </button>
+            <button
+              className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
+              onClick={() => setCaptionMode('direct')}
+              title="More literal translation of the Korean"
+            >
+              Direct
+            </button>
           </div>
-
         </div>
       )}
 
-      {/* Rolling transcript */}
+      {/* Rolling captions — history faded, current sentence emphasized */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -350,20 +375,26 @@ export default function ListenerView({ church }: { church: string }) {
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          fontSize: '1.18rem',
-          lineHeight: 1.9,
+          fontSize: textSize === 's' ? '0.95rem' : textSize === 'l' ? '1.45rem' : '1.15rem',
+          lineHeight: 1.85,
           padding: '1.5rem',
         }}
       >
         {transcript.length > 0 ? (
-          <div style={{ color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-            {transcript.map((entry, i) => (
-              <span key={entry.seq}>
+          <>
+            {/* Spotify-lyrics style: every past sentence is its own faded
+                line, scrollable all the way back; the newest line glows. */}
+            {transcript.slice(0, -1).map((entry) => (
+              <p key={entry.seq} style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', marginBottom: '0.9em' }}>
                 {captionMode === 'direct' ? entry.direct : entry.sermon}
-                {i < transcript.length - 1 ? ' ' : ''}
-              </span>
+              </p>
             ))}
-          </div>
+            <p style={{ color: 'var(--text)', whiteSpace: 'pre-wrap', fontSize: '1.35em', lineHeight: 1.6 }}>
+              {captionMode === 'direct'
+                ? transcript[transcript.length - 1].direct
+                : transcript[transcript.length - 1].sermon}
+            </p>
+          </>
         ) : (
           <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
             {!broadcastActive ? 'Waiting for broadcast to start…' : 'Translating…'}
@@ -371,12 +402,36 @@ export default function ListenerView({ church }: { church: string }) {
         )}
       </div>
 
-      {/* Live status bar */}
-      {broadcastActive && (
-        <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderColor: 'rgba(34,197,94,.3)', flexShrink: 0, padding: '0.75rem 1rem' }}>
-          <span className="dot dot-pulse" style={{ color: 'var(--green)', width: 10, height: 10 }} />
-          <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '0.9rem' }}>Live</span>
-        </div>
+      {/* Audio source — tucked away; only needed for troubleshooting */}
+      {audioStarted && (
+        <details style={{ flexShrink: 0 }}>
+          <summary className="label" style={{ cursor: 'pointer', marginBottom: 0, userSelect: 'none' }}>
+            Audio options
+          </summary>
+          <div className="toggle-group" style={{ marginTop: '0.5rem', maxWidth: 320 }}>
+            <button
+              className={`toggle-opt${ttsMode === 'browser' ? ' active' : ''}`}
+              onClick={() => { setTtsMode('browser'); browserTtsRef.current?.cancel(); }}
+              title="Fallback — your browser's built-in speech"
+            >
+              Basic voice
+            </button>
+            <button
+              className={`toggle-opt${ttsMode === 'elevenlabs' ? ' active' : ''}`}
+              onClick={() => { setTtsMode('elevenlabs'); browserTtsRef.current?.cancel(); }}
+              title="Studio voice (default)"
+            >
+              Studio voice
+            </button>
+            <button
+              className={`toggle-opt${ttsMode === 'off' ? ' active' : ''}`}
+              onClick={() => { setTtsMode('off'); browserTtsRef.current?.cancel(); }}
+              title="Captions only"
+            >
+              Captions only
+            </button>
+          </div>
+        </details>
       )}
 
       {/* Errors */}
