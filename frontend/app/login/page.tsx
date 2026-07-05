@@ -83,6 +83,13 @@ export default function LoginPage() {
           listen link or QR code.
         </p>
       </form>
+
+      <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textAlign: 'center' }}>
+        Don&apos;t have an account? Interested in Shema for your church?{' '}
+        <a href="mailto:shematranslate@gmail.com" style={{ whiteSpace: 'nowrap' }}>
+          Contact us
+        </a>
+      </p>
     </div>
   );
 }
