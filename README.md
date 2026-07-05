@@ -361,6 +361,63 @@ Real accounts + billing (Phase B) replace this once a second church signs on.
 
 ---
 
+## Operator runbook (Sunday morning)
+
+Three URLs run the whole service. `<church>` is your church's slug
+(e.g. `grace-church`) — same one everywhere.
+
+### 1. Staff — start the broadcast
+
+1. On the staff laptop, open **https://tryshema.app/speak**
+2. **Church**: enter your slug · **Host key**: enter your church's key
+   (kept for this tab until you close it) · **Input**: pick the soundboard /
+   USB interface (falls back to the laptop mic — works, but line feed sounds
+   far better)
+3. Click **Start Broadcast** when the preacher begins
+4. Confirm within ~15 seconds: the **STT Active** pill is green and Korean
+   text is scrolling. If both are true, you're live — leave the tab open and
+   don't close the laptop lid.
+
+### 2. Congregation — share the listen link
+
+- The share card on /speak shows a **QR code + link** for
+  `https://tryshema.app/listen/<church>` — put the QR in the bulletin, on a
+  slide, or on a sign by the door. It's the same every week; print it once.
+- Congregants: scan → **Tap to listen** (one tap, required by phone browsers)
+  → English audio + captions. Earbuds recommended.
+- No app install needed; "Add to Home Screen" works for regulars.
+
+### 3. Receiver system — run the kiosk
+
+For churches feeding translation into an existing transmitter/receiver system:
+
+1. On the output laptop (plugged into the system via headphone/line-out),
+   open **https://tryshema.app/play/<church>**
+2. Click **▶ Start output** once
+3. Click **Test tone** and confirm the beep comes out of the church receivers;
+   set the on-screen volume to taste
+4. Leave it. The screen stays awake and playback is continuous; the big pill
+   shows Live / Waiting at a glance.
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Phone: no sound | They skipped the tap — reload and press **Tap to listen**; check the phone's silent switch + volume |
+| Phone: iPhone stops when locked | Known iOS limitation — keep the screen on, or use the kiosk + receivers |
+| /speak: "Invalid host key" | Wrong or missing key — re-enter it (keys are per-church; rotate in Railway → Variables) |
+| /speak: no Korean appearing | Wrong **Input** device — re-pick the board/interface; check the STT pill; make sure the board channel is unmuted |
+| /speak: Korean appears, no English ever | Translation API issue — check Anthropic credits (console.anthropic.com → Plans & Billing) |
+| Kiosk: test tone silent | Laptop output routed wrong — macOS System Settings → Sound → Output; then test tone again |
+| Nothing connects at church | Check https://api.tryshema.app/health in a browser. If it loads but the app won't connect, church Wi-Fi may block WebSockets — hotspot the staff laptop or ask IT to allow wss to api.tryshema.app |
+| Mid-service page weirdness | Reload the page — broadcast state recovers by itself; listeners auto-reconnect |
+
+**Weekly pre-service check (2 min):** open /speak, start a 10-second test
+broadcast in a test room (e.g. `<church>-test`), confirm English audio on your
+phone, stop. Confirms keys, credits, and audio path in one go.
+
+---
+
 ## Latency Breakdown
 
 | Stage | Typical Duration | Notes |
