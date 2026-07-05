@@ -11,6 +11,9 @@
 const CONTACT_WORKER_ORIGIN = process.env.CONTACT_WORKER_ORIGIN;
 
 const nextConfig = {
+  // Overridable so CI/verification builds can't clobber a running dev
+  // server's .next cache (they share the folder otherwise).
+  distDir: process.env.NEXT_DIST_DIR || '.next',
   reactStrictMode: true,
   async rewrites() {
     const beforeFiles = [

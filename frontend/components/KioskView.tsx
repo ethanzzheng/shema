@@ -15,12 +15,15 @@ import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg } from '@/lib/ws
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
+import { useRequireAuth } from '@/lib/use-require-auth';
 
 const VOLUME_STORAGE_KEY = 'shema-kiosk-volume';
 
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 
 export default function KioskView({ church }: { church: string }) {
+  // Staff page: redirects to /login when the backend enforces auth.
+  const gate = useRequireAuth();
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
   const [started, setStarted] = useState(false);
@@ -137,6 +140,7 @@ export default function KioskView({ church }: { church: string }) {
 
   // ── WebSocket (same protocol as the listener) ────────────────────────────
   useEffect(() => {
+    if (gate !== 'ok') return;
     const client = new WsClient({
       url: getBackendWsUrl(),
       role: 'listener',
@@ -163,7 +167,7 @@ export default function KioskView({ church }: { church: string }) {
       playbackRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [church]);
+  }, [church, gate]);
 
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
@@ -247,6 +251,9 @@ export default function KioskView({ church }: { church: string }) {
       : broadcastActive
       ? 'Live'
       : 'Waiting for broadcast';
+
+  // Waiting on the auth check (or being redirected to /login) — render nothing.
+  if (gate !== 'ok') return null;
 
   return (
     <div

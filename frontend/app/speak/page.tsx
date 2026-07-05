@@ -7,12 +7,11 @@ import { WsClient, ServerMessage, DebugMsg, TranslationMsg } from '@/lib/ws-clie
 import { AudioCapture } from '@/lib/audio-capture';
 import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
+import { getToken } from '@/lib/auth';
+import { useRequireAuth } from '@/lib/use-require-auth';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
 const DEVICE_STORAGE_KEY = 'shema-input-device';
-// sessionStorage on purpose: the host key is a secret, so it survives
-// refreshes during a service but not closing the tab.
-const HOST_KEY_STORAGE_KEY = 'shema-host-key';
 
 type Mode = 'fast' | 'smooth';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
@@ -40,6 +39,8 @@ const DEFAULT_DEBUG: DebugPanel = {
 };
 
 export default function SpeakPage() {
+  // Staff page: redirects to /login when the backend enforces auth.
+  const gate = useRequireAuth();
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcasting, setBroadcasting] = useState(false);
   const [mode, setMode] = useState<Mode>('smooth');
@@ -62,7 +63,6 @@ export default function SpeakPage() {
   const [deviceId, setDeviceId] = useState('');
   const [needsPermission, setNeedsPermission] = useState(false);
   const [liveDeviceLabel, setLiveDeviceLabel] = useState('');
-  const [hostKey, setHostKey] = useState('');
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -78,13 +78,7 @@ export default function SpeakPage() {
     );
     setChurch(slug);
     setChurchDraft(slug);
-    try { setHostKey(window.sessionStorage.getItem(HOST_KEY_STORAGE_KEY) ?? ''); } catch {}
   }, []);
-
-  const changeHostKey = (v: string) => {
-    setHostKey(v);
-    try { window.sessionStorage.setItem(HOST_KEY_STORAGE_KEY, v); } catch {}
-  };
 
   const commitChurch = () => {
     const slug = normalizeChurchSlug(churchDraft);
@@ -152,7 +146,7 @@ export default function SpeakPage() {
 
   // ── WebSocket lifecycle (reconnects when the church room changes) ───────
   useEffect(() => {
-    if (!church) return;
+    if (!church || gate !== 'ok') return;
 
     const client = new WsClient({
       url: getBackendWsUrl(),
@@ -180,7 +174,7 @@ export default function SpeakPage() {
       wsRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [church]);
+  }, [church, gate]);
 
   // ── Shareable listener link + QR for the current room ───────────────────
   useEffect(() => {
@@ -269,7 +263,8 @@ export default function SpeakPage() {
       setLiveDeviceLabel(capture.trackLabel);
       refreshDevices(); // permission just granted → labels populate
 
-      wsRef.current.sendJSON({ type: 'start', mode, hostKey: hostKey || undefined });
+      // The login session token authorizes the start (backend-verified).
+      wsRef.current.sendJSON({ type: 'start', mode, token: getToken() ?? undefined });
       setBroadcasting(true);
 
       setScript([]);
@@ -325,6 +320,9 @@ export default function SpeakPage() {
       ? 'Connecting…'
       : 'Disconnected';
 
+  // Waiting on the auth check (or being redirected to /login) — render nothing.
+  if (gate !== 'ok') return null;
+
   return (
     <div style={{ maxWidth: 860, margin: '0 auto', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box', gap: '1rem' }}>
       {/* ── Header ─────────────────────────────────────────────────────── */}
@@ -377,21 +375,6 @@ export default function SpeakPage() {
             disabled={broadcasting}
             placeholder="e.g. grace-church"
             style={{ width: 170 }}
-          />
-        </div>
-
-        {/* Host key (only needed when the room is locked server-side) */}
-        <div>
-          <div className="label" style={{ marginBottom: '0.3rem' }}>Host key</div>
-          <input
-            className="field"
-            type="password"
-            value={hostKey}
-            onChange={(e) => changeHostKey(e.target.value)}
-            disabled={broadcasting}
-            placeholder="if required"
-            autoComplete="off"
-            style={{ width: 130 }}
           />
         </div>
 

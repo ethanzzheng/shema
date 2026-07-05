@@ -63,6 +63,9 @@ const sessions = new SessionManager();
 app.get('/health', (_req, res) => {
   res.json({
     status: 'ok',
+    // Lets the frontend know whether to gate staff pages behind /login
+    // (false in open dev mode, true when AUTH_USERS/AUTH_SECRET are set).
+    authRequired: authEnabled(),
     rooms: sessions.roomCount,
     listenerCount: sessions.totalListeners,
     roomDetails: sessions.stats(),
