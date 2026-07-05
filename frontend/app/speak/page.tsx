@@ -7,7 +7,7 @@ import { WsClient, ServerMessage, DebugMsg, TranslationMsg } from '@/lib/ws-clie
 import { AudioCapture } from '@/lib/audio-capture';
 import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
-import { getToken } from '@/lib/auth';
+import { getToken, getUsername } from '@/lib/auth';
 import { useRequireAuth } from '@/lib/use-require-auth';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
@@ -74,8 +74,10 @@ export default function SpeakPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const fromUrl = params.get('church') ?? params.get('room');
+    // Signed-in staff default to their own church (username = church slug in
+    // Phase A), beating any stale last-used room from testing.
     const slug = normalizeChurchSlug(
-      fromUrl ?? window.localStorage.getItem(CHURCH_STORAGE_KEY) ?? 'default',
+      fromUrl ?? getUsername() ?? window.localStorage.getItem(CHURCH_STORAGE_KEY) ?? 'default',
     );
     setChurch(slug);
     setChurchDraft(slug);

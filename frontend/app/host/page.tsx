@@ -14,9 +14,10 @@ export default function HostDashboard() {
   const [church, setChurch] = useState('default');
 
   useEffect(() => {
-    setUsername(getUsername());
-    // Same "last used church" /speak remembers — keeps the kiosk link in sync.
-    setChurch(normalizeChurchSlug(window.localStorage.getItem('shema-church') ?? 'default'));
+    const user = getUsername();
+    setUsername(user);
+    // Username = church slug in Phase A; fall back to /speak's last-used room.
+    setChurch(normalizeChurchSlug(user ?? window.localStorage.getItem('shema-church') ?? 'default'));
   }, []);
 
   if (gate !== 'ok') return null;
