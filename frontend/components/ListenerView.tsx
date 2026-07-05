@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import Link from 'next/link';
 import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg } from '@/lib/ws-client';
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
@@ -69,8 +68,6 @@ export default function ListenerView({ church }: { church: string }) {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
-  const [audioChunks, setAudioChunks] = useState(0);
-  const [spokenCount, setSpokenCount] = useState(0);
 
   const wsRef = useRef<WsClient | null>(null);
   const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
@@ -186,7 +183,6 @@ export default function ListenerView({ church }: { church: string }) {
           ) {
             lastSpokenSeqRef.current = t.seq;
             browserTtsRef.current.speak(t.sermon);
-            setSpokenCount((n) => n + 1);
           }
           break;
         }
@@ -194,7 +190,6 @@ export default function ListenerView({ church }: { church: string }) {
         case 'audio_start': {
           const a = msg as { seq: number };
           if (ttsMode === 'elevenlabs') {
-            setAudioChunks((n) => n + 1);
             // Fallback path accumulates chunks per clip; MSE path streams directly.
             if (!streamRef.current) fallbackAccumRef.current = { seq: a.seq, parts: [] };
           }
@@ -265,7 +260,6 @@ export default function ListenerView({ church }: { church: string }) {
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>←</Link>
           <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Listener</h1>
           <span className="pill" style={{ background: 'var(--surface2)', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
             {church}
@@ -344,18 +338,6 @@ export default function ListenerView({ church }: { church: string }) {
             </div>
           </div>
 
-          {/* Status pill */}
-          {ttsMode === 'browser' && (
-            <div className="pill pill-green" style={{ alignSelf: 'flex-end' }}>
-              <span className={`dot${spokenCount > 0 ? ' dot-pulse' : ''}`} />
-              {spokenCount} spoken
-            </div>
-          )}
-          {ttsMode === 'elevenlabs' && (
-            <div className="pill" style={{ background: 'var(--surface2)', color: 'var(--text-muted)', alignSelf: 'flex-end' }}>
-              {audioChunks} chunks
-            </div>
-          )}
         </div>
       )}
 
@@ -394,9 +376,6 @@ export default function ListenerView({ church }: { church: string }) {
         <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', borderColor: 'rgba(34,197,94,.3)', flexShrink: 0, padding: '0.75rem 1rem' }}>
           <span className="dot dot-pulse" style={{ color: 'var(--green)', width: 10, height: 10 }} />
           <span style={{ color: 'var(--green)', fontWeight: 600, fontSize: '0.9rem' }}>Live</span>
-          <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem', marginLeft: 'auto' }}>
-            {transcript.length} segments
-          </span>
         </div>
       )}
 

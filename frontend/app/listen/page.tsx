@@ -8,7 +8,6 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import Link from 'next/link';
 import ListenerView from '@/components/ListenerView';
 import { normalizeChurchSlug } from '@/lib/slug';
 
@@ -34,10 +33,7 @@ export default function ListenEntryPage() {
 
   return (
     <div style={{ maxWidth: 460, margin: '0 auto', padding: '4rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-        <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>←</Link>
-        <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Join your church</h1>
-      </div>
+      <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Join your church</h1>
 
       <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', padding: '1.5rem' }}>
         <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
