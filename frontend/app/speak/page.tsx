@@ -69,6 +69,11 @@ export default function SpeakPage() {
   const captureRef = useRef<AudioCapture | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  // True from Start until a deliberate Stop — drives auto-resume after a
+  // connection drop (the reconnect handler re-sends start while this is set).
+  const wantBroadcastRef = useRef(false);
+  const modeRef = useRef<Mode>('smooth');
+  const lastPongRef = useRef(0);
 
   // ── Church room init: ?church= / legacy ?room= → last used → "default" ──
   useEffect(() => {
@@ -155,13 +160,25 @@ export default function SpeakPage() {
       url: getBackendWsUrl(),
       role: 'broadcaster',
       room: church,
-      onOpen: () => setConnState('connected'),
+      onOpen: () => {
+        setConnState('connected');
+        lastPongRef.current = Date.now();
+        // Auto-resume: if a broadcast was live when the connection dropped,
+        // restart it the instant we're back — the mic never stopped, so a
+        // network blip costs seconds of silence instead of dead air until an
+        // operator notices.
+        if (wantBroadcastRef.current) {
+          client.sendJSON({ type: 'start', mode: modeRef.current, token: getToken() ?? undefined });
+          setBroadcasting(true);
+        }
+      },
       onClose: () => {
         setConnState('disconnected');
-        setBroadcasting((prev) => {
-          if (prev) stopCapture();
-          return false;
-        });
+        // Keep the capture running while we intend to broadcast; onOpen
+        // re-starts the session. Only a deliberate Stop tears the mic down.
+        if (!wantBroadcastRef.current) {
+          setBroadcasting(false);
+        }
       },
       onError: () => setConnState('disconnected'),
       onMessage: handleMessage,
@@ -172,9 +189,26 @@ export default function SpeakPage() {
     setConnState('connecting');
     client.connect();
 
+    // Heartbeat: flaky networks (hotspots, church Wi-Fi) can kill the path
+    // without a close event — the socket says OPEN while nothing flows. Ping
+    // the backend and force a reconnect when replies stop.
+    lastPongRef.current = Date.now();
+    const heartbeat = setInterval(() => {
+      if (!client.isConnected) return;
+      client.sendJSON({ type: 'ping' });
+      if (Date.now() - lastPongRef.current > 45_000) {
+        console.warn('[Speak] No heartbeat reply for 45s — connection is half-dead, forcing reconnect');
+        lastPongRef.current = Date.now(); // avoid immediate re-trigger
+        client.forceReconnect();
+      }
+    }, 15_000);
+
     return () => {
+      clearInterval(heartbeat);
       client.disconnect();
       wsRef.current = null;
+      stopCapture();
+      wantBroadcastRef.current = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [church, gate]);
@@ -215,6 +249,10 @@ export default function SpeakPage() {
 
       case 'listeners':
         if ('count' in msg) setListenerCount(msg.count as number);
+        break;
+
+      case 'pong':
+        lastPongRef.current = Date.now();
         break;
       case 'translation': {
         const t = msg as TranslationMsg;
@@ -272,6 +310,7 @@ export default function SpeakPage() {
 
       // The login session token authorizes the start (backend-verified).
       wsRef.current.sendJSON({ type: 'start', mode, token: getToken() ?? undefined });
+      wantBroadcastRef.current = true;
       setBroadcasting(true);
 
       setScript([]);
@@ -299,6 +338,7 @@ export default function SpeakPage() {
   };
 
   const stopBroadcast = () => {
+    wantBroadcastRef.current = false;
     stopCapture();
     wsRef.current?.sendJSON({ type: 'stop' });
     setBroadcasting(false);
@@ -307,6 +347,7 @@ export default function SpeakPage() {
 
   const handleModeChange = (m: Mode) => {
     setMode(m);
+    modeRef.current = m;
     if (broadcasting) {
       wsRef.current?.sendJSON({ type: 'mode', mode: m });
     }

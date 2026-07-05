@@ -53,6 +53,20 @@ export class ElevenLabsSTT {
   private reconnectTimer: NodeJS.Timeout | null = null;
   private keepAliveTimer: NodeJS.Timeout | null = null;
 
+  // Half-dead-connection watchdog. Flaky networks (hotspots, church Wi-Fi)
+  // can kill the TCP path WITHOUT a close event — the socket looks OPEN
+  // forever while nothing flows, which stalls transcription until a human
+  // restarts the broadcast. We ping at the WS protocol level and force a
+  // reconnect when pongs stop coming back.
+  private watchdogTimer: NodeJS.Timeout | null = null;
+  private lastPongAt = 0;
+  private lastMessageAt = 0;
+  private lastAudioSentAt = 0;
+  private static readonly PING_INTERVAL_MS = 10_000;
+  private static readonly PONG_TIMEOUT_MS = 25_000;
+  /** Audio flowing but zero Deepgram messages for this long → assume hung. */
+  private static readonly SILENT_LINK_TIMEOUT_MS = 60_000;
+
   // Track recent utterances to prevent exact duplicates only
   private recentUtterances: string[] = [];
 
@@ -119,10 +133,16 @@ export class ElevenLabsSTT {
       console.log('[STT] Deepgram WebSocket connected');
       this.onStatusChange(true);
       this.startKeepAlive();
+      this.startWatchdog();
+    });
+
+    this.ws.on('pong', () => {
+      this.lastPongAt = Date.now();
     });
 
     let msgCount = 0;
     this.ws.on('message', (data: WebSocket.Data) => {
+      this.lastMessageAt = Date.now();
       try {
         const msg = JSON.parse(data.toString());
         msgCount++;
@@ -140,6 +160,7 @@ export class ElevenLabsSTT {
       console.log(`[STT] Deepgram WebSocket closed: ${code} ${reason.toString()}`);
       this.onStatusChange(false);
       this.stopKeepAlive();
+      this.stopWatchdog();
       if (this.running) {
         this.scheduleReconnect();
       }
@@ -183,6 +204,7 @@ export class ElevenLabsSTT {
 
   sendAudio(pcm: Buffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
+      this.lastAudioSentAt = Date.now();
       this.ws.send(pcm);
     }
   }
@@ -190,6 +212,7 @@ export class ElevenLabsSTT {
   disconnect(): void {
     this.running = false;
     this.stopKeepAlive();
+    this.stopWatchdog();
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -225,6 +248,43 @@ export class ElevenLabsSTT {
     if (this.keepAliveTimer) {
       clearInterval(this.keepAliveTimer);
       this.keepAliveTimer = null;
+    }
+  }
+
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    const now = Date.now();
+    this.lastPongAt = now;
+    this.lastMessageAt = now;
+    this.watchdogTimer = setInterval(() => {
+      const ws = this.ws;
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+
+      // Protocol-level liveness: ping, and reconnect when pongs stop.
+      try { ws.ping(); } catch {}
+      const sincePong = Date.now() - this.lastPongAt;
+      if (sincePong > ElevenLabsSTT.PONG_TIMEOUT_MS) {
+        console.warn(`[STT] Watchdog: no pong for ${Math.round(sincePong / 1000)}s — connection is half-dead, forcing reconnect`);
+        ws.terminate(); // emits 'close' → scheduleReconnect
+        return;
+      }
+
+      // App-level backstop: audio is flowing out but Deepgram has said
+      // nothing at all for a long time — treat the session as hung. (A
+      // reconnect during genuine dead silence costs ~2s of nothing.)
+      const audioFresh = Date.now() - this.lastAudioSentAt < 10_000;
+      const sinceMsg = Date.now() - this.lastMessageAt;
+      if (audioFresh && sinceMsg > ElevenLabsSTT.SILENT_LINK_TIMEOUT_MS) {
+        console.warn(`[STT] Watchdog: audio flowing but no Deepgram messages for ${Math.round(sinceMsg / 1000)}s — forcing reconnect`);
+        ws.terminate();
+      }
+    }, ElevenLabsSTT.PING_INTERVAL_MS);
+  }
+
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) {
+      clearInterval(this.watchdogTimer);
+      this.watchdogTimer = null;
     }
   }
 

@@ -176,6 +176,17 @@ export class WsClient {
     }
   }
 
+  /**
+   * Tear down the current socket and let the reconnect logic rebuild it.
+   * For half-dead connections (flaky hotspot/Wi-Fi): the socket still says
+   * OPEN but nothing flows, so a heartbeat that stops seeing replies calls
+   * this instead of trusting readyState.
+   */
+  forceReconnect(): void {
+    if (!this.shouldConnect) return;
+    try { this.ws?.close(); } catch {}
+  }
+
   disconnect(): void {
     this.shouldConnect = false;
     if (this.reconnectTimer) {
