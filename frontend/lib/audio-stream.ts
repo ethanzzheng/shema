@@ -6,9 +6,28 @@
  * play a continuous stream — audio starts before a clip finishes synthesising,
  * and clips run gaplessly into each other.
  *
- * Chrome supports `audio/mpeg` in MSE; call `isSupported()` and fall back to the
- * per-clip AudioPlaybackQueue if not.
+ * Playback deliberately runs through a real HTMLAudioElement and NEVER
+ * through an AudioContext: the OS treats a playing media element like a
+ * podcast (keeps it alive with the screen off / app switched, shows
+ * lock-screen controls via Media Session), whereas AudioContext output is
+ * suspended in the background on iOS.
+ *
+ * Chrome/Android support `audio/mpeg` in classic MediaSource; iOS 17.1+
+ * provides ManagedMediaSource instead — use it when present. Call
+ * `isSupported()` and fall back to the per-clip AudioPlaybackQueue if
+ * neither works (older iPhones — those will pause in the background).
  */
+
+/** ManagedMediaSource (iOS/Safari 17.1+) or classic MediaSource, if usable. */
+function mediaSourceClass(): typeof MediaSource | null {
+  if (typeof window === 'undefined') return null;
+  const w = window as unknown as { ManagedMediaSource?: typeof MediaSource; MediaSource?: typeof MediaSource };
+  for (const MS of [w.ManagedMediaSource, w.MediaSource]) {
+    if (MS && typeof MS.isTypeSupported === 'function' && MS.isTypeSupported('audio/mpeg')) return MS;
+  }
+  return null;
+}
+
 export class AudioStreamPlayer {
   private audioEl: HTMLAudioElement | null = null;
   private mediaSource: MediaSource | null = null;
@@ -19,22 +38,28 @@ export class AudioStreamPlayer {
   private volume = 1;
 
   static isSupported(): boolean {
-    return (
-      typeof window !== 'undefined' &&
-      'MediaSource' in window &&
-      window.MediaSource.isTypeSupported('audio/mpeg')
-    );
+    return mediaSourceClass() !== null;
   }
 
   /** Must be called from a user gesture so autoplay is unlocked. */
   start(): void {
     if (this.active) return;
+    const MS = mediaSourceClass();
+    if (!MS) return;
     this.active = true;
 
     this.audioEl = new Audio();
     this.audioEl.autoplay = true;
     this.audioEl.volume = this.volume;
-    this.mediaSource = new MediaSource();
+    // Podcast-style element: inline (no fullscreen takeover on iOS)...
+    (this.audioEl as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
+    this.audioEl.setAttribute('playsinline', '');
+    // ...and ManagedMediaSource requires remote playback (AirPlay) disabled.
+    const w = window as unknown as { ManagedMediaSource?: typeof MediaSource };
+    if (w.ManagedMediaSource && MS === w.ManagedMediaSource) {
+      (this.audioEl as HTMLAudioElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
+    }
+    this.mediaSource = new MS();
     this.objectUrl = URL.createObjectURL(this.mediaSource);
     this.audioEl.src = this.objectUrl;
     this.mediaSource.addEventListener('sourceopen', this.onSourceOpen);

@@ -116,6 +116,49 @@ export default function ListenerView({ church }: { church: string }) {
     playbackRef.current?.setVolume(next ? 0 : 1);
     if (next) browserTtsRef.current?.cancel();
   };
+  const togglePauseRef = useRef<() => void>(() => {});
+  togglePauseRef.current = togglePause;
+
+  // ── Media Session: lock-screen metadata + controls ───────────────────────
+  // With playback on a real <audio> element, the OS treats the stream like a
+  // podcast: it keeps playing with the screen off / app switched, and these
+  // handlers put working play/pause controls on the lock screen.
+  useEffect(() => {
+    if (!audioStarted || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: 'Live English Translation',
+        artist: church,
+        album: 'Shema',
+        artwork: [
+          { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: '/icon-512.png', sizes: '512x512', type: 'image/png' },
+        ],
+      });
+      navigator.mediaSession.setActionHandler('play', () => {
+        if (pausedRef.current) togglePauseRef.current();
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        if (!pausedRef.current) togglePauseRef.current();
+      });
+    } catch {
+      /* media session is progressive enhancement */
+    }
+    return () => {
+      try {
+        navigator.mediaSession.setActionHandler('play', null);
+        navigator.mediaSession.setActionHandler('pause', null);
+        navigator.mediaSession.metadata = null;
+      } catch {}
+    };
+  }, [audioStarted, church]);
+
+  useEffect(() => {
+    if (!audioStarted || !('mediaSession' in navigator)) return;
+    try {
+      navigator.mediaSession.playbackState = paused ? 'paused' : 'playing';
+    } catch {}
+  }, [audioStarted, paused]);
 
   // ── Init audio (requires user gesture) ────────────────────────────────
   const initAudio = () => {
