@@ -51,9 +51,32 @@ test('looksLikeMetaCommentary: catches model describing the input', () => {
   assert.equal(looksLikeMetaCommentary('I cannot translate this segment'), true);
 });
 
+test('looksLikeMetaCommentary: catches translator-voice analysis and refusals', () => {
+  assert.equal(looksLikeMetaCommentary('The input text ends mid-sentence'), true);
+  assert.equal(looksLikeMetaCommentary('The sentence is cut off before the verb'), true);
+  assert.equal(looksLikeMetaCommentary('As an interpreter, I would render this as...'), true);
+  assert.equal(looksLikeMetaCommentary("I'm unable to translate this fragment"), true);
+  assert.equal(looksLikeMetaCommentary('I am unable to provide a translation'), true);
+});
+
 test('looksLikeMetaCommentary: normal translations pass through', () => {
   assert.equal(looksLikeMetaCommentary('God so loved the world.'), false);
   assert.equal(looksLikeMetaCommentary('Take my yoke upon you and learn from me.'), false);
+});
+
+test('looksLikeMetaCommentary: sermon word-studies and quoted speech are NOT meta', () => {
+  // The exact class of line the old guard wrongly dropped (soak seq 115):
+  assert.equal(
+    looksLikeMetaCommentary(
+      'Here, this word in the passage, if you look at it in the original Greek, means soldiers marching in step.',
+    ),
+    false,
+  );
+  assert.equal(looksLikeMetaCommentary('If you look at the text, Jesus says to love your neighbor.'), false);
+  assert.equal(looksLikeMetaCommentary('This sentence is the heart of the whole chapter.'), false);
+  assert.equal(looksLikeMetaCommentary("I still can't forget what he said to me."), false);
+  assert.equal(looksLikeMetaCommentary("I can't do this alone, right?"), false);
+  assert.equal(looksLikeMetaCommentary('The passage we will share together today is John chapter three.'), false);
 });
 
 test('extractJsonObject: plain JSON passes through', () => {

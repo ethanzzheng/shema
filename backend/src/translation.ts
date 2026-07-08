@@ -78,10 +78,27 @@ export function sanitizeForSpeech(text: string): string {
   return t.trim();
 }
 
-/** Detect the model describing the input instead of translating it. */
+/**
+ * Detect the model describing the input instead of translating it.
+ *
+ * Translator-voice tells ONLY. Pastors legitimately say "the passage", "the
+ * text", "this word means…" (word studies: "in the original Greek, this
+ * means…") and quote people saying "I can't …" — so a noun like passage/text
+ * alone, or a bare "I can't", must NOT trigger. Each branch requires the
+ * surrounding translator-analysis construction.
+ */
 export function looksLikeMetaCommentary(text: string): boolean {
-  return /\b(the (segment|input|text|passage|sentence)\b|requires? the continuation|incomplete mid-?phrase|as an interpreter|I (cannot|can't|am unable|'m unable)|this (appears|seems) (to be )?incomplete)\b/i.test(
-    text,
+  return (
+    // "the segment/input" are analysis vocabulary, never sermon vocabulary.
+    /\bthe (segment|input)\b/i.test(text) ||
+    // "The text/passage/sentence is incomplete / appears cut off / …"
+    /\b(the|this) (text|passage|sentence|verse|phrase) (is|appears|seems|looks|ends|was) (to be )?(incomplete|cut off|truncated|a fragment|unfinished|mid-?sentence|mid-?phrase)\b/i.test(text) ||
+    /\brequires? the continuation\b/i.test(text) ||
+    /\bincomplete mid-?phrase\b/i.test(text) ||
+    /\bas an interpreter\b/i.test(text) ||
+    // Refusals: "I cannot/can't/am unable (to) translate/render/…"
+    /\bI(\s+am|'m)?\s*(cannot|can't|unable)\s+(to\s+)?(translate|render|provide|complete|continue|determine)\b/i.test(text) ||
+    /\bthis (appears|seems) (to be )?incomplete\b/i.test(text)
   );
 }
 
