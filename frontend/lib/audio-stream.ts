@@ -37,6 +37,28 @@ export class AudioStreamPlayer {
   private active = false;
   private volume = 1;
 
+  // ── Starvation-resume warmup ──────────────────────────────────────────────
+  // Translation gaps drain the buffer at nearly every sentence boundary, so
+  // almost every clip begins with a resume-from-empty. TTS clips carry only
+  // ~30–130ms of leading silence, and a resume can start late (MSE stall
+  // recovery, clock overshoot on Safari/MMS) or into a sleeping output device
+  // (Bluetooth wake ≈ hundreds of ms) — either way the sentence's first word
+  // gets swallowed. Clips END with ~300–450ms of silence though, so on every
+  // starvation-resume we seek back WARMUP_SEC into the previous clip's silent
+  // tail before playing: the audio path wakes during silence and the new
+  // words begin on a warm device. The explicit seek also corrects any clock
+  // drift past the buffered edge.
+  private static readonly WARMUP_SEC = 0.3;
+  /** Don't resume until this much of the new clip is buffered (prevents an
+   *  immediate re-starve → re-rewind stutter when chunks trickle in). */
+  private static readonly MIN_AHEAD_SEC = 0.25;
+  /** Within this window after a resume, re-starves play on without another
+   *  rewind — rapid rewind loops would stutter the sentence onset. */
+  private static readonly RESUME_COOLDOWN_MS = 500;
+  private starved = true; // starts starved: the very first clip anchors at 0
+  private starvedClipStart: number | null = null;
+  private lastResumeAt = 0;
+
   static isSupported(): boolean {
     return mediaSourceClass() !== null;
   }
@@ -59,11 +81,18 @@ export class AudioStreamPlayer {
     if (w.ManagedMediaSource && MS === w.ManagedMediaSource) {
       (this.audioEl as HTMLAudioElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
     }
+    // The element fires 'waiting' when it runs out of buffered data — that
+    // marks the next append as a starvation-resume needing warmup.
+    this.audioEl.addEventListener('waiting', () => {
+      this.starved = true;
+    });
     this.mediaSource = new MS();
     this.objectUrl = URL.createObjectURL(this.mediaSource);
     this.audioEl.src = this.objectUrl;
     this.mediaSource.addEventListener('sourceopen', this.onSourceOpen);
     this.audioEl.play().catch(() => {});
+    // Debug handle for live diagnosis (harmless; not part of any API).
+    (window as unknown as Record<string, unknown>).__shemaStream = this;
   }
 
   private onSourceOpen = (): void => {
@@ -88,7 +117,18 @@ export class AudioStreamPlayer {
 
   private flush = (): void => {
     const sb = this.sourceBuffer;
-    if (!sb || sb.updating || this.pending.length === 0) return;
+    if (!sb) return;
+
+    // New data has landed since starvation → warm-seek and resume.
+    this.maybeResumeFromStarvation();
+
+    if (sb.updating || this.pending.length === 0) return;
+
+    // First append after starvation: remember where the new clip begins
+    // (current buffered end) so the resume can target just before it.
+    if (this.starved && this.starvedClipStart === null) {
+      this.starvedClipStart = this.bufferedEnd() ?? 0;
+    }
 
     const next = this.pending.shift()!;
     try {
@@ -103,8 +143,50 @@ export class AudioStreamPlayer {
     }
 
     // Resume if the element underran while waiting for data.
-    if (this.audioEl && this.audioEl.paused) this.audioEl.play().catch(() => {});
+    if (!this.starved && this.audioEl && this.audioEl.paused) this.audioEl.play().catch(() => {});
   };
+
+  private bufferedEnd(): number | null {
+    const sb = this.sourceBuffer;
+    if (!sb || sb.buffered.length === 0) return null;
+    return sb.buffered.end(sb.buffered.length - 1);
+  }
+
+  /**
+   * After starvation, once the incoming clip's data is actually buffered,
+   * seek to WARMUP_SEC before the clip start (inside the previous clip's
+   * silent tail) and play. Never skips new content — the target is always at
+   * or before the new clip's first sample.
+   */
+  private maybeResumeFromStarvation(): void {
+    const el = this.audioEl;
+    const sb = this.sourceBuffer;
+    if (!el || !sb || sb.updating || !this.starved || this.starvedClipStart === null) return;
+
+    // Right after a warmup resume, a re-starve just plays on — another
+    // rewind would replay the onset we just played (audible stutter).
+    if (Date.now() - this.lastResumeAt < AudioStreamPlayer.RESUME_COOLDOWN_MS) {
+      this.starved = false;
+      this.starvedClipStart = null;
+      el.play().catch(() => {});
+      return;
+    }
+
+    const end = this.bufferedEnd();
+    if (end === null || end < this.starvedClipStart + AudioStreamPlayer.MIN_AHEAD_SEC) return; // not enough of the new clip yet
+
+    const rangeStart = sb.buffered.start(0);
+    const target = Math.max(rangeStart, this.starvedClipStart - AudioStreamPlayer.WARMUP_SEC);
+    try {
+      el.currentTime = target;
+    } catch {
+      /* seek can throw during teardown; playback will still resume below */
+    }
+    el.play().catch(() => {});
+    this.lastResumeAt = Date.now();
+    this.starved = false;
+    this.starvedClipStart = null;
+  }
 
   /** Free SourceBuffer quota by dropping audio that has already played. */
   private evictPlayed(): void {
@@ -123,6 +205,8 @@ export class AudioStreamPlayer {
   /** New broadcast — clear anything queued; the stream itself continues. */
   reset(): void {
     this.pending = [];
+    this.starved = true;
+    this.starvedClipStart = null;
   }
 
   stop(): void {
