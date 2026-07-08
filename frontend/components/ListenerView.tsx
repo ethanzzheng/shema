@@ -17,7 +17,7 @@ interface TranscriptEntry {
 
 // ── Browser TTS helper ─────────────────────────────────────────────────────
 class BrowserTTS {
-  private queue: string[] = [];
+  private queue: (string | { text: string; seq: number })[] = [];
   private speaking = false;
 
   speak(text: string): void {
@@ -26,16 +26,30 @@ class BrowserTTS {
     this.drain();
   }
 
+  /** Fires when an utterance actually starts speaking (the spoken seq). */
+  onSeqStart: ((seq: number) => void) | null = null;
+
+  speakSeq(text: string, seq: number): void {
+    if (!('speechSynthesis' in window)) return;
+    this.queue.push({ text, seq });
+    this.drain();
+  }
+
   private drain(): void {
     if (this.speaking || this.queue.length === 0) return;
-    const text = this.queue.shift()!;
+    const item = this.queue.shift()!;
     if (this.queue.length > 3) {
       this.queue = this.queue.slice(-1);
     }
+    const text = typeof item === 'string' ? item : item.text;
+    const seq = typeof item === 'string' ? null : item.seq;
     const utter = new SpeechSynthesisUtterance(text);
     utter.lang = 'en-US';
     utter.rate = 1.25;
     utter.pitch = 1.0;
+    if (seq !== null) {
+      utter.onstart = () => this.onSeqStart?.(seq);
+    }
     utter.onend = () => {
       this.speaking = false;
       this.drain();
@@ -73,6 +87,10 @@ export default function ListenerView({ church }: { church: string }) {
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
+  // The seq whose AUDIO is playing right now — drives the highlight.
+  // Translations arrive ahead of their audio; highlighting the latest
+  // translation runs ahead of what the ear hears.
+  const [spokenSeq, setSpokenSeq] = useState(0);
 
   const wsRef = useRef<WsClient | null>(null);
   const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
@@ -83,19 +101,37 @@ export default function ListenerView({ church }: { church: string }) {
   const handleMessageRef = useRef<(msg: ServerMessage) => void>(() => {});
   const scrollRef = useRef<HTMLDivElement>(null);
   const autoScrollRef = useRef(true);
+  const programmaticScrollRef = useRef(false);
 
-  // Auto-scroll to bottom when new entries arrive (if user hasn't scrolled up)
+  // Keep the SPOKEN line in view (unless the user scrolled away to read).
   useEffect(() => {
-    if (autoScrollRef.current && scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!autoScrollRef.current || !scrollRef.current) return;
+    const container = scrollRef.current;
+    programmaticScrollRef.current = true;
+    const el = spokenSeq > 0 ? container.querySelector(`[data-seq="${spokenSeq}"]`) : null;
+    if (el) {
+      (el as HTMLElement).scrollIntoView({ block: 'center' });
+    } else {
+      container.scrollTop = container.scrollHeight;
     }
-  }, [transcript]);
+    // scrollIntoView fires the scroll handler asynchronously
+    setTimeout(() => { programmaticScrollRef.current = false; }, 50);
+  }, [transcript, spokenSeq]);
 
   const handleScroll = () => {
-    if (!scrollRef.current) return;
-    const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
-    // If user is within 60px of bottom, keep auto-scrolling
-    autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 60;
+    if (!scrollRef.current || programmaticScrollRef.current) return;
+    const container = scrollRef.current;
+    // Re-latch auto-scroll when the user brings the live line back into view
+    // (or reaches the bottom); manual scrolling away releases it.
+    const el = container.querySelector(`[data-seq="${spokenSeq}"]`) as HTMLElement | null;
+    if (el) {
+      const c = container.getBoundingClientRect();
+      const r = el.getBoundingClientRect();
+      autoScrollRef.current = r.top < c.bottom && r.bottom > c.top;
+    } else {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 60;
+    }
   };
 
   useEffect(() => {
@@ -167,15 +203,18 @@ export default function ListenerView({ church }: { church: string }) {
     // Prefer progressive MediaSource streaming; fall back to per-clip playback.
     if (AudioStreamPlayer.isSupported()) {
       const s = new AudioStreamPlayer();
+      s.onSeqPlaying = (seq) => setSpokenSeq(seq);
       s.start();
       streamRef.current = s;
     } else {
       const q = new AudioPlaybackQueue();
+      q.onSeqStart = (seq) => setSpokenSeq(seq);
       q.start();
       playbackRef.current = q;
     }
 
     browserTtsRef.current = new BrowserTTS();
+    browserTtsRef.current.onSeqStart = (seq) => setSpokenSeq(seq);
 
     setAudioStarted(true);
   };
@@ -267,7 +306,7 @@ export default function ListenerView({ church }: { church: string }) {
             t.seq > lastSpokenSeqRef.current
           ) {
             lastSpokenSeqRef.current = t.seq;
-            browserTtsRef.current.speak(t.sermon);
+            browserTtsRef.current.speakSeq(t.sermon, t.seq);
           }
           break;
         }
@@ -286,7 +325,7 @@ export default function ListenerView({ church }: { church: string }) {
           const a = msg as AudioChunkMsg;
           const bytes = base64ToBytes(a.data);
           if (streamRef.current) {
-            streamRef.current.appendChunk(bytes);
+            streamRef.current.appendChunk(bytes, a.seq);
           } else if (fallbackAccumRef.current) {
             fallbackAccumRef.current.parts.push(bytes);
           }
@@ -442,18 +481,41 @@ export default function ListenerView({ church }: { church: string }) {
       >
         {transcript.length > 0 ? (
           <>
-            {/* Spotify-lyrics style: every past sentence is its own faded
-                line, scrollable all the way back; the newest line glows. */}
-            {transcript.slice(0, -1).map((entry) => (
-              <p key={entry.seq} style={{ color: 'var(--text-muted)', whiteSpace: 'pre-wrap', marginBottom: '0.9em' }}>
-                {captionMode === 'direct' ? entry.direct : entry.sermon}
-              </p>
-            ))}
-            <p style={{ color: 'var(--text)', whiteSpace: 'pre-wrap', fontSize: '1.35em', lineHeight: 1.6 }}>
-              {captionMode === 'direct'
-                ? transcript[transcript.length - 1].direct
-                : transcript[transcript.length - 1].sermon}
-            </p>
+            {/* Spotify-lyrics style, synced to the EAR: lines already heard
+                are faded above, the line whose audio is playing NOW glows,
+                and translated-but-not-yet-spoken lines wait dimmed below
+                (read ahead if you like). When audio isn't the driver
+                (captions-only), the newest line is the live one. */}
+            {(() => {
+              const lastSeq = transcript[transcript.length - 1].seq;
+              const audioDriven = audioStarted && ttsMode !== 'off' && spokenSeq > 0;
+              const highlightSeq = audioDriven ? Math.min(spokenSeq, lastSeq) : lastSeq;
+              return transcript.map((entry) => {
+                const text = captionMode === 'direct' ? entry.direct : entry.sermon;
+                if (entry.seq === highlightSeq) {
+                  return (
+                    <p key={entry.seq} data-seq={entry.seq} style={{ color: 'var(--text)', whiteSpace: 'pre-wrap', fontSize: '1.35em', lineHeight: 1.6, marginBottom: '0.7em' }}>
+                      {text}
+                    </p>
+                  );
+                }
+                const upcoming = entry.seq > highlightSeq;
+                return (
+                  <p
+                    key={entry.seq}
+                    data-seq={entry.seq}
+                    style={{
+                      color: 'var(--text-muted)',
+                      opacity: upcoming ? 0.5 : 1,
+                      whiteSpace: 'pre-wrap',
+                      marginBottom: '0.9em',
+                    }}
+                  >
+                    {text}
+                  </p>
+                );
+              });
+            })()}
           </>
         ) : (
           <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>

@@ -33,7 +33,7 @@ export class AudioStreamPlayer {
   private mediaSource: MediaSource | null = null;
   private sourceBuffer: SourceBuffer | null = null;
   private objectUrl: string | null = null;
-  private pending: Uint8Array[] = [];
+  private pending: { bytes: Uint8Array; seq: number | null }[] = [];
   private active = false;
   private volume = 1;
 
@@ -58,6 +58,17 @@ export class AudioStreamPlayer {
   private starved = true; // starts starved: the very first clip anchors at 0
   private starvedClipStart: number | null = null;
   private lastResumeAt = 0;
+
+  // ── Spoken-seq tracking ───────────────────────────────────────────────────
+  // Each appended chunk carries its sentence seq, so we can map every seq to
+  // its time range in the element's timeline. On 'timeupdate' we report which
+  // seq the playhead is inside — that's the sentence actually being HEARD
+  // (translations arrive ahead of their audio, so "latest translation" runs
+  // ahead of the ear). Accuracy is bounded by append granularity (~±0.3s).
+  onSeqPlaying: ((seq: number) => void) | null = null;
+  private seqRanges = new Map<number, { start: number; end: number }>();
+  private lastAppendedSeq: number | null = null;
+  private lastNotifiedSeq: number | null = null;
 
   static isSupported(): boolean {
     return mediaSourceClass() !== null;
@@ -86,6 +97,20 @@ export class AudioStreamPlayer {
     this.audioEl.addEventListener('waiting', () => {
       this.starved = true;
     });
+    // Report which sentence the playhead is inside (fires ~4x/second).
+    this.audioEl.addEventListener('timeupdate', () => {
+      if (!this.onSeqPlaying || !this.audioEl) return;
+      const t = this.audioEl.currentTime;
+      for (const [seq, r] of this.seqRanges) {
+        if (t >= r.start && t < r.end) {
+          if (seq !== this.lastNotifiedSeq) {
+            this.lastNotifiedSeq = seq;
+            this.onSeqPlaying(seq);
+          }
+          return;
+        }
+      }
+    });
     this.mediaSource = new MS();
     this.objectUrl = URL.createObjectURL(this.mediaSource);
     this.audioEl.src = this.objectUrl;
@@ -108,16 +133,24 @@ export class AudioStreamPlayer {
     }
   };
 
-  /** Enqueue a decoded MP3 chunk for playback. */
-  appendChunk(bytes: Uint8Array): void {
+  /** Enqueue a decoded MP3 chunk for playback, tagged with its sentence seq. */
+  appendChunk(bytes: Uint8Array, seq?: number): void {
     if (!this.active || bytes.length === 0) return;
-    this.pending.push(bytes);
+    this.pending.push({ bytes, seq: seq ?? null });
     this.flush();
   }
 
   private flush = (): void => {
     const sb = this.sourceBuffer;
     if (!sb) return;
+
+    // The previous append has landed — extend its seq's time range to the
+    // new buffered end.
+    if (!sb.updating && this.lastAppendedSeq !== null) {
+      const r = this.seqRanges.get(this.lastAppendedSeq);
+      const end = this.bufferedEnd();
+      if (r && end !== null && end > r.end) r.end = end;
+    }
 
     // New data has landed since starvation → warm-seek and resume.
     this.maybeResumeFromStarvation();
@@ -131,8 +164,18 @@ export class AudioStreamPlayer {
     }
 
     const next = this.pending.shift()!;
+    if (next.seq !== null && !this.seqRanges.has(next.seq)) {
+      const start = this.bufferedEnd() ?? 0;
+      this.seqRanges.set(next.seq, { start, end: start });
+      // Bound the map: prune entries far behind the playhead.
+      if (this.seqRanges.size > 60) {
+        const oldest = this.seqRanges.keys().next().value;
+        if (oldest !== undefined) this.seqRanges.delete(oldest);
+      }
+    }
     try {
-      sb.appendBuffer(next as BufferSource);
+      sb.appendBuffer(next.bytes as BufferSource);
+      if (next.seq !== null) this.lastAppendedSeq = next.seq;
     } catch (e) {
       if ((e as DOMException)?.name === 'QuotaExceededError') {
         this.evictPlayed();
@@ -207,6 +250,11 @@ export class AudioStreamPlayer {
     this.pending = [];
     this.starved = true;
     this.starvedClipStart = null;
+    // Seq numbering restarts with the new broadcast; old ranges would
+    // mis-attribute the new timeline.
+    this.seqRanges.clear();
+    this.lastAppendedSeq = null;
+    this.lastNotifiedSeq = null;
   }
 
   stop(): void {

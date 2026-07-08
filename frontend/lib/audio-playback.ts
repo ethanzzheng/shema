@@ -29,6 +29,9 @@ const GAP_SKIP_MS = 700;     // skip a missing seq after this long if later clip
 const MAX_BUFFERED = 32;     // hard cap on out-of-order clips held in memory
 
 export class AudioPlaybackQueue {
+  /** Fires when a clip's audio actually begins playing (the spoken seq). */
+  onSeqStart: ((seq: number) => void) | null = null;
+
   private ctx: AudioContext | null = null;
   private masterGain: GainNode | null = null;
   private volume = 1;
@@ -156,14 +159,21 @@ export class AudioPlaybackQueue {
     if (!this.ctx || this.expectedSeq === null) return;
 
     while (this.buffers.has(this.expectedSeq)) {
-      const buffer = this.buffers.get(this.expectedSeq)!;
-      this.buffers.delete(this.expectedSeq);
+      const seq = this.expectedSeq;
+      const buffer = this.buffers.get(seq)!;
+      this.buffers.delete(seq);
 
       const startAt = Math.max(this.nextPlayAt, this.ctx.currentTime);
       const source = this.ctx.createBufferSource();
       source.buffer = buffer;
       source.connect(this.masterGain ?? this.ctx.destination);
       source.start(startAt);
+
+      // Announce the spoken seq when its clip actually begins.
+      if (this.onSeqStart) {
+        const delayMs = Math.max(0, (startAt - this.ctx.currentTime) * 1000);
+        setTimeout(() => this.onSeqStart?.(seq), delayMs);
+      }
 
       this.nextPlayAt = startAt + buffer.duration;
       this.expectedSeq++;
