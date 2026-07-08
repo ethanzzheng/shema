@@ -20,10 +20,21 @@ interface VoiceSettings {
   use_speaker_boost?: boolean;
 }
 
+/** Parse an env float, falling back when unset or not a number. */
+function envFloat(name: string, fallback: number): number {
+  const v = parseFloat(process.env[name] ?? '');
+  return Number.isFinite(v) ? v : fallback;
+}
+
+// Higher stability + zero style = steadier clip-to-clip loudness (each clip
+// is delivered less "expressively", so volume stops swinging between
+// sentences). Ear-tunable via env without code changes:
+//   TTS_STABILITY (default 0.5)  — lower = more expressive, more variance
+//   TTS_STYLE     (default 0)    — style exaggeration re-adds variance
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
-  stability: 0.3,
+  stability: envFloat('TTS_STABILITY', 0.5),
   similarity_boost: 0.75,
-  style: 0.1,
+  style: envFloat('TTS_STYLE', 0),
   use_speaker_boost: true,
 };
 
