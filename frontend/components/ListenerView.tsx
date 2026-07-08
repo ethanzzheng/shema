@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, useCallback } from 'react';
-import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg } from '@/lib/ws-client';
+import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg, TranscriptHistoryMsg } from '@/lib/ws-client';
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
@@ -185,6 +185,23 @@ export default function ListenerView({ church }: { church: string }) {
               browserTtsRef.current?.cancel();
             }
           }
+          break;
+        }
+
+        case 'transcript_history': {
+          // Authoritative transcript of the current broadcast: sent on
+          // connect (late join / refresh restores the whole sermon so far)
+          // and as empty chunks when a new sermon starts (screen resets).
+          const h = msg as TranscriptHistoryMsg;
+          const seen = new Set<number>();
+          const entries: TranscriptEntry[] = [];
+          for (const c of h.chunks ?? []) {
+            if (seen.has(c.seq)) continue;
+            seen.add(c.seq);
+            entries.push({ seq: c.seq, sermon: c.sermon, direct: c.direct ?? c.sermon });
+          }
+          entries.sort((a, b) => a.seq - b.seq);
+          setTranscript(entries);
           break;
         }
 

@@ -208,9 +208,22 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     ttsPipeline.enqueue({ seq, text, chunkSize, translationLatencyMs, chunkStart });
   }
 
+  // A start within this window of the last stop is a RESUME (network blip +
+  // auto-restart), not a new sermon — keep the transcript. Beyond it, treat
+  // the start as a fresh sermon and begin with a clean transcript.
+  const RESUME_WINDOW_MS = 5 * 60 * 1000;
+
   // ── Start broadcast session ────────────────────────────────────────────────
   function startSession(mode: 'fast' | 'smooth'): void {
     if (session.isActive) stopSession();
+
+    const isResume =
+      session.lastStoppedAt !== 0 && Date.now() - session.lastStoppedAt < RESUME_WINDOW_MS;
+    if (!isResume) {
+      session.clearTranscript();
+      // Connected listeners' screens reset too — history is authoritative.
+      session.broadcast({ type: 'transcript_history', chunks: [] });
+    }
 
     session.isActive = true;
     session.mode = mode;
@@ -255,6 +268,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
   function stopSession(): void {
     session.isActive = false;
+    session.lastStoppedAt = Date.now();
     const c = chunker;
     chunker = null;
     if (c) {

@@ -117,6 +117,23 @@ describe('SessionManager', () => {
     assert.equal(broadcaster.sent.length, 3);
   });
 
+  test('transcript keeps the full broadcast (no truncation) and clears on demand', () => {
+    const mgr = new SessionManager();
+    const room = mgr.getOrCreate('a');
+    for (let i = 1; i <= 120; i++) {
+      room.addTranslation({ seq: i, korean: `k${i}`, direct: `d${i}`, sermon: `s${i}`, timestamp: i });
+    }
+    assert.equal(room.translationHistory.length, 120); // old cap was 50
+
+    const wire = room.transcriptForListeners();
+    assert.equal(wire.length, 120);
+    assert.deepEqual(wire[0], { seq: 1, direct: 'd1', sermon: 's1', timestamp: 1 });
+    assert.ok(!('korean' in wire[0]), 'Korean payload must not go to listeners');
+
+    room.clearTranscript();
+    assert.equal(room.translationHistory.length, 0);
+  });
+
   test('stats reports per-room listener counts', () => {
     const mgr = new SessionManager();
     const roomA = mgr.getOrCreate('a');

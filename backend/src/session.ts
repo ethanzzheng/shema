@@ -115,17 +115,39 @@ export class Session {
   }
 
   /**
+   * When the last broadcast stopped (0 = never). A `start` shortly after a
+   * stop is a RESUME (network blip + broadcaster auto-restart), not a new
+   * sermon — the transcript must survive it.
+   */
+  lastStoppedAt = 0;
+
+  /**
    * Record a completed translation. The seq is assigned earlier, at dispatch
    * time (spoken order), by the chunker via nextSeq() — NOT here — so it
    * reflects spoken order rather than translation-completion order.
+   *
+   * The FULL broadcast transcript is kept (no truncation): it's sent to
+   * late-joining/refreshing listeners so they get the whole sermon so far.
+   * A full sermon is a few hundred short text entries — trivial memory.
    */
   addTranslation(chunk: TranslationChunk): TranslationChunk {
-    // Keep last 50 chunks in memory
     this.translationHistory.push(chunk);
-    if (this.translationHistory.length > 50) {
-      this.translationHistory.shift();
-    }
     return chunk;
+  }
+
+  /** Wipe the transcript (a genuinely new sermon is starting). */
+  clearTranscript(): void {
+    this.translationHistory = [];
+  }
+
+  /** The transcript in the shape listeners receive (Korean omitted). */
+  transcriptForListeners(): { seq: number; direct: string; sermon: string; timestamp: number }[] {
+    return this.translationHistory.map(({ seq, direct, sermon, timestamp }) => ({
+      seq,
+      direct,
+      sermon,
+      timestamp,
+    }));
   }
 
   reset(): void {

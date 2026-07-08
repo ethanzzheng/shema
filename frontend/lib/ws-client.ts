@@ -59,6 +59,16 @@ export interface ListenersMsg {
   count: number;
 }
 
+/**
+ * Full transcript of the current broadcast, sent to a listener on connect
+ * (late join / refresh) and broadcast with empty chunks when a new sermon
+ * starts. Authoritative: replaces local transcript state.
+ */
+export interface TranscriptHistoryMsg {
+  type: 'transcript_history';
+  chunks: { seq: number; direct: string; sermon: string; timestamp: number }[];
+}
+
 export interface DebugMsg {
   type: 'debug';
   chunkSize: number;
@@ -82,6 +92,7 @@ export type ServerMessage =
   | AudioEndMsg
   | StatusMsg
   | ListenersMsg
+  | TranscriptHistoryMsg
   | DebugMsg
   | ErrorMsg
   | { type: string; [key: string]: unknown };

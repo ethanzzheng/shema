@@ -5,6 +5,7 @@
  *
  * Messages to listeners:
  *   { type: "status", active: boolean }
+ *   { type: "transcript_history", chunks: [{ seq, direct, sermon, timestamp }] }
  *   { type: "translation", seq, direct, sermon, timestamp }
  *   { type: "audio_start" | "audio_chunk" | "audio_end", seq, ... }
  */
@@ -24,6 +25,10 @@ export function handleListenerConnection(ws: WebSocket, session: Session): void 
 
   // Immediately inform the new listener of current broadcast state
   safeSend(ws, { type: 'status', active: session.isActive });
+
+  // Send the full transcript so far, so late-joiners and refreshes see the
+  // whole sermon (text only — audio is live from the join point on).
+  safeSend(ws, { type: 'transcript_history', chunks: session.transcriptForListeners() });
 
   ws.on('close', () => {
     console.log(`[Listener] Disconnected (room "${session.roomId}")`);
