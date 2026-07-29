@@ -35,6 +35,15 @@ test('registerViolations: 해요체 as a sentence default is flagged', () => {
   assert.equal(registerViolations('하나님이 여러분을 사랑해요.').length, 1);
 });
 
+test('registerViolations: trailing vocatives ride after the verb', () => {
+  // Live false positive: the verb is 안녕하십니까; 성도 여러분 is a vocative.
+  assert.deepEqual(registerViolations('안녕하십니까, 성도 여러분.'), []);
+  assert.deepEqual(registerViolations('포기하지 마십시오, 사랑하는 여러분.'), []);
+  assert.deepEqual(registerViolations('사랑하는 여러분!'), []);
+  // The vocative must not launder a casual verb.
+  assert.equal(registerViolations('하나님이 너를 사랑해, 여러분.').length, 1);
+});
+
 test('registerViolations: interjections and quoted dialogue are exempt', () => {
   assert.deepEqual(registerViolations('아멘? 하나님은 선하십니다.'), []);
   assert.deepEqual(registerViolations('할렐루야!'), []);

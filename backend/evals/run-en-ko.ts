@@ -89,9 +89,14 @@ export function registerViolations(text: string): string[] {
   const violations: string[] = [];
   for (const m of cleaned.match(/[^.?!]+[.?!]/g) ?? []) {
     const sentence = m.trim();
-    const core = sentence.replace(/[.?!…]+$/, '').replace(/[)\]"'”’]+$/, '').trim();
+    let core = sentence.replace(/[.?!…]+$/, '').replace(/[)\]"'”’]+$/, '').trim();
     if (!core) continue;
     if (INTERJECTIONS.some((i) => core === i)) continue;
+    // A trailing vocative rides AFTER the verb in pulpit Korean
+    // ("안녕하십니까, 성도 여러분.") — strip it before inspecting the ending.
+    core = core.replace(/,\s*[^,]*여러분$/, '').trim();
+    // A vocative-only exclamation ("사랑하는 여러분!") has no verb to inflect.
+    if (core.endsWith('여러분') && core.split(/\s+/).length <= 3) continue;
     if (FORMAL_ENDINGS.some((e) => core.endsWith(e))) continue;
     violations.push(sentence);
   }
