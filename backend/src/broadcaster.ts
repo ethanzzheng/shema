@@ -261,6 +261,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // Set up chunker. seq is allocated here, at dispatch time, in spoken order.
     chunker = new KoreanChunker({
       mode,
+      direction,
       onChunk: processChunk,
       nextSeq: () => session.nextSeq(),
     });

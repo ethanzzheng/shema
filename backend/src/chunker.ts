@@ -1,6 +1,8 @@
 /**
- * Korean sentence assembler — merges STT utterances into complete thoughts,
- * then dispatches them in order, one translation at a time.
+ * Sentence assembler — merges STT utterances into complete thoughts, then
+ * dispatches them in order, one translation at a time. Boundary detection and
+ * timing are per-direction (Korean grammar for ko-en, English punctuation
+ * rules for en-ko); everything else is shared.
  *
  * The problem this solves: a preacher pauses dramatically MID-sentence, and the
  * STT finalizes an utterance at every pause. Translating each tiny piece on its
@@ -19,6 +21,8 @@
  */
 
 import { looksComplete, splitSentences } from './text';
+import { looksCompleteEn, splitSentencesEn } from './text-en';
+import { Direction } from './direction-config';
 
 // Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
 const MIN_DISPATCH_CHARS = 10;
@@ -35,6 +39,22 @@ const MIN_STT_OVERLAP_CHARS = 6;
 const TINY_FRAGMENT_CHARS = 25;
 
 export type ChunkCallback = (text: string, seq: number) => Promise<void>;
+
+/**
+ * Language-specific sentence-boundary detection — the ONLY part of chunking
+ * that differs by direction. Korean reads grammar off final vs connective
+ * endings (text.ts); English reads abbreviation-aware punctuation with a
+ * trailing-connective veto (text-en.ts). Timing/queueing/ordering are shared.
+ */
+interface BoundaryDetector {
+  looksComplete(text: string): boolean;
+  splitSentences(text: string): { sentences: string[]; remainder: string };
+}
+
+const BOUNDARY_DETECTORS: Record<Direction, BoundaryDetector> = {
+  'ko-en': { looksComplete, splitSentences },
+  'en-ko': { looksComplete: looksCompleteEn, splitSentences: splitSentencesEn },
+};
 
 interface ModeConfig {
   /** Grammatically complete sentence: dispatch after this brief beat. */
@@ -53,22 +73,40 @@ interface ModeConfig {
 
 // "Smooth" waits longer for the sentence to complete (most natural pausing);
 // "Fast" gives up sooner (lower latency, more mid-sentence cuts).
-const MODE_CONFIG: Record<'fast' | 'smooth', ModeConfig> = {
-  fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 260 },
-  smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400 },
+//
+// en-ko waits longer than ko-en at every knob: Korean is verb-final, so an
+// English fragment often lacks the very verb the Korean sentence must END
+// with — a cut costs more, so more-complete segments are worth the latency.
+// maxChars is larger too: English spells more characters per second of
+// speech than Hangul syllable blocks do.
+const MODE_CONFIG: Record<Direction, Record<'fast' | 'smooth', ModeConfig>> = {
+  'ko-en': {
+    fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 260 },
+    smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400 },
+  },
+  'en-ko': {
+    fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340 },
+    smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520 },
+  },
 };
 
 interface ChunkerOptions {
   mode: 'fast' | 'smooth';
+  /** Selects boundary detection + timing; default ko-en (the original). */
+  direction?: Direction;
   onChunk: ChunkCallback;
   /** Allocates the next sequence number, in spoken order, at dispatch time. */
   nextSeq: () => number;
 }
 
+// Class name is historical (it began Korean-only) — direction-aware since
+// en-ko; kept for compatibility with existing imports.
 export class KoreanChunker {
   private buffer = '';
   private onChunk: ChunkCallback;
   private nextSeq: () => number;
+  private readonly direction: Direction;
+  private readonly detector: BoundaryDetector;
   private cfg: ModeConfig;
 
   private timer: NodeJS.Timeout | null = null;
@@ -83,11 +121,13 @@ export class KoreanChunker {
   constructor(opts: ChunkerOptions) {
     this.onChunk = opts.onChunk;
     this.nextSeq = opts.nextSeq;
-    this.cfg = MODE_CONFIG[opts.mode];
+    this.direction = opts.direction ?? 'ko-en';
+    this.detector = BOUNDARY_DETECTORS[this.direction];
+    this.cfg = MODE_CONFIG[this.direction][opts.mode];
   }
 
   setMode(mode: 'fast' | 'smooth'): void {
-    this.cfg = MODE_CONFIG[mode];
+    this.cfg = MODE_CONFIG[this.direction][mode];
   }
 
   async feed(text: string, isFinal: boolean): Promise<void> {
@@ -118,7 +158,7 @@ export class KoreanChunker {
     // completed sentences hostage for 10s+. Interior sentences are safe to cut
     // immediately — the speech has already moved past them. Tiny sentences are
     // grouped up to MIN_DISPATCH_CHARS so "네." never ships alone.
-    const { sentences, remainder } = splitSentences(this.buffer);
+    const { sentences, remainder } = this.detector.splitSentences(this.buffer);
     if (sentences.length > 0) {
       let group = '';
       for (const s of sentences) {
@@ -186,7 +226,7 @@ export class KoreanChunker {
   private armTimer(): void {
     this.cancelTimer();
     let delay: number;
-    if (looksComplete(this.buffer)) {
+    if (this.detector.looksComplete(this.buffer)) {
       delay = this.cfg.completeMs;
     } else {
       delay =
