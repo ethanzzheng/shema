@@ -2,7 +2,7 @@
  * Handles an incoming broadcaster WebSocket connection.
  *
  * Message types from client:
- *   { type: "start", mode: "fast" | "smooth" }
+ *   { type: "start", mode: "fast" | "smooth", direction?: "ko-en" | "en-ko" }
  *   Binary frames → raw PCM 16-bit 16kHz mono audio
  *   { type: "stop" }
  *   { type: "ping" }
@@ -26,9 +26,15 @@ import { isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
+import {
+  Direction,
+  getDirectionConfig,
+  normalizeDirection,
+  resolveTtsModelId,
+  resolveTtsVoiceId,
+} from './direction-config';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
-const ELEVENLABS_VOICE_ID = process.env.ELEVENLABS_VOICE_ID!;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 
 function send(ws: WebSocket, payload: unknown): void {
@@ -91,10 +97,18 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     enqueueTTS(chunk.seq, job.sermon, job.korean.length, job.translationLatencyMs, job.chunkStart);
   }
-  const tts = new ElevenLabsTTS({
-    apiKey: ELEVENLABS_API_KEY,
-    voiceId: ELEVENLABS_VOICE_ID,
-  });
+
+  // Voice + model come from the direction config; rebuilt on each start so a
+  // direction change takes effect. Startup validation guarantees the English
+  // voice env var exists, so the ko-en default here can never be ''.
+  function createTts(direction: Direction): ElevenLabsTTS {
+    return new ElevenLabsTTS({
+      apiKey: ELEVENLABS_API_KEY,
+      voiceId: resolveTtsVoiceId(direction) ?? '',
+      modelId: resolveTtsModelId(direction),
+    });
+  }
+  let tts = createTts('ko-en');
 
   // ── Pipeline: Korean text → Claude → broadcast text → TTS (background) ───
   // `seq` is the spoken-order sequence number, assigned by the chunker at
@@ -214,7 +228,14 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   const RESUME_WINDOW_MS = 5 * 60 * 1000;
 
   // ── Start broadcast session ────────────────────────────────────────────────
-  function startSession(mode: 'fast' | 'smooth'): void {
+  function startSession(mode: 'fast' | 'smooth', direction: Direction): void {
+    const cfg = getDirectionConfig(direction);
+    if (!cfg.implemented) {
+      throw new Error(`Translation direction "${direction}" is not implemented yet.`);
+    }
+    if (!resolveTtsVoiceId(direction)) {
+      throw new Error(`No TTS voice configured for direction "${direction}".`);
+    }
     if (session.isActive) stopSession();
 
     const isResume =
@@ -227,6 +248,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     session.isActive = true;
     session.mode = mode;
+    session.direction = direction;
+    tts = createTts(direction);
     translator.resetContext();
     currentRef = null;
     refAgeChunks = 0;
@@ -242,9 +265,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       nextSeq: () => session.nextSeq(),
     });
 
-    // Set up ElevenLabs STT
+    // Set up streaming STT in the direction's input language
     stt = new ElevenLabsSTT({
       apiKey: ELEVENLABS_API_KEY,
+      language: cfg.sttLanguage,
       onTranscript: async ({ text, isFinal, timestamp }) => {
         console.log(`[Broadcaster] STT transcript (final=${isFinal}): "${text.slice(0, 60)}…"`);
         // Send live Korean transcript to broadcaster UI
@@ -263,7 +287,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     });
 
     stt.connect();
-    console.log('[Broadcaster] Session started, mode =', mode);
+    console.log(`[Broadcaster] Session started, mode = ${mode}, direction = ${direction}`);
   }
 
   function stopSession(): void {
@@ -319,8 +343,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           if (auth.username) {
             console.log(`[Broadcaster] Start authorized for "${auth.username}" in room "${session.roomId}"`);
           }
-          startSession(msg.mode === 'smooth' ? 'smooth' : 'fast');
-          send(ws, { type: 'started', mode: session.mode });
+          const direction = normalizeDirection(msg.direction);
+          try {
+            startSession(msg.mode === 'smooth' ? 'smooth' : 'fast', direction);
+          } catch (err) {
+            const message = (err as Error).message;
+            console.warn(`[Broadcaster] Start refused for room "${session.roomId}": ${message}`);
+            send(ws, { type: 'error', message });
+            break;
+          }
+          send(ws, { type: 'started', mode: session.mode, direction: session.direction });
           break;
         }
 

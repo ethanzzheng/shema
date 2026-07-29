@@ -143,8 +143,8 @@ describe('SessionManager', () => {
     roomA.isActive = true;
 
     assert.deepEqual(mgr.stats(), {
-      a: { listeners: 2, broadcasting: true },
-      b: { listeners: 0, broadcasting: false },
+      a: { listeners: 2, broadcasting: true, direction: 'ko-en' },
+      b: { listeners: 0, broadcasting: false, direction: 'ko-en' },
     });
     assert.equal(mgr.totalListeners, 2);
   });

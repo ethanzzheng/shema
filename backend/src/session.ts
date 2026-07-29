@@ -8,6 +8,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { Direction } from './direction-config';
 
 export interface TranslationChunk {
   seq: number;
@@ -29,6 +30,8 @@ export class Session {
   readonly roomId: string;
   isActive = false;
   mode: 'fast' | 'smooth' = 'smooth';
+  /** Translation direction of the current/last broadcast (set at start). */
+  direction: Direction = 'ko-en';
 
   koreanBuffer = '';
   translationHistory: TranslationChunk[] = [];
@@ -152,6 +155,7 @@ export class Session {
 
   reset(): void {
     this.isActive = false;
+    this.direction = 'ko-en';
     this.koreanBuffer = '';
     this.translationHistory = [];
     this.seq = 0;

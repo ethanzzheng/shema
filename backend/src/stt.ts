@@ -44,6 +44,7 @@ export interface TranscriptEvent {
 export class ElevenLabsSTT {
   // Keep class name for backward compatibility with broadcaster.ts
   private apiKey: string;
+  private language: string;
   private onTranscript: (event: TranscriptEvent) => void;
   private onError: (err: Error) => void;
   private onStatusChange: (connected: boolean) => void;
@@ -72,12 +73,15 @@ export class ElevenLabsSTT {
 
   constructor(opts: {
     apiKey: string;
+    /** Deepgram language code for the input speech (default 'ko'). */
+    language?: string;
     flushIntervalMs?: number; // unused, kept for interface compat
     onTranscript: (event: TranscriptEvent) => void;
     onError: (err: Error) => void;
     onStatusChange: (connected: boolean) => void;
   }) {
     this.apiKey = process.env.DEEPGRAM_API_KEY || opts.apiKey;
+    this.language = opts.language ?? 'ko';
     this.onTranscript = opts.onTranscript;
     this.onError = opts.onError;
     this.onStatusChange = opts.onStatusChange;
@@ -99,7 +103,7 @@ export class ElevenLabsSTT {
     // Build Deepgram streaming URL with params
     const params = new URLSearchParams({
       model: 'nova-3',
-      language: 'ko',
+      language: this.language,
       punctuate: 'true',
       interim_results: 'true',
       endpointing: '400',        // finalize utterances promptly; the chunker reassembles sentences
@@ -121,7 +125,7 @@ export class ElevenLabsSTT {
     for (const kt of keyterms) params.append('keyterm', kt);
 
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
-    console.log(`[STT] Connecting to Deepgram (nova-3, ko, ${keyterms.length} keyterms)`);
+    console.log(`[STT] Connecting to Deepgram (nova-3, ${this.language}, ${keyterms.length} keyterms)`);
 
     this.ws = new WebSocket(url, {
       headers: {

@@ -19,8 +19,13 @@ import { handleListenerConnection } from './listener';
 import { login, authEnabled } from './auth';
 
 // ── Validate required env vars at startup ─────────────────────────────────
-const REQUIRED = ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'ELEVENLABS_VOICE_ID', 'DEEPGRAM_API_KEY'];
+const REQUIRED = ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'DEEPGRAM_API_KEY'];
 const missing = REQUIRED.filter((k) => !process.env[k]);
+// English voice: the per-direction var or the legacy one (kept as the
+// backwards-compatible English default).
+if (!process.env.ELEVENLABS_VOICE_ID_EN && !process.env.ELEVENLABS_VOICE_ID) {
+  missing.push('ELEVENLABS_VOICE_ID (or ELEVENLABS_VOICE_ID_EN)');
+}
 if (missing.length) {
   console.error(`[Startup] Missing env vars: ${missing.join(', ')}`);
   console.error('Copy .env.example → .env and fill in your API keys.');

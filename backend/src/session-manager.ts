@@ -6,6 +6,7 @@
  */
 
 import { Session } from './session';
+import { Direction } from './direction-config';
 
 /** Room slugs are lowercase kebab-case; anything else is normalized to it. */
 export function normalizeRoomId(raw: string | null | undefined): string {
@@ -20,6 +21,7 @@ export function normalizeRoomId(raw: string | null | undefined): string {
 export interface RoomStats {
   listeners: number;
   broadcasting: boolean;
+  direction: Direction;
 }
 
 export class SessionManager {
@@ -67,7 +69,7 @@ export class SessionManager {
   stats(): Record<string, RoomStats> {
     const out: Record<string, RoomStats> = {};
     for (const [id, s] of this.rooms) {
-      out[id] = { listeners: s.listenerCount, broadcasting: s.isActive };
+      out[id] = { listeners: s.listenerCount, broadcasting: s.isActive, direction: s.direction };
     }
     return out;
   }
