@@ -4,6 +4,8 @@ import {
   sanitizeForSpeech,
   looksLikeMetaCommentary,
   extractJsonObject,
+  SYSTEM_PROMPT_KO_EN,
+  SYSTEM_PROMPT_EN_KO,
 } from '../src/translation';
 
 test('sanitizeForSpeech: em/en dashes become comma pauses', () => {
@@ -77,6 +79,35 @@ test('looksLikeMetaCommentary: sermon word-studies and quoted speech are NOT met
   assert.equal(looksLikeMetaCommentary("I still can't forget what he said to me."), false);
   assert.equal(looksLikeMetaCommentary("I can't do this alone, right?"), false);
   assert.equal(looksLikeMetaCommentary('The passage we will share together today is John chapter three.'), false);
+});
+
+test('looksLikeMetaCommentary: Korean translator-voice tells (en-ko output)', () => {
+  assert.equal(looksLikeMetaCommentary('이 문장은 불완전합니다'), true);
+  assert.equal(looksLikeMetaCommentary('이 세그먼트는 잘려 있어 번역할 수 없습니다'), true);
+  assert.equal(looksLikeMetaCommentary('번역이 불가능합니다'), true);
+  assert.equal(looksLikeMetaCommentary('통역사로서 이 부분은 생략하겠습니다'), true);
+});
+
+test('looksLikeMetaCommentary: normal Korean sermon lines pass through', () => {
+  assert.equal(looksLikeMetaCommentary('하나님께서 여러분을 사랑하십니다.'), false);
+  assert.equal(looksLikeMetaCommentary('요한복음 3장 16절 말씀을 함께 읽겠습니다.'), false);
+  // A pastor SAYING a sentence is incomplete about life, not the input, is fine.
+  assert.equal(looksLikeMetaCommentary('우리의 믿음은 아직 완전하지 않습니다.'), false);
+});
+
+test('system prompts: ko-en is the original; en-ko carries register/honorific/개역개정 rules', () => {
+  // ko-en spot-checks (pinned so the en-ko work can't drift it).
+  assert.ok(SYSTEM_PROMPT_KO_EN.startsWith('You are a professional simultaneous interpreter translating a LIVE Korean church sermon into English'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('Mokjang'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('NIV-style'));
+  // en-ko linguistic core.
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('하십시오체'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('반말'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('하나님께서'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('예수님께서'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('개역개정'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('요한복음 3장 16절'));
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('{"translation"')); // same JSON contract
 });
 
 test('extractJsonObject: plain JSON passes through', () => {

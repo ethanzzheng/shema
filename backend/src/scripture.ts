@@ -16,7 +16,9 @@ export interface ScriptureRef {
 }
 
 // Korean book names (개역 standard) → English. Longest names matched first.
-const BOOK_MAP: Record<string, string> = {
+// Exported so scripture-en.ts can invert it (English → Korean) without
+// duplicating the data.
+export const BOOK_MAP: Record<string, string> = {
   창세기: 'Genesis', 출애굽기: 'Exodus', 레위기: 'Leviticus', 민수기: 'Numbers', 신명기: 'Deuteronomy',
   여호수아: 'Joshua', 사사기: 'Judges', 룻기: 'Ruth', 사무엘상: '1 Samuel', 사무엘하: '2 Samuel',
   열왕기상: '1 Kings', 열왕기하: '2 Kings', 역대상: '1 Chronicles', 역대하: '2 Chronicles',
