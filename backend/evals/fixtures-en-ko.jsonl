@@ -1,0 +1,31 @@
+{"id":"normal-01","english":"Good morning, church. It is so good to see every one of you today.","notes":"greeting; congregation address in polite register"}
+{"id":"normal-02","english":"This morning I want to talk about what it means to trust God completely.","mustContainAny":["하나님"],"notes":"plain sermon opener"}
+{"id":"normal-03","english":"Faith is not a feeling. Faith is a decision to stand on the promises of God.","mustContainAny":["믿음"],"notes":"two declaratives"}
+{"id":"normal-04","english":"Let us pray together.","mustContainAny":["기도"],"notes":"exhortation; expect 기도하겠습니다/합시다 style"}
+{"id":"normal-05","english":"When trouble comes, and trouble will come, where do you run first?","notes":"rhetorical question; expect -습니까"}
+{"id":"honorific-01","english":"God loves you more than you could ever imagine.","expectHonorificSubject":true,"notes":"God as subject"}
+{"id":"honorific-02","english":"Jesus died on the cross for your sins.","expectHonorificSubject":true,"mustContainAny":["십자가"],"notes":"Jesus as subject"}
+{"id":"honorific-03","english":"The Lord is calling each one of us this morning.","expectHonorificSubject":true,"notes":"the Lord as subject → 주님께서"}
+{"id":"honorific-04","english":"The Holy Spirit is working in this place right now.","expectHonorificSubject":true,"mustContainAny":["성령"],"notes":"the Spirit as subject"}
+{"id":"ref-01","english":"Turn with me to John chapter 3, verse 16.","mustContainAny":["요한복음 3장 16절"],"scripture":{"book":"John","chapter":3,"verse":16},"notes":"reference announcement → Korean book name"}
+{"id":"ref-02","english":"Open your Bibles to First Corinthians chapter 13.","mustContainAny":["고린도전서 13장"],"scripture":{"book":"1 Corinthians","chapter":13},"notes":"ordinal-word book"}
+{"id":"ref-03","english":"Our text today is Psalm 23.","mustContainAny":["시편 23편"],"scripture":{"book":"Psalms","chapter":23},"notes":"Psalms cites as 편"}
+{"id":"quote-01","english":"For God so loved the world that he gave his one and only Son, that whoever believes in him shall not perish but have eternal life.","registerExempt":true,"mustContainAny":["독생자"],"scripture":{"book":"John","chapter":3,"verse":16},"context":[{"source":"Turn with me to John chapter 3, verse 16.","target":"요한복음 3장 16절을 함께 펴시기 바랍니다."}],"notes":"scripture quote → 개역개정 wording (archaic endings allowed)"}
+{"id":"quote-02","english":"The Lord is my shepherd; I shall not want.","registerExempt":true,"mustContainAny":["목자"],"scripture":{"book":"Psalms","chapter":23,"verse":1},"notes":"Psalm 23:1 quote"}
+{"id":"quote-03","english":"Abraham believed God, and it was credited to him as righteousness.","registerExempt":true,"mustContainAny":["아브라함"],"forbidden":["에이브러햄"],"notes":"near-quote of Romans 4:3; standard Korean Bible name"}
+{"id":"konglish-01","english":"We have to worship God with everything we have.","forbidden":["워십"],"mustContainAny":["예배","경배"],"notes":"worship → 예배, never a loanword"}
+{"id":"konglish-02","english":"His grace is sufficient for you.","forbidden":["그레이스"],"mustContainAny":["은혜"],"notes":"grace → 은혜"}
+{"id":"konglish-03","english":"We are called to fellowship with one another.","forbidden":["펠로우십","펠로십"],"mustContainAny":["교제"],"notes":"fellowship → 교제"}
+{"id":"konglish-04","english":"God has given each of you a ministry.","forbidden":["미니스트리"],"mustContainAny":["사역"],"expectHonorificSubject":true,"notes":"ministry → 사역"}
+{"id":"idiom-01","english":"Enoch walked with God for three hundred years.","mustContainAny":["동행"],"notes":"walk with God → 동행, not literal 걷다"}
+{"id":"idiom-02","english":"God will make a way where there is no way.","expectHonorificSubject":true,"mustContainAny":["길"],"notes":"idiom; natural Korean phrasing"}
+{"id":"idiom-03","english":"Give your heart to the Lord this morning.","mustContainAny":["마음"],"notes":"idiom; exhortation register"}
+{"id":"filler-01","english":"Um, uh, you know,","expectEmpty":true,"notes":"pure filler"}
+{"id":"filler-02","english":"uh, um, so, you know, I mean","expectEmpty":true,"notes":"pure filler chain"}
+{"id":"garble-01","english":"asdlkj fjwe qwoiu nnn","expectEmpty":true,"notes":"STT garbage; empty beats guessing"}
+{"id":"cut-01","english":"And when we look at what the apostle Paul wrote to the church in","forbidden":["고린도","에베소","로마","갈라디아","빌립보","데살로니가","골로새"],"mustContainAny":["바울"],"notes":"mid-sentence cut; must NOT invent the city"}
+{"id":"cut-02","english":"Because when you put your trust in the living God, something begins to","mustContainAny":["하나님"],"notes":"mid-sentence cut; no invented completion (register check skips unpunctuated tail)"}
+{"id":"address-01","english":"Church, I want to encourage you this morning: do not give up.","mustContainAny":["여러분","성도"],"notes":"direct congregation address"}
+{"id":"address-02","english":"Would you stand with me as we read God's Word?","mustContainAny":["말씀"],"notes":"polite request register"}
+{"id":"name-01","english":"Peter stepped out of the boat and walked on the water toward Jesus.","mustContainAny":["베드로"],"forbidden":["피터"],"notes":"standard Korean Bible names"}
+{"id":"tic-01","english":"God is good all the time. Amen?","expectHonorificSubject":true,"notes":"preacher tic; 아멘? allowed as interjection"}

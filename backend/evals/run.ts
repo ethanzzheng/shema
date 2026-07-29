@@ -16,6 +16,7 @@ import * as path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { ClaudeTranslator, looksLikeMetaCommentary } from '../src/translation';
 import { getVerse } from '../src/bible';
+import { similarity } from './shared';
 
 interface Fixture {
   id: string;
@@ -50,26 +51,6 @@ interface FixtureResult {
 
 const CONCURRENCY = 4;
 const DEFAULT_MIN_SIM = 0.55;
-
-/** Dice-coefficient token similarity after normalization. */
-function similarity(a: string, b: string): number {
-  const tok = (s: string) =>
-    s.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').split(/\s+/).filter(Boolean);
-  const ta = tok(a);
-  const tb = tok(b);
-  if (ta.length === 0 || tb.length === 0) return 0;
-  const setB = new Map<string, number>();
-  for (const t of tb) setB.set(t, (setB.get(t) ?? 0) + 1);
-  let overlap = 0;
-  for (const t of ta) {
-    const n = setB.get(t) ?? 0;
-    if (n > 0) {
-      overlap++;
-      setB.set(t, n - 1);
-    }
-  }
-  return (2 * overlap) / (ta.length + tb.length);
-}
 
 function runChecks(fx: Fixture, output: string): CheckResult[] {
   const checks: CheckResult[] = [];

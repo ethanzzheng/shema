@@ -461,8 +461,13 @@ npm run dev      # Development (ts-node-dev, hot reload)
 npm run build    # Compile TypeScript → dist/
 npm start        # Run compiled output
 npm test         # Tier A: deterministic unit tests (no API key, no network)
-npm run eval     # Tier B: scored translation evals (needs ANTHROPIC_API_KEY)
+npm run eval     # Tier B: scored ko-en translation evals (needs ANTHROPIC_API_KEY)
                  #   add -- --judge for LLM-graded faithfulness/fluency
+npm run eval:en-ko  # Tier B for en-ko: register (하십시오체) / honorific / Hangul-script
+                    #   / Korean-book-name checks + EN→KO→EN round-trip similarity;
+                    #   add -- --judge for LLM-graded faithfulness/naturalness/register.
+                    #   Catches register & gross errors — a Korean speaker still
+                    #   signs off a full sermon before a real en-ko service.
 
 # Frontend
 cd frontend
