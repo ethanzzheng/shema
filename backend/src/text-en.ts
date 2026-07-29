@@ -28,28 +28,50 @@ const ABBREVIATIONS = new Set([
 ]);
 
 /**
- * Words that cannot END an English sentence — a buffer ending here is
- * mid-clause and more is coming ("...and", "...because", "...which",
- * "...of", "...the"). Conjunctions, relatives/complementizers, common
- * prepositions, determiners, and auxiliaries.
+ * Words that (nearly) never end an English DECLARATIVE — behind a period
+ * they betray a punctuated mid-clause cut ("...he took the loaves and.").
+ * Conjunctions, relatives/complementizers, determiners, auxiliaries.
+ * Future tuning note: bare emphatic auxiliaries ("He can.", "I AM.") are
+ * rare pulpit lines that this holds for one incomplete-window — acceptable
+ * latency, never data loss.
  */
-const TRAILING_CONNECTIVES = new Set([
-  // conjunctions ("so that" is covered by its trailing "that")
+const HARD_CONNECTIVES = new Set([
+  // conjunctions
   'and', 'but', 'or', 'nor', 'so', 'yet', 'because', 'although', 'though',
   'while', 'if', 'unless', 'until', 'since', 'when', 'whenever', 'where',
   'wherever', 'after', 'before', 'as', 'than',
-  // relatives / complementizers
-  'that', 'which', 'who', 'whom', 'whose',
-  // prepositions commonly stranded mid-clause
+  // relatives — NOT 'that': sentence-final demonstrative "Amen to that." /
+  // "I believe that." is constant in preaching and must not be held.
+  'which', 'who', 'whom', 'whose',
+  // determiners / possessives
+  'the', 'a', 'an', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'every', 'each',
+  // auxiliaries / copulas that leave the predicate hanging ('not' excluded:
+  // "...whether you believe it or not." legitimately ends sentences)
+  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'will', 'would',
+  'shall', 'should', 'can', 'could', 'may', 'might', 'must',
+  'have', 'has', 'had', 'do', 'does', 'did',
+]);
+
+/**
+ * Prepositions strand at real sentence ends constantly in preaching —
+ * "What are you waiting for?", "That's what we live for.", "the church I
+ * belong to." — so they signal incompleteness only while UNpunctuated;
+ * they never veto a terminator.
+ */
+const STRANDABLE_PREPOSITIONS = new Set([
   'of', 'to', 'in', 'on', 'at', 'by', 'for', 'with', 'from', 'into', 'about',
   'through', 'over', 'under', 'between', 'among', 'toward', 'towards', 'upon',
   'without', 'within', 'unto',
-  // determiners / possessives
-  'the', 'a', 'an', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'every', 'each',
-  // auxiliaries / copulas that leave the predicate hanging
-  'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'will', 'would',
-  'shall', 'should', 'can', 'could', 'may', 'might', 'must',
-  'have', 'has', 'had', 'do', 'does', 'did', 'not',
+]);
+
+// The full "more is probably coming" set, for unpunctuated buffers. 'that'
+// and 'not' live only here: unpunctuated they usually continue ("the promise
+// that...", "...not"), but behind a terminator they are legitimate endings.
+const TRAILING_CONNECTIVES = new Set([
+  ...HARD_CONNECTIVES,
+  ...STRANDABLE_PREPOSITIONS,
+  'that',
+  'not',
 ]);
 
 /** Strip trailing whitespace + closing quotes/brackets, return the core text. */
@@ -87,24 +109,37 @@ export function endsWithStrongTerminatorEn(text: string): boolean {
   return !isAbbreviationPeriod(t.slice(0, -1));
 }
 
-/** Ends on a word that cannot close an English clause (more is coming)? */
-export function endsWithEnglishConnective(text: string): boolean {
+function trailingWordIn(text: string, set: Set<string>): boolean {
   const t = coreEnd(text).replace(/[,;:\s]+$/, '');
   const m = t.match(/([A-Za-z']+)$/);
   if (!m) return false;
-  return TRAILING_CONNECTIVES.has(m[1].toLowerCase());
+  return set.has(m[1].toLowerCase());
+}
+
+/** Ends on a word that suggests an unfinished clause (unpunctuated buffers)? */
+export function endsWithEnglishConnective(text: string): boolean {
+  return trailingWordIn(text, TRAILING_CONNECTIVES);
+}
+
+/** Ends on a word that (nearly) never closes an English declarative? */
+export function endsWithHardConnective(text: string): boolean {
+  return trailingWordIn(text, HARD_CONNECTIVES);
 }
 
 /**
- * A high-confidence complete English sentence: real terminal punctuation AND
- * not a punctuated mid-clause cut (Deepgram writes "...and the Lord said
- * and." when the speaker pauses mid-sentence — the trailing connective
- * betrays it).
+ * A high-confidence complete English sentence: real terminal punctuation,
+ * and for a PERIOD, not a punctuated mid-clause cut (Deepgram writes
+ * "...and the Lord said and." when the speaker pauses mid-sentence — the
+ * trailing hard connective betrays it). Questions/exclamations are always
+ * complete — "What are you waiting for?" ends on a stranded preposition,
+ * and holding a punchy rhetorical line for the incomplete window is the
+ * worst possible latency to add.
  */
 export function looksCompleteEn(text: string): boolean {
   if (!endsWithStrongTerminatorEn(text)) return false;
-  const beforePunct = coreEnd(text).replace(/[.?!…]+$/, '');
-  return !endsWithEnglishConnective(beforePunct);
+  const t = coreEnd(text);
+  if (t[t.length - 1] !== '.') return true;
+  return !endsWithHardConnective(t.replace(/[.?!…]+$/, ''));
 }
 
 /**
@@ -126,7 +161,7 @@ export function splitSentencesEn(text: string): { sentences: string[]; remainder
     if (PUNCT.includes(s[i])) {
       if (
         s[i] === '.' &&
-        (isAbbreviationPeriod(s.slice(start, i)) || endsWithEnglishConnective(s.slice(start, i)))
+        (isAbbreviationPeriod(s.slice(start, i)) || endsWithHardConnective(s.slice(start, i)))
       ) {
         i++;
         continue;

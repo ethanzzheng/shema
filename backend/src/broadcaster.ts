@@ -24,6 +24,7 @@ import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
+import { detectReferenceEn } from './scripture-en';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
 import {
@@ -49,7 +50,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
   let stt: ElevenLabsSTT | null = null;
   let chunker: KoreanChunker | null = null;
-  const translator = new ClaudeTranslator(ANTHROPIC_API_KEY);
+  // Translator and scripture detector are per-direction; rebuilt on each
+  // start (a fresh translator also resets the discourse context).
+  let translator = new ClaudeTranslator(ANTHROPIC_API_KEY);
+  let detectRef: (text: string) => ScriptureRef | null = detectReference;
 
   // Running Bible reference the pastor is reading from (anchors scripture to NIV).
   let currentRef: ScriptureRef | null = null;
@@ -115,9 +119,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // dispatch time. The chunker may run up to 2 translations concurrently
   // during a backlog; finishSeq() re-orders completions so emission (text +
   // TTS + playback) is always in spoken order.
-  async function processChunk(koreanText: string, seq: number): Promise<void> {
+  async function processChunk(sourceText: string, seq: number): Promise<void> {
     const chunkStart = Date.now();
-    session.metrics.lastChunkSize = koreanText.length;
+    session.metrics.lastChunkSize = sourceText.length;
 
     // Entry runs in dispatch (spoken) order even with parallelism — the
     // chunker starts jobs sequentially — so both the emitter anchor and the
@@ -126,7 +130,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     // Track the Bible reference the pastor announced; expire it after a while
     // so old references don't wrongly anchor later commentary.
-    const detected = detectReference(koreanText);
+    const detected = detectRef(sourceText);
     if (detected) {
       currentRef = mergeReference(currentRef, detected);
       refAgeChunks = 0;
@@ -134,13 +138,13 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       currentRef = null;
     }
     const refName = formatReference(currentRef);
-    console.log(`[Pipeline] Translating seq ${seq} (${koreanText.length} chars${refName ? `, ref: ${refName}` : ''})...`);
+    console.log(`[Pipeline] Translating seq ${seq} (${sourceText.length} chars${refName ? `, ref: ${refName}` : ''})...`);
 
     // Translate (the only blocking step), then park the result for in-order
     // emission. Failures park a skip marker so the emitter never stalls.
     let translation;
     try {
-      translation = await translator.translate(koreanText, currentRef);
+      translation = await translator.translate(sourceText, currentRef);
     } catch (err) {
       console.error('[Pipeline] Translation failed:', err);
       emitter.finish(seq, null);
@@ -159,7 +163,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     emitter.finish(seq, {
       seq,
-      korean: koreanText,
+      korean: sourceText, // field name is historical: the SOURCE transcript
       direct: translation.direct_translation,
       sermon: translation.sermon_translation,
       chunkStart,
@@ -250,13 +254,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     session.mode = mode;
     session.direction = direction;
     tts = createTts(direction);
-    translator.resetContext();
+    translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction);
+    detectRef = direction === 'en-ko' ? detectReferenceEn : detectReference;
     currentRef = null;
     refAgeChunks = 0;
     emitter.reset();
 
-    // Broadcast status to this room's listeners
-    session.broadcast({ type: 'status', active: true });
+    // Broadcast status to this room's listeners (direction tells them what
+    // language they are about to hear).
+    session.broadcast({ type: 'status', active: true, direction });
 
     // Set up chunker. seq is allocated here, at dispatch time, in spoken order.
     chunker = new KoreanChunker({
@@ -307,7 +313,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     stt?.disconnect();
     stt = null;
 
-    session.broadcast({ type: 'status', active: false });
+    session.broadcast({ type: 'status', active: false, direction: session.direction });
     console.log('[Broadcaster] Session stopped');
   }
 

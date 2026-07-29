@@ -9,8 +9,9 @@
  * transport (rooms, WS protocol, ordering, TTS pipelining) is
  * direction-agnostic and never changes.
  *
- * 'en-ko' is declared but not implemented yet: starting a broadcast in that
- * direction is refused until its translator/chunker exist.
+ * Both directions are live: ko-en is the original pipeline; en-ko runs the
+ * English chunker/scripture detector and the Korean sermon-register
+ * translator, and requires ELEVENLABS_VOICE_ID_KO to be configured.
  */
 
 export type Direction = 'ko-en' | 'en-ko';
@@ -24,7 +25,9 @@ export interface DirectionConfig {
    * existing deployments keep working unchanged.
    */
   ttsVoiceIdEnvVars: string[];
-  /** Default ElevenLabs TTS model (the TTS_MODEL env var still overrides). */
+  /** Env vars that override the TTS model for this direction, tried in order. */
+  ttsModelEnvVars: string[];
+  /** Default ElevenLabs TTS model when no env override is set. */
   ttsModelId: string;
   /** Which translator prompt this direction uses. */
   translator: 'ko-en' | 'en-ko';
@@ -38,6 +41,7 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
   'ko-en': {
     sttLanguage: 'ko',
     ttsVoiceIdEnvVars: ['ELEVENLABS_VOICE_ID_EN', 'ELEVENLABS_VOICE_ID'],
+    ttsModelEnvVars: ['TTS_MODEL'],
     ttsModelId: 'eleven_turbo_v2_5',
     translator: 'ko-en',
     chunker: 'korean',
@@ -48,10 +52,13 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     // No fallback to the English voice: an unconfigured Korean voice should
     // fail loudly, not read Korean in the English voice.
     ttsVoiceIdEnvVars: ['ELEVENLABS_VOICE_ID_KO'],
+    // TTS_MODEL_KO only — deliberately independent of the English TTS_MODEL
+    // so eleven_multilingual_v2 can be A/B tested without touching ko-en.
+    ttsModelEnvVars: ['TTS_MODEL_KO'],
     ttsModelId: 'eleven_turbo_v2_5',
     translator: 'en-ko',
     chunker: 'english',
-    implemented: false,
+    implemented: true,
   },
 };
 
@@ -76,10 +83,15 @@ export function resolveTtsVoiceId(
   return null;
 }
 
-/** The ElevenLabs model for this direction (TTS_MODEL env wins, as before). */
+/** The ElevenLabs model for this direction (per-direction env var wins). */
 export function resolveTtsModelId(
   direction: Direction,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  return env.TTS_MODEL ?? DIRECTION_CONFIGS[direction].ttsModelId;
+  const cfg = DIRECTION_CONFIGS[direction];
+  for (const name of cfg.ttsModelEnvVars) {
+    const v = env[name];
+    if (v) return v;
+  }
+  return cfg.ttsModelId;
 }

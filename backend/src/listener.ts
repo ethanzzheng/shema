@@ -24,7 +24,8 @@ export function handleListenerConnection(ws: WebSocket, session: Session): void 
   session.addListener(ws);
 
   // Immediately inform the new listener of current broadcast state
-  safeSend(ws, { type: 'status', active: session.isActive });
+  // (direction tells the UI which output language to label).
+  safeSend(ws, { type: 'status', active: session.isActive, direction: session.direction });
 
   // Send the full transcript so far, so late-joiners and refreshes see the
   // whole sermon (text only — audio is live from the join point on).

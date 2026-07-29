@@ -12,9 +12,16 @@ import { useRequireAuth } from '@/lib/use-require-auth';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
 const DEVICE_STORAGE_KEY = 'shema-input-device';
+const DIRECTION_STORAGE_KEY = 'shema-direction';
 
 type Mode = 'fast' | 'smooth';
+type Direction = 'ko-en' | 'en-ko';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
+
+const DIRECTION_LABELS: Record<Direction, string> = {
+  'ko-en': 'Korean → English',
+  'en-ko': 'English → Korean',
+};
 
 interface DebugPanel {
   chunkSize: number;
@@ -44,6 +51,7 @@ export default function SpeakPage() {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcasting, setBroadcasting] = useState(false);
   const [mode, setMode] = useState<Mode>('smooth');
+  const [direction, setDirection] = useState<Direction>('ko-en');
   const [script, setScript] = useState<ScriptEntry[]>([]);
   const [liveKorean, setLiveKorean] = useState('');
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);
@@ -73,7 +81,23 @@ export default function SpeakPage() {
   // connection drop (the reconnect handler re-sends start while this is set).
   const wantBroadcastRef = useRef(false);
   const modeRef = useRef<Mode>('smooth');
+  const directionRef = useRef<Direction>('ko-en');
   const lastPongRef = useRef(0);
+
+  // Restore the last-used direction (persists across services).
+  useEffect(() => {
+    const saved = window.localStorage.getItem(DIRECTION_STORAGE_KEY);
+    if (saved === 'ko-en' || saved === 'en-ko') {
+      setDirection(saved);
+      directionRef.current = saved;
+    }
+  }, []);
+
+  const handleDirectionChange = (d: Direction) => {
+    setDirection(d);
+    directionRef.current = d;
+    try { window.localStorage.setItem(DIRECTION_STORAGE_KEY, d); } catch {}
+  };
 
   // ── Church room init: ?church= / legacy ?room= → last used → "default" ──
   useEffect(() => {
@@ -168,7 +192,12 @@ export default function SpeakPage() {
         // network blip costs seconds of silence instead of dead air until an
         // operator notices.
         if (wantBroadcastRef.current) {
-          client.sendJSON({ type: 'start', mode: modeRef.current, token: getToken() ?? undefined });
+          client.sendJSON({
+            type: 'start',
+            mode: modeRef.current,
+            direction: directionRef.current,
+            token: getToken() ?? undefined,
+          });
           setBroadcasting(true);
         }
       },
@@ -309,7 +338,7 @@ export default function SpeakPage() {
       refreshDevices(); // permission just granted → labels populate
 
       // The login session token authorizes the start (backend-verified).
-      wsRef.current.sendJSON({ type: 'start', mode, token: getToken() ?? undefined });
+      wsRef.current.sendJSON({ type: 'start', mode, direction, token: getToken() ?? undefined });
       wantBroadcastRef.current = true;
       setBroadcasting(true);
 
@@ -426,6 +455,29 @@ export default function SpeakPage() {
           </button>
         )}
 
+        {/* Translation direction */}
+        <div>
+          <div className="label" style={{ marginBottom: '0.3rem' }}>Direction</div>
+          <div className="toggle-group">
+            <button
+              className={`toggle-opt${direction === 'ko-en' ? ' active' : ''}`}
+              onClick={() => handleDirectionChange('ko-en')}
+              disabled={broadcasting}
+              title="Korean sermon in, English audio out"
+            >
+              Korean → English
+            </button>
+            <button
+              className={`toggle-opt${direction === 'en-ko' ? ' active' : ''}`}
+              onClick={() => handleDirectionChange('en-ko')}
+              disabled={broadcasting}
+              title="English sermon in, Korean audio out"
+            >
+              English → Korean
+            </button>
+          </div>
+        </div>
+
         {/* Church room */}
         <div>
           <div className="label" style={{ marginBottom: '0.3rem' }}>Church</div>
@@ -508,6 +560,9 @@ export default function SpeakPage() {
       {/* ── Status row (live) ──────────────────────────────────────────── */}
       {broadcasting && (
         <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', flexShrink: 0 }}>
+          <div className="pill" style={{ borderColor: 'rgba(201,169,97,.45)', color: 'var(--accent)', fontWeight: 600 }}>
+            {DIRECTION_LABELS[direction]}
+          </div>
           <div className={`pill ${debug.sttConnected ? 'pill-green' : 'pill-red'}`}>
             <span className={`dot${debug.sttConnected ? ' dot-pulse' : ''}`} />
             STT {debug.sttConnected ? 'Active' : 'Waiting'}

@@ -75,6 +75,8 @@ class BrowserTTS {
 export default function ListenerView({ church }: { church: string }) {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
+  // Output language of the broadcast (from status messages); ko-en = English.
+  const [direction, setDirection] = useState<'ko-en' | 'en-ko'>('ko-en');
   const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
   // Captions default to the polished sermon rendering; "direct" is the more
   // literal pass for anyone who wants to track the Korean phrasing closely.
@@ -255,7 +257,8 @@ export default function ListenerView({ church }: { church: string }) {
     (msg: ServerMessage) => {
       switch (msg.type) {
         case 'status': {
-          const s = msg as { type: 'status'; active?: boolean };
+          const s = msg as { type: 'status'; active?: boolean; direction?: string };
+          if (s.direction === 'ko-en' || s.direction === 'en-ko') setDirection(s.direction);
           if (typeof s.active === 'boolean') {
             setBroadcastActive(s.active);
             if (s.active) {
@@ -373,9 +376,12 @@ export default function ListenerView({ church }: { church: string }) {
       ? broadcastActive ? 'var(--green)' : 'var(--yellow)'
       : connState === 'connecting' ? 'var(--yellow)' : 'var(--red)';
 
+  // What the listener is hearing — label it so nobody wonders which language.
+  const outputLang = direction === 'en-ko' ? 'Korean' : 'English';
+
   const connLabel =
     connState === 'connected'
-      ? broadcastActive ? 'Live Translation Active' : 'Connected — waiting for broadcast'
+      ? broadcastActive ? `Live ${outputLang} Translation` : 'Connected — waiting for broadcast'
       : connState === 'connecting' ? 'Connecting…' : 'Disconnected — reconnecting…';
 
   return (
@@ -412,7 +418,7 @@ export default function ListenerView({ church }: { church: string }) {
             🔊 Tap to listen
           </button>
           <p style={{ marginTop: '0.9rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
-            One tap starts the English audio — your browser blocks sound until you do.
+            One tap starts the {outputLang} audio — your browser blocks sound until you do.
           </p>
         </div>
       )}

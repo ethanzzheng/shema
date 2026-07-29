@@ -26,6 +26,7 @@ export default function KioskView({ church }: { church: string }) {
   const gate = useRequireAuth();
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
+  const [direction, setDirection] = useState<'ko-en' | 'en-ko'>('ko-en');
   const [started, setStarted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [wakeLockState, setWakeLockState] = useState<'active' | 'unavailable' | 'off'>('off');
@@ -172,7 +173,8 @@ export default function KioskView({ church }: { church: string }) {
   const handleMessage = useCallback((msg: ServerMessage) => {
     switch (msg.type) {
       case 'status': {
-        const s = msg as { type: 'status'; active?: boolean };
+        const s = msg as { type: 'status'; active?: boolean; direction?: string };
+        if (s.direction === 'ko-en' || s.direction === 'en-ko') setDirection(s.direction);
         if (typeof s.active === 'boolean') {
           setBroadcastActive(s.active);
           if (s.active) {
@@ -270,7 +272,9 @@ export default function KioskView({ church }: { church: string }) {
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem' }}>
           <h1 style={{ fontSize: 'clamp(1.6rem, 3.4vw, 2.6rem)', fontWeight: 600 }}>{church}</h1>
-          <span className="label" style={{ marginBottom: 0 }}>Kiosk output</span>
+          <span className="label" style={{ marginBottom: 0 }}>
+            Kiosk output · {direction === 'en-ko' ? 'Korean' : 'English'}
+          </span>
         </div>
         <div className="pill" style={{ color: statusColor, borderColor: 'currentColor', fontSize: '0.8rem', padding: '0.45rem 1rem' }}>
           <span className={`dot${broadcastActive && connState === 'connected' ? ' dot-pulse' : ''}`} />

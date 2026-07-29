@@ -44,17 +44,18 @@ describe('ko-en config (must match the pre-refactor hardcoded pipeline)', () => 
     assert.equal(resolveTtsVoiceId('ko-en', {}), null);
   });
 
-  test('TTS_MODEL env still overrides the model, as before', () => {
+  test('TTS_MODEL env still overrides the model, as before — and only ko-en', () => {
     assert.equal(resolveTtsModelId('ko-en', {}), 'eleven_turbo_v2_5');
     assert.equal(resolveTtsModelId('ko-en', { TTS_MODEL: 'eleven_flash_v2_5' }), 'eleven_flash_v2_5');
+    assert.equal(resolveTtsModelId('ko-en', { TTS_MODEL_KO: 'eleven_multilingual_v2' }), 'eleven_turbo_v2_5');
   });
 });
 
-describe('en-ko config (declared, not implemented)', () => {
+describe('en-ko config (live)', () => {
   const cfg = DIRECTION_CONFIGS['en-ko'];
 
-  test('stubbed: refuses to run until implemented', () => {
-    assert.equal(cfg.implemented, false);
+  test('implemented, with English STT and the en-ko translator/chunker', () => {
+    assert.equal(cfg.implemented, true);
     assert.equal(cfg.sttLanguage, 'en');
     assert.equal(cfg.translator, 'en-ko');
     assert.equal(cfg.chunker, 'english');
@@ -66,6 +67,16 @@ describe('en-ko config (declared, not implemented)', () => {
       resolveTtsVoiceId('en-ko', { ELEVENLABS_VOICE_ID: 'english', ELEVENLABS_VOICE_ID_KO: 'ko' }),
       'ko',
     );
+  });
+
+  test('Korean TTS model: TTS_MODEL_KO overrides, independent of TTS_MODEL', () => {
+    assert.equal(resolveTtsModelId('en-ko', {}), 'eleven_turbo_v2_5');
+    assert.equal(
+      resolveTtsModelId('en-ko', { TTS_MODEL_KO: 'eleven_multilingual_v2' }),
+      'eleven_multilingual_v2',
+    );
+    // The English A/B knob must not leak into the Korean voice.
+    assert.equal(resolveTtsModelId('en-ko', { TTS_MODEL: 'eleven_flash_v2_5' }), 'eleven_turbo_v2_5');
   });
 });
 

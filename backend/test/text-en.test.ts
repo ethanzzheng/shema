@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   endsWithStrongTerminatorEn,
   endsWithEnglishConnective,
+  endsWithHardConnective,
   looksCompleteEn,
   splitSentencesEn,
 } from '../src/text-en';
@@ -43,7 +44,19 @@ test('endsWithEnglishConnective: content-word endings are fine', () => {
   assert.equal(endsWithEnglishConnective(''), false);
 });
 
-test('looksCompleteEn: terminator required, connective vetoes even behind a period', () => {
+test('endsWithHardConnective: conjunctions/determiners/aux yes, prepositions no', () => {
+  assert.equal(endsWithHardConnective('he took the loaves and'), true);
+  assert.equal(endsWithHardConnective('he opened the'), true);
+  assert.equal(endsWithHardConnective('everything he will'), true);
+  // Strandable prepositions are connectives (unpunctuated) but never hard.
+  assert.equal(endsWithHardConnective('that is what we live for'), false);
+  assert.equal(endsWithHardConnective('the church I belong to'), false);
+  // Demonstrative 'that' and 'or not' legitimately end sentences.
+  assert.equal(endsWithHardConnective('Amen to that'), false);
+  assert.equal(endsWithHardConnective('whether you believe it or not'), false);
+});
+
+test('looksCompleteEn: terminator required, HARD connective vetoes behind a period', () => {
   assert.equal(looksCompleteEn('God loves you.'), true);
   assert.equal(looksCompleteEn('Where do you run first?'), true);
   assert.equal(looksCompleteEn('God loves you'), false); // no punctuation → not confident
@@ -51,6 +64,19 @@ test('looksCompleteEn: terminator required, connective vetoes even behind a peri
   assert.equal(looksCompleteEn('he turned to the Lord and.'), false);
   assert.equal(looksCompleteEn('because of the.'), false);
   assert.equal(looksCompleteEn('We talked with Dr.'), false); // abbreviation period
+});
+
+test('looksCompleteEn: stranded prepositions end real sentences (no latency hold)', () => {
+  // Punchy rhetorical lines — exactly where snappiness matters most.
+  assert.equal(looksCompleteEn('What are you waiting for?'), true);
+  assert.equal(looksCompleteEn('Who do you belong to?'), true);
+  assert.equal(looksCompleteEn("That's what love is for."), true);
+  assert.equal(looksCompleteEn("That's what we live for."), true);
+  assert.equal(looksCompleteEn('That is the church I belong to.'), true);
+  assert.equal(looksCompleteEn('Amen to that.'), true);
+  assert.equal(looksCompleteEn('Whether you believe it or not.'), true);
+  // Question/exclamation marks never get the veto at all.
+  assert.equal(looksCompleteEn('And you would say and?'), true);
 });
 
 test('splitSentencesEn: basic split with remainder', () => {
@@ -84,6 +110,13 @@ test('splitSentencesEn: punctuated mid-clause pause rides on, not cut', () => {
   // Deepgram writes "...and." at a dramatic pause; the clause continues.
   assert.deepEqual(splitSentencesEn('He took the loaves and. He gave thanks.'), {
     sentences: ['He took the loaves and. He gave thanks.'],
+    remainder: '',
+  });
+});
+
+test('splitSentencesEn: preposition-final sentences split normally', () => {
+  assert.deepEqual(splitSentencesEn("That's what we live for. Amen to that."), {
+    sentences: ["That's what we live for.", 'Amen to that.'],
     remainder: '',
   });
 });

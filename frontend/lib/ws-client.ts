@@ -47,10 +47,14 @@ export interface AudioEndMsg {
   seq: number;
 }
 
+export type Direction = 'ko-en' | 'en-ko';
+
 export interface StatusMsg {
   type: 'status';
   active?: boolean;
   sttConnected?: boolean;
+  /** Translation direction of the broadcast (tells UIs the output language). */
+  direction?: Direction;
 }
 
 /** Sent to broadcasters whenever the room's listener count changes. */
