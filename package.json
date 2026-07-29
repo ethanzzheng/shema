@@ -7,6 +7,9 @@
     "dev": "npm --prefix backend run dev",
     "dev:backend": "npm --prefix backend run dev",
     "dev:frontend": "npm --prefix frontend run dev",
-    "install:all": "npm --prefix backend install && npm --prefix frontend install"
+    "install:all": "npm --prefix backend install && npm --prefix frontend install",
+    "test": "npm --prefix backend test",
+    "eval": "npm --prefix backend run eval",
+    "eval:en-ko": "npm --prefix backend run eval:en-ko"
   }
 }
