@@ -83,6 +83,8 @@ export default function SpeakPage() {
   const modeRef = useRef<Mode>('smooth');
   const directionRef = useRef<Direction>('ko-en');
   const lastPongRef = useRef(0);
+  const lastBeatRef = useRef(0);
+  const missedBeatsRef = useRef(0);
 
   // Restore the last-used direction (persists across services).
   useEffect(() => {
@@ -221,15 +223,34 @@ export default function SpeakPage() {
     // Heartbeat: flaky networks (hotspots, church Wi-Fi) can kill the path
     // without a close event — the socket says OPEN while nothing flows. Ping
     // the backend and force a reconnect when replies stop.
+    //
+    // IMPORTANT: judged by MISSED REPLIES to pings we actually sent, never by
+    // wall-clock. Chrome throttles background-tab timers to ~1/min (operator
+    // watches the sermon/video in another tab!) — a wall-clock check woke up
+    // after the throttled stretch, saw "no pong in 45s" for pings it never
+    // sent, and tore down its own healthy connection, ending the broadcast.
     lastPongRef.current = Date.now();
+    lastBeatRef.current = 0;
+    missedBeatsRef.current = 0;
     const heartbeat = setInterval(() => {
       if (!client.isConnected) return;
-      client.sendJSON({ type: 'ping' });
-      if (Date.now() - lastPongRef.current > 45_000) {
-        console.warn('[Speak] No heartbeat reply for 45s — connection is half-dead, forcing reconnect');
+      // Did the PREVIOUS beat's ping get a reply (however long ago that was)?
+      if (lastBeatRef.current > 0) {
+        if (lastPongRef.current >= lastBeatRef.current) {
+          missedBeatsRef.current = 0;
+        } else {
+          missedBeatsRef.current++;
+        }
+      }
+      if (missedBeatsRef.current >= 3) {
+        console.warn('[Speak] 3 pings unanswered — connection is half-dead, forcing reconnect');
+        missedBeatsRef.current = 0;
         lastPongRef.current = Date.now(); // avoid immediate re-trigger
         client.forceReconnect();
+        return;
       }
+      lastBeatRef.current = Date.now();
+      client.sendJSON({ type: 'ping' });
     }, 15_000);
 
     return () => {
