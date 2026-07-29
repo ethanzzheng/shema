@@ -132,9 +132,9 @@ test('en-ko: continuous comma-chained preaching dispatches via clause relief, no
     const { chunker, dispatched } = makeChunker('en-ko');
     // Polysyndetic run-on: no periods at all, clauses chained with commas —
     // the live 40s-gap shape. Must ship clause chunks WITHOUT any timer tick.
-    await chunker.feed('And God spoke to his people in the wilderness, and he led them by day with a cloud', true);
-    await chunker.feed('and by night with a pillar of fire, and he fed them with manna from heaven', true);
-    await chunker.feed('and gave them water from the rock, and still they doubted him in their hearts', true);
+    await chunker.feed('And God spoke to his people in the wilderness, and he led them by day with a pillar of cloud', true);
+    await chunker.feed('and by night with a pillar of fire, and he fed them with manna from heaven every single morning', true);
+    await chunker.feed('and he gave them water from the rock, and still they doubted him in their hearts every day', true);
     await flush();
 
     assert.ok(dispatched.length >= 1, 'clause relief must dispatch before any pause');
