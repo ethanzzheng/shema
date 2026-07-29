@@ -30,10 +30,11 @@ const ABBREVIATIONS = new Set([
 /**
  * Words that (nearly) never end an English DECLARATIVE — behind a period
  * they betray a punctuated mid-clause cut ("...he took the loaves and.").
- * Conjunctions, relatives/complementizers, determiners, auxiliaries.
- * Future tuning note: bare emphatic auxiliaries ("He can.", "I AM.") are
- * rare pulpit lines that this holds for one incomplete-window — acceptable
- * latency, never data loss.
+ * Conjunctions, relatives/complementizers, determiners ONLY. Auxiliaries
+ * are deliberately NOT here: English ellipsis ends sentences on them
+ * constantly in preaching ("Yes, he did.", "That's who you are.", "Give
+ * him everything you have.") — vetoing those held every such line for the
+ * full incomplete window and produced long live gaps.
  */
 const HARD_CONNECTIVES = new Set([
   // conjunctions
@@ -45,12 +46,18 @@ const HARD_CONNECTIVES = new Set([
   'which', 'who', 'whom', 'whose',
   // determiners / possessives
   'the', 'a', 'an', 'my', 'your', 'his', 'her', 'its', 'our', 'their', 'every', 'each',
-  // auxiliaries / copulas that leave the predicate hanging ('not' excluded:
-  // "...whether you believe it or not." legitimately ends sentences)
+]);
+
+/**
+ * Auxiliaries / copulas: unpunctuated they usually mean the predicate is
+ * still coming ("and he will..."), so they extend the wait — but behind a
+ * period they are legitimate elliptical endings and never veto.
+ */
+const AUXILIARIES = [
   'is', 'are', 'was', 'were', 'be', 'been', 'being', 'am', 'will', 'would',
   'shall', 'should', 'can', 'could', 'may', 'might', 'must',
   'have', 'has', 'had', 'do', 'does', 'did',
-]);
+];
 
 /**
  * Prepositions strand at real sentence ends constantly in preaching —
@@ -64,12 +71,14 @@ const STRANDABLE_PREPOSITIONS = new Set([
   'without', 'within', 'unto',
 ]);
 
-// The full "more is probably coming" set, for unpunctuated buffers. 'that'
-// and 'not' live only here: unpunctuated they usually continue ("the promise
-// that...", "...not"), but behind a terminator they are legitimate endings.
+// The full "more is probably coming" set, for unpunctuated buffers. 'that',
+// 'not', and the auxiliaries live only here: unpunctuated they usually
+// continue ("the promise that...", "and he will..."), but behind a
+// terminator they are legitimate endings.
 const TRAILING_CONNECTIVES = new Set([
   ...HARD_CONNECTIVES,
   ...STRANDABLE_PREPOSITIONS,
+  ...AUXILIARIES,
   'that',
   'not',
 ]);
@@ -140,6 +149,23 @@ export function looksCompleteEn(text: string): boolean {
   const t = coreEnd(text);
   if (t[t.length - 1] !== '.') return true;
   return !endsWithHardConnective(t.replace(/[.?!…]+$/, ''));
+}
+
+// A clause-relief head must be a real clause, not a stub.
+const MIN_CLAUSE_HEAD = 40;
+
+/**
+ * Carve the longest comma/semicolon-bounded head off a run-on buffer.
+ * English preaching is polysyndetic — clauses chain on "and... and..." with
+ * commas and few periods, so a continuous speaker can go 30-40s without a
+ * sentence boundary. Splitting at the LAST comma keeps the head maximal
+ * (complete clauses) and the carried-over tail small. Returns null when
+ * there is no comma far enough in ("3,000" never matches: comma+space only).
+ */
+export function splitLastClause(text: string): { head: string; rest: string } | null {
+  const idx = Math.max(text.lastIndexOf(', '), text.lastIndexOf('; '));
+  if (idx < MIN_CLAUSE_HEAD) return null;
+  return { head: text.slice(0, idx + 1).trim(), rest: text.slice(idx + 1).trim() };
 }
 
 /**

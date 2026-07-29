@@ -21,7 +21,7 @@
  */
 
 import { looksComplete, splitSentences } from './text';
-import { looksCompleteEn, splitSentencesEn } from './text-en';
+import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
 import { Direction } from './direction-config';
 
 // Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
@@ -49,11 +49,18 @@ export type ChunkCallback = (text: string, seq: number) => Promise<void>;
 interface BoundaryDetector {
   looksComplete(text: string): boolean;
   splitSentences(text: string): { sentences: string[]; remainder: string };
+  /**
+   * Optional run-on relief: carve a complete clause off an oversized buffer
+   * (used with softChars). English needs this — polysyndetic preaching can
+   * run 30-40s without a period; Korean marks sentence ends grammatically,
+   * so it never accretes like that.
+   */
+  clauseRelief?: (text: string) => { head: string; rest: string } | null;
 }
 
 const BOUNDARY_DETECTORS: Record<Direction, BoundaryDetector> = {
   'ko-en': { looksComplete, splitSentences },
-  'en-ko': { looksComplete: looksCompleteEn, splitSentences: splitSentencesEn },
+  'en-ko': { looksComplete: looksCompleteEn, splitSentences: splitSentencesEn, clauseRelief: splitLastClause },
 };
 
 interface ModeConfig {
@@ -69,6 +76,8 @@ interface ModeConfig {
   incompleteMaxMs: number;
   /** Hard cap — force a dispatch once the buffer grows past this (run-ons). */
   maxChars: number;
+  /** Soft cap: past this, clause relief carves complete clauses off the front. */
+  softChars?: number;
 }
 
 // "Smooth" waits longer for the sentence to complete (most natural pausing);
@@ -85,8 +94,8 @@ const MODE_CONFIG: Record<Direction, Record<'fast' | 'smooth', ModeConfig>> = {
     smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400 },
   },
   'en-ko': {
-    fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340 },
-    smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520 },
+    fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340, softChars: 180 },
+    smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520, softChars: 240 },
   },
 };
 
@@ -172,6 +181,20 @@ export class KoreanChunker {
       this.buffer = group ? group + (remainder ? ' ' + remainder : '') : remainder;
     }
     if (!this.buffer) return;
+
+    // Clause relief: a continuous speaker never trips the pause timers, so
+    // without periods the buffer used to ride all the way to maxChars
+    // (~35-40s of speech) before anything shipped. Past the soft cap, carve
+    // complete clauses off the front at comma boundaries instead.
+    if (this.cfg.softChars && this.detector.clauseRelief) {
+      while (this.buffer.length >= this.cfg.softChars) {
+        const relief = this.detector.clauseRelief(this.buffer);
+        if (!relief) break;
+        this.dispatchText(relief.head);
+        this.buffer = relief.rest;
+      }
+      if (!this.buffer) return;
+    }
 
     // Run-on safety: dispatch immediately once we exceed the hard cap.
     if (this.buffer.length >= this.cfg.maxChars) {

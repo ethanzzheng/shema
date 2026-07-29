@@ -126,6 +126,28 @@ test('en-ko: run-on past the larger en-ko maxChars dispatches immediately', asyn
   }
 });
 
+test('en-ko: continuous comma-chained preaching dispatches via clause relief, no timers', async () => {
+  mock.timers.enable({ apis: ['setTimeout'] });
+  try {
+    const { chunker, dispatched } = makeChunker('en-ko');
+    // Polysyndetic run-on: no periods at all, clauses chained with commas —
+    // the live 40s-gap shape. Must ship clause chunks WITHOUT any timer tick.
+    await chunker.feed('And God spoke to his people in the wilderness, and he led them by day with a cloud', true);
+    await chunker.feed('and by night with a pillar of fire, and he fed them with manna from heaven', true);
+    await chunker.feed('and gave them water from the rock, and still they doubted him in their hearts', true);
+    await flush();
+
+    assert.ok(dispatched.length >= 1, 'clause relief must dispatch before any pause');
+    assert.ok(
+      dispatched[0].text.endsWith(','),
+      `head must end at a clause boundary, got: ${dispatched[0].text}`,
+    );
+    assert.ok(dispatched[0].text.length >= 40, 'head must be a real clause, not a stub');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
 test('default direction is ko-en (constructor omits direction)', async () => {
   mock.timers.enable({ apis: ['setTimeout'] });
   try {

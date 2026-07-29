@@ -44,10 +44,12 @@ test('endsWithEnglishConnective: content-word endings are fine', () => {
   assert.equal(endsWithEnglishConnective(''), false);
 });
 
-test('endsWithHardConnective: conjunctions/determiners/aux yes, prepositions no', () => {
+test('endsWithHardConnective: conjunctions/determiners yes; prepositions/aux no', () => {
   assert.equal(endsWithHardConnective('he took the loaves and'), true);
   assert.equal(endsWithHardConnective('he opened the'), true);
-  assert.equal(endsWithHardConnective('everything he will'), true);
+  // Auxiliaries end sentences via ellipsis — never hard (live gap fix).
+  assert.equal(endsWithHardConnective('everything he will'), false);
+  assert.equal(endsWithHardConnective('that is who you are'), false);
   // Strandable prepositions are connectives (unpunctuated) but never hard.
   assert.equal(endsWithHardConnective('that is what we live for'), false);
   assert.equal(endsWithHardConnective('the church I belong to'), false);
@@ -75,6 +77,11 @@ test('looksCompleteEn: stranded prepositions end real sentences (no latency hold
   assert.equal(looksCompleteEn('That is the church I belong to.'), true);
   assert.equal(looksCompleteEn('Amen to that.'), true);
   assert.equal(looksCompleteEn('Whether you believe it or not.'), true);
+  // Elliptical auxiliary endings — the live long-gap culprits.
+  assert.equal(looksCompleteEn('Yes, he did.'), true);
+  assert.equal(looksCompleteEn("That's who you are."), true);
+  assert.equal(looksCompleteEn('Give him everything you have.'), true);
+  assert.equal(looksCompleteEn('He said you can.'), true);
   // Question/exclamation marks never get the veto at all.
   assert.equal(looksCompleteEn('And you would say and?'), true);
 });
