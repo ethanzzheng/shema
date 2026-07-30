@@ -25,7 +25,9 @@ const DIRECTION_LABELS: Record<Direction, string> = {
 
 interface DebugPanel {
   chunkSize: number;
+  chunkerWaitMs: number;
   translationLatencyMs: number;
+  ttsFirstByteMs: number;
   ttsLatencyMs: number;
   e2eLatencyMs: number;
   sttConnected: boolean;
@@ -39,7 +41,9 @@ interface ScriptEntry {
 
 const DEFAULT_DEBUG: DebugPanel = {
   chunkSize: 0,
+  chunkerWaitMs: 0,
   translationLatencyMs: 0,
+  ttsFirstByteMs: 0,
   ttsLatencyMs: 0,
   e2eLatencyMs: 0,
   sttConnected: false,
@@ -317,7 +321,9 @@ export default function SpeakPage() {
         const d = msg as DebugMsg;
         setDebug({
           chunkSize: d.chunkSize,
+          chunkerWaitMs: d.chunkerWaitMs ?? 0,
           translationLatencyMs: d.translationLatencyMs,
+          ttsFirstByteMs: d.ttsFirstByteMs ?? 0,
           ttsLatencyMs: d.ttsLatencyMs,
           e2eLatencyMs: d.e2eLatencyMs,
           sttConnected: d.sttConnected,
@@ -691,12 +697,20 @@ export default function SpeakPage() {
             <div className="debug-key">last chunk (chars)</div>
           </div>
           <div className="debug-item">
+            <div className="debug-val">{debug.chunkerWaitMs}ms</div>
+            <div className="debug-key">chunker wait</div>
+          </div>
+          <div className="debug-item">
             <div className="debug-val">{debug.translationLatencyMs}ms</div>
             <div className="debug-key">translation</div>
           </div>
           <div className="debug-item">
+            <div className="debug-val">{debug.ttsFirstByteMs}ms</div>
+            <div className="debug-key">tts first byte</div>
+          </div>
+          <div className="debug-item">
             <div className="debug-val">{debug.ttsLatencyMs}ms</div>
-            <div className="debug-key">tts</div>
+            <div className="debug-key">tts total</div>
           </div>
           <div className="debug-item">
             <div className="debug-val">{debug.e2eLatencyMs}ms</div>

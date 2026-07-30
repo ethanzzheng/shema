@@ -20,7 +20,11 @@ export interface TranslationChunk {
 
 export interface DebugMetrics {
   lastChunkSize: number;
+  /** Last STT final → chunker dispatch (deliberate hold cost). */
+  chunkerWaitMs: number;
   translationLatencyMs: number;
+  /** Translation done → first TTS audio byte (includes TTS queue wait). */
+  ttsFirstByteMs: number;
   ttsLatencyMs: number;
   e2eLatencyMs: number;
   sttConnected: boolean;
@@ -47,7 +51,9 @@ export class Session {
 
   metrics: DebugMetrics = {
     lastChunkSize: 0,
+    chunkerWaitMs: 0,
     translationLatencyMs: 0,
+    ttsFirstByteMs: 0,
     ttsLatencyMs: 0,
     e2eLatencyMs: 0,
     sttConnected: false,
@@ -161,7 +167,9 @@ export class Session {
     this.seq = 0;
     this.metrics = {
       lastChunkSize: 0,
+      chunkerWaitMs: 0,
       translationLatencyMs: 0,
+      ttsFirstByteMs: 0,
       ttsLatencyMs: 0,
       e2eLatencyMs: 0,
       sttConnected: false,

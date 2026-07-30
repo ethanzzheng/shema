@@ -23,6 +23,10 @@ export interface TtsStats {
   ttsLatencyMs: number;
   /** Time to first audio byte, or -1 if the clip produced no audio. */
   firstByteMs: number;
+  /** Absolute timestamp of the first audio byte (0 if none) — lets the
+   *  caller attribute latency against ITS OWN timeline (e.g. enqueue time,
+   *  which includes queue wait that firstByteMs cannot see). */
+  firstByteAt: number;
 }
 
 interface TtsPipelineOptions<J> {
@@ -96,6 +100,7 @@ export class TtsPipeline<J extends { text: string }> {
     this.opts.onEnd(entry.job, {
       ttsLatencyMs: Date.now() - entry.startedAt,
       firstByteMs: entry.firstChunkAt ? entry.firstChunkAt - entry.startedAt : -1,
+      firstByteAt: entry.firstChunkAt,
     });
     const next = this.active[0];
     if (next && !next.headStarted) this.beginHead(next);

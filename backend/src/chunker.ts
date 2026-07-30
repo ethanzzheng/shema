@@ -38,7 +38,11 @@ const MIN_STT_OVERLAP_CHARS = 6;
 // this delays nothing meaningful (the merged sentence lands when it lands).
 const TINY_FRAGMENT_CHARS = 25;
 
-export type ChunkCallback = (text: string, seq: number) => Promise<void>;
+/**
+ * waitMs = time from the last STT final that fed the buffer to this chunk's
+ * dispatch — the chunker's hold cost, the (a) stage of pipeline latency.
+ */
+export type ChunkCallback = (text: string, seq: number, waitMs: number) => Promise<void>;
 
 /**
  * Language-specific sentence-boundary detection — the ONLY part of chunking
@@ -119,12 +123,14 @@ export class KoreanChunker {
   private cfg: ModeConfig;
 
   private timer: NodeJS.Timeout | null = null;
+  /** When the most recent STT final arrived (for dispatch wait attribution). */
+  private lastFinalAt = 0;
 
   // Bounded-parallel dispatch queue. 2 = at most one sentence translates ahead
   // of the current one, so context loss during bursts is limited to the
   // immediately-preceding sentence; normal pacing stays effectively serial.
   private static readonly MAX_PARALLEL = 2;
-  private pending: { text: string; seq: number }[] = [];
+  private pending: { text: string; seq: number; waitMs: number }[] = [];
   private inFlight = 0;
 
   constructor(opts: ChunkerOptions) {
@@ -158,6 +164,7 @@ export class KoreanChunker {
     // nonsensically — translated. Trim the re-sent overlap before appending.
     const fresh = this.stripOverlap(text.trim());
     if (!fresh) return; // pure duplicate of what we already have
+    this.lastFinalAt = Date.now();
 
     this.buffer += (this.buffer ? ' ' : '') + fresh;
     this.cancelTimer();
@@ -263,7 +270,8 @@ export class KoreanChunker {
   /** Queue one chunk for translation, assigning its spoken-order seq now. */
   private dispatchText(text: string): void {
     const seq = this.nextSeq();
-    this.pending.push({ text, seq });
+    const waitMs = this.lastFinalAt ? Date.now() - this.lastFinalAt : 0;
+    this.pending.push({ text, seq, waitMs });
     this.pump();
   }
 
@@ -286,10 +294,10 @@ export class KoreanChunker {
    */
   private pump(): void {
     while (this.pending.length > 0 && this.inFlight < KoreanChunker.MAX_PARALLEL) {
-      const { text, seq } = this.pending.shift()!;
+      const { text, seq, waitMs } = this.pending.shift()!;
       this.inFlight++;
-      console.log(`[Chunker] Dispatching seq ${seq}: ${text.length} chars (${this.inFlight} in flight)`);
-      this.onChunk(text, seq)
+      console.log(`[Chunker] Dispatching seq ${seq}: ${text.length} chars, waited ${waitMs}ms (${this.inFlight} in flight)`);
+      this.onChunk(text, seq, waitMs)
         .catch((err) => console.error('[Chunker] onChunk error:', err))
         .finally(() => {
           this.inFlight--;

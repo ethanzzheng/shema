@@ -69,6 +69,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     direct: string;
     sermon: string;
     chunkStart: number;
+    chunkerWaitMs: number;
     translationLatencyMs: number;
   }
   const emitter = new OrderedEmitter<EmitJob>(emitTranslation);
@@ -99,7 +100,22 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       timestamp: job.chunkStart,
     });
 
-    enqueueTTS(chunk.seq, job.sermon, job.korean.length, job.translationLatencyMs, job.chunkStart);
+    enqueueTTS(chunk.seq, job.sermon, job.korean.length, job.chunkerWaitMs, job.translationLatencyMs, job.chunkStart);
+  }
+
+  // ── Per-session latency accumulator (averaged + logged on stop) ───────────
+  interface StageSample { wait: number; translate: number; firstByte: number; stream: number; e2e: number }
+  let latencySamples: StageSample[] = [];
+
+  function logLatencyReport(): void {
+    const n = latencySamples.length;
+    if (n === 0) return;
+    const avg = (k: keyof StageSample) => Math.round(latencySamples.reduce((s, x) => s + x[k], 0) / n);
+    console.log(
+      `[Latency] session avg over ${n} chunks (${session.direction}): ` +
+        `stt→dispatch ${avg('wait')}ms · translate ${avg('translate')}ms · ` +
+        `→first-audio-byte ${avg('firstByte')}ms · audio-stream ${avg('stream')}ms · e2e ${avg('e2e')}ms`,
+    );
   }
 
   // Voice + model come from the direction config; rebuilt on each start so a
@@ -119,9 +135,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // dispatch time. The chunker may run up to 2 translations concurrently
   // during a backlog; finishSeq() re-orders completions so emission (text +
   // TTS + playback) is always in spoken order.
-  async function processChunk(sourceText: string, seq: number): Promise<void> {
+  async function processChunk(sourceText: string, seq: number, waitMs = 0): Promise<void> {
     const chunkStart = Date.now();
     session.metrics.lastChunkSize = sourceText.length;
+    session.metrics.chunkerWaitMs = waitMs;
 
     // Entry runs in dispatch (spoken) order even with parallelism — the
     // chunker starts jobs sequentially — so both the emitter anchor and the
@@ -167,6 +184,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       direct: translation.direct_translation,
       sermon: translation.sermon_translation,
       chunkStart,
+      chunkerWaitMs: waitMs,
       translationLatencyMs,
     });
   }
@@ -178,7 +196,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // TtsPipeline forwards audio strictly in enqueue order, which is what the
   // listener's MediaSource playback needs. prefetch stays at 2 to fit
   // ElevenLabs' lowest concurrency limit.
-  interface TtsJob { seq: number; text: string; chunkSize: number; translationLatencyMs: number; chunkStart: number; }
+  interface TtsJob {
+    seq: number;
+    text: string;
+    chunkSize: number;
+    chunkerWaitMs: number;
+    translationLatencyMs: number;
+    chunkStart: number;
+    enqueuedAt: number;
+  }
 
   // Gap attribution: when the pipeline drains, the listener is about to run out
   // of audio; whatever time passes until the next clip arrives is upstream
@@ -193,18 +219,35 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     onChunk: (job, chunk) =>
       session.broadcast({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
     onEnd: (job, stats) => {
+      // Stage (c): translation done → first audio byte (includes queue wait);
+      // stage (d): first byte → last byte of the streamed clip.
+      const ttsFirstByteMs = stats.firstByteAt ? stats.firstByteAt - job.enqueuedAt : -1;
+      const streamMs = stats.firstByteAt ? Date.now() - stats.firstByteAt : 0;
       session.metrics.ttsLatencyMs = stats.ttsLatencyMs;
+      session.metrics.ttsFirstByteMs = Math.max(0, ttsFirstByteMs);
       session.metrics.e2eLatencyMs = Date.now() - job.chunkStart;
+      latencySamples.push({
+        wait: job.chunkerWaitMs,
+        translate: job.translationLatencyMs,
+        firstByte: Math.max(0, ttsFirstByteMs),
+        stream: streamMs,
+        e2e: session.metrics.e2eLatencyMs,
+      });
       session.broadcast({ type: 'audio_end', seq: job.seq });
       send(ws, {
         type: 'debug',
         chunkSize: job.chunkSize,
+        chunkerWaitMs: job.chunkerWaitMs,
         translationLatencyMs: job.translationLatencyMs,
+        ttsFirstByteMs: Math.max(0, ttsFirstByteMs),
         ttsLatencyMs: stats.ttsLatencyMs,
         e2eLatencyMs: session.metrics.e2eLatencyMs,
         sttConnected: session.metrics.sttConnected,
       });
-      console.log(`[Pipeline] TTS streamed seq ${job.seq} (first byte ${stats.firstByteMs}ms, total ${stats.ttsLatencyMs}ms, ${session.metrics.e2eLatencyMs}ms e2e)`);
+      console.log(
+        `[Pipeline] seq ${job.seq} stages: wait ${job.chunkerWaitMs}ms · translate ${job.translationLatencyMs}ms · ` +
+          `first-byte ${ttsFirstByteMs}ms · stream ${streamMs}ms · e2e ${session.metrics.e2eLatencyMs}ms`,
+      );
       if (ttsPipeline.depth === 0) audioStarvedSince = Date.now();
     },
     onError: (job, err) => {
@@ -213,17 +256,17 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     },
   });
 
-  function enqueueTTS(seq: number, text: string, chunkSize: number, translationLatencyMs: number, chunkStart: number): void {
+  function enqueueTTS(seq: number, text: string, chunkSize: number, chunkerWaitMs: number, translationLatencyMs: number, chunkStart: number): void {
     if (ttsPipeline.depth === 0 && audioStarvedSince) {
       const starvedMs = Date.now() - audioStarvedSince;
       if (starvedMs > 500) {
         console.log(
           `[Gap] audio starved ~${starvedMs}ms before seq ${seq} ` +
-            `(translation ${translationLatencyMs}ms; rest = chunker hold / speaker pause)`,
+            `(chunker hold ${chunkerWaitMs}ms, translation ${translationLatencyMs}ms; rest = speaker pause)`,
         );
       }
     }
-    ttsPipeline.enqueue({ seq, text, chunkSize, translationLatencyMs, chunkStart });
+    ttsPipeline.enqueue({ seq, text, chunkSize, chunkerWaitMs, translationLatencyMs, chunkStart, enqueuedAt: Date.now() });
   }
 
   // A start within this window of the last stop is a RESUME (network blip +
@@ -259,6 +302,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     currentRef = null;
     refAgeChunks = 0;
     emitter.reset();
+    latencySamples = [];
 
     // Broadcast status to this room's listeners (direction tells them what
     // language they are about to hear).
@@ -314,6 +358,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     stt = null;
 
     session.broadcast({ type: 'status', active: false, direction: session.direction });
+    logLatencyReport();
     console.log('[Broadcaster] Session stopped');
   }
 

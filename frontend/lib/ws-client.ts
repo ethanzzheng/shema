@@ -76,7 +76,11 @@ export interface TranscriptHistoryMsg {
 export interface DebugMsg {
   type: 'debug';
   chunkSize: number;
+  /** Last STT final → chunker dispatch (deliberate hold cost). */
+  chunkerWaitMs?: number;
   translationLatencyMs: number;
+  /** Translation done → first TTS audio byte (includes TTS queue wait). */
+  ttsFirstByteMs?: number;
   ttsLatencyMs: number;
   e2eLatencyMs: number;
   sttConnected: boolean;
