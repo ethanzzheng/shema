@@ -316,6 +316,12 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       nextSeq: () => session.nextSeq(),
     });
 
+    // Provisional captions: interim STT text streams to listeners as a
+    // dimmed "live" line (throttled), so they see words within ~1s while the
+    // audio keeps its coherence delay. Text-only; the audio path is
+    // untouched. Note the text is SOURCE-language — a liveness cue.
+    let lastPartialSentAt = 0;
+
     // Set up streaming STT in the direction's input language
     stt = new ElevenLabsSTT({
       apiKey: ELEVENLABS_API_KEY,
@@ -324,6 +330,14 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         console.log(`[Broadcaster] STT transcript (final=${isFinal}): "${text.slice(0, 60)}…"`);
         // Send live Korean transcript to broadcaster UI
         send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
+
+        if (!isFinal && text.trim()) {
+          const now = Date.now();
+          if (now - lastPartialSentAt >= 350) {
+            lastPartialSentAt = now;
+            session.broadcast({ type: 'partial_transcript', text, timestamp });
+          }
+        }
 
         // Feed into chunker
         if (chunker) await chunker.feed(text, isFinal);

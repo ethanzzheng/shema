@@ -87,6 +87,8 @@ export default function ListenerView({ church }: { church: string }) {
   const [paused, setPaused] = useState(false);
   const pausedRef = useRef(false);
   const [transcript, setTranscript] = useState<TranscriptEntry[]>([]);
+  // Tentative interim STT text (source language) — the "hearing now" line.
+  const [partial, setPartial] = useState('');
   const [audioStarted, setAudioStarted] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   // The seq whose AUDIO is playing right now — drives the highlight.
@@ -269,7 +271,13 @@ export default function ListenerView({ church }: { church: string }) {
             } else {
               browserTtsRef.current?.cancel();
             }
+            setPartial('');
           }
+          break;
+        }
+
+        case 'partial_transcript': {
+          if ('text' in msg && typeof msg.text === 'string') setPartial(msg.text);
           break;
         }
 
@@ -293,7 +301,9 @@ export default function ListenerView({ church }: { church: string }) {
         case 'translation': {
           const t = msg as TranslationMsg;
 
-          // Append to rolling transcript
+          // Append to rolling transcript; the confirmed line supersedes the
+          // tentative live line.
+          setPartial('');
           setTranscript((prev) => {
             // Skip if we already have this seq
             if (prev.some((e) => e.seq === t.seq)) return prev;
@@ -522,7 +532,18 @@ export default function ListenerView({ church }: { church: string }) {
                 );
               });
             })()}
+            {/* Tentative live line: raw source-language STT, clearly styled
+                as provisional; cleared when the confirmed translation lands. */}
+            {partial && (
+              <p style={{ color: 'var(--text-muted)', opacity: 0.45, fontStyle: 'italic', whiteSpace: 'pre-wrap', fontSize: '0.85em' }}>
+                {partial}…
+              </p>
+            )}
           </>
+        ) : partial ? (
+          <p style={{ color: 'var(--text-muted)', opacity: 0.45, fontStyle: 'italic', fontSize: '0.85em' }}>
+            {partial}…
+          </p>
         ) : (
           <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
             {!broadcastActive ? 'Waiting for broadcast to start…' : 'Translating…'}

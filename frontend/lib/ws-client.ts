@@ -57,6 +57,16 @@ export interface StatusMsg {
   direction?: Direction;
 }
 
+/**
+ * Throttled interim STT text (SOURCE language, tentative — may be revised).
+ * Listeners render it as a dimmed live line; audio is unaffected.
+ */
+export interface PartialTranscriptMsg {
+  type: 'partial_transcript';
+  text: string;
+  timestamp: number;
+}
+
 /** Sent to broadcasters whenever the room's listener count changes. */
 export interface ListenersMsg {
   type: 'listeners';
@@ -100,6 +110,7 @@ export type ServerMessage =
   | AudioEndMsg
   | StatusMsg
   | ListenersMsg
+  | PartialTranscriptMsg
   | TranscriptHistoryMsg
   | DebugMsg
   | ErrorMsg
