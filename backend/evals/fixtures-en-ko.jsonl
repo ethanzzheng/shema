@@ -29,3 +29,4 @@
 {"id":"address-02","english":"Would you stand with me as we read God's Word?","mustContainAny":["말씀"],"notes":"polite request register"}
 {"id":"name-01","english":"Peter stepped out of the boat and walked on the water toward Jesus.","mustContainAny":["베드로"],"forbidden":["피터"],"notes":"standard Korean Bible names"}
 {"id":"tic-01","english":"God is good all the time. Amen?","expectHonorificSubject":true,"notes":"preacher tic; 아멘? allowed as interjection"}
+{"id":"consistency-01","english":"The early Christians lived very differently from the world around them.","sequence":["And the early Christians shared everything they had with one another.","That is why the early Christians turned the world upside down."],"consistentTerms":["초대 교인","초대 그리스도인","초기 그리스도인","초기 교인","초대교회 성도","초대 교회 성도"],"notes":"3-segment sequence: one Korean rendering of 'the early Christians' must be reused in every segment"}

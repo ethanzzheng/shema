@@ -29,6 +29,18 @@ interface Fixture {
   id: string;
   english: string;
   notes?: string;
+  /**
+   * Multi-segment sequence translated through ONE translator (rolling
+   * context intact). `english` is segment 1; these follow. Checks run on the
+   * joined output; consistentTerms runs per-segment.
+   */
+  sequence?: string[];
+  /**
+   * Candidate Korean renderings of a recurring term. PASS iff at least one
+   * candidate appears in EVERY segment's output — i.e. the translator picked
+   * a rendering and stuck with it.
+   */
+  consistentTerms?: string[];
   /** Prior segments to seed as context ({source: English, target: Korean}). */
   context?: { source: string; target: string }[];
   expectEmpty?: boolean;
@@ -293,13 +305,30 @@ async function main() {
       const ref: ScriptureRef | null = fx.scripture
         ? { book: fx.scripture.book, chapter: fx.scripture.chapter, verse: fx.scripture.verse }
         : null;
-      let output = '';
-      try {
-        output = (await translator.translate(fx.english, ref)).sermon_translation;
-      } catch (err) {
-        output = `[eval-error: ${(err as Error).message}]`;
+      const segments = [fx.english, ...(fx.sequence ?? [])];
+      const segOutputs: string[] = [];
+      for (const seg of segments) {
+        try {
+          segOutputs.push((await translator.translate(seg, ref)).sermon_translation);
+        } catch (err) {
+          segOutputs.push(`[eval-error: ${(err as Error).message}]`);
+        }
       }
+      const output = segOutputs.join(' ');
       const checks = runChecks(fx, output);
+
+      // Terminology consistency across a sequence: one rendering, every segment.
+      if (fx.consistentTerms && segOutputs.length > 1) {
+        const everywhere = fx.consistentTerms.filter((t) => segOutputs.every((o) => o.includes(t)));
+        const perSegment = segOutputs.map(
+          (o, i) => `seg${i + 1}:[${fx.consistentTerms!.filter((t) => o.includes(t)).join(',') || 'none'}]`,
+        );
+        checks.push({
+          name: 'consistent-terminology',
+          pass: everywhere.length > 0,
+          detail: everywhere.length > 0 ? undefined : `no shared rendering — ${perSegment.join(' ')} | outputs: ${segOutputs.join(' / ')}`,
+        });
+      }
       const result: FixtureResult = {
         id: fx.id,
         english: fx.english,
