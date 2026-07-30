@@ -14,7 +14,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { ScriptureRef, formatReference } from './scripture';
 import { formatReferenceKorean } from './scripture-en';
-import { getVerseWindow } from './bible';
+import { getVerseWindow, getVerseWindowKo } from './bible';
 import { Direction } from './direction-config';
 
 export interface TranslationResult {
@@ -197,12 +197,26 @@ export class ClaudeTranslator {
         ? getVerseWindow(reference.book, reference.chapter, reference.verse)
         : [];
     if (this.direction === 'en-ko') {
-      // Output is Korean: anchor quotes to the 개역개정 rendering of the
-      // passage. The bundled Bible is English (BSB), so when available it is
-      // injected as IDENTIFICATION of exactly which verse is being quoted —
-      // the Korean wording itself comes from consistent 개역개정 recall.
+      // Output is Korean: anchor quotes to REAL Korean scripture, strongest
+      // available form first — mirror of the ko-en NIV/BSB approach:
+      //  1. Confident reference (book+chapter+verse, the only case a window
+      //     exists) AND found in the bundled Korean Bible → inject the
+      //     canonical Korean verse text itself (real retrieval, no recall).
+      //  2. Reference known but no Korean text available → anchor by name,
+      //     falling back to consistent 개역개정 recall (English text as
+      //     identification when the BSB has it).
+      //  3. No/low-confidence reference → nothing is ever injected.
       const krName = formatReferenceKorean(reference ?? null);
-      if (window.length > 0) {
+      const koWindow =
+        reference?.book && reference.chapter !== undefined && reference.verse !== undefined
+          ? getVerseWindowKo(reference.book, reference.chapter, reference.verse)
+          : [];
+      if (koWindow.length > 0) {
+        const verses = koWindow.map((w) => `${w.ref} — "${w.text}"`).join('\n');
+        refBlock =
+          `Canonical Korean text of the passage being read (개역한글; this supplied wording OVERRIDES any other rendering, including 개역개정 recall):\n${verses}\n` +
+          `If this segment quotes any portion of the passage, use this EXACT supplied Korean wording for that portion${krName ? ` (cited as ${krName})` : ''} — but render ONLY the words the pastor actually spoke; never add parts of a verse he hasn't reached. Translate his own commentary normally.\n\n`;
+      } else if (window.length > 0) {
         const verses = window.map((w) => `${w.ref} — "${w.text}"`).join('\n');
         refBlock =
           `Canonical English text of the passage being read (so you can identify exactly which verse is being quoted):\n${verses}\n` +
