@@ -88,11 +88,13 @@ export class AudioStreamPlayer {
     // minutes behind live. Nothing is ever dropped — instead, when the
     // backlog runs deep, play slightly fast (browsers pitch-correct by
     // default, so it just sounds brisk) and ease back to 1.0 near live.
+    // Tiers tuned against a measured live emission ratio of 1.23x (fast
+    // preacher + Korean rendering): the first tier must BEAT that ratio or
+    // backlog creeps until the next tier. Steady state ≈ the first threshold.
     let rate = el.playbackRate;
-    if (ahead > 60) rate = 1.5;
-    else if (ahead > 30) rate = 1.3;
-    else if (ahead > 15) rate = 1.15;
-    else if (ahead < 8) rate = 1.0; // hysteresis: hold current rate between 8-15s
+    if (ahead > 35) rate = 1.5;
+    else if (ahead > 12) rate = 1.3;
+    else if (ahead < 6) rate = 1.0; // hysteresis: hold current rate between 6-12s
     if (el.playbackRate !== rate) {
       el.playbackRate = rate;
       console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${rate}`);
