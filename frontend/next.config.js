@@ -1,13 +1,12 @@
 /** @type {import('next').NextConfig} */
 
-// The marketing landing page (frontend/public/marketing.html) is a self-contained
-// static export from the site builder. It is served at "/" as its own document, so
-// its styles/scripts are fully isolated from the product routes (/broadcast, /listen).
+// The marketing homepage is a real Next.js page (app/page.tsx) as of the 2026
+// redesign — the old static marketing.html rewrite is gone.
 //
-// CONTACT_WORKER_ORIGIN: origin of the Cloudflare Worker that backs the contact form
-// (see ../marketing-worker). When set (e.g. on Vercel), same-origin POSTs to
-// /api/contact are proxied to the Worker — no CORS, and the marketing bundle stays
-// unedited. Leave unset in local dev; the form simply won't send.
+// CONTACT_WORKER_ORIGIN: origin of the Cloudflare Worker that backs the contact
+// forms (see ../marketing-worker). When set (e.g. on Vercel), same-origin POSTs
+// to /api/contact are proxied to the Worker — no CORS. Leave unset in local
+// dev; the forms fall back to a mailto:.
 const CONTACT_WORKER_ORIGIN = process.env.CONTACT_WORKER_ORIGIN;
 
 const nextConfig = {
@@ -16,10 +15,7 @@ const nextConfig = {
   distDir: process.env.NEXT_DIST_DIR || '.next',
   reactStrictMode: true,
   async rewrites() {
-    const beforeFiles = [
-      // Marketing homepage at the site root.
-      { source: '/', destination: '/marketing.html' },
-    ];
+    const beforeFiles = [];
     if (CONTACT_WORKER_ORIGIN) {
       beforeFiles.push({
         source: '/api/contact',

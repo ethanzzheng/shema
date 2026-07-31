@@ -5,26 +5,60 @@
 }
 
 /*
- * Design tokens — mirrors the marketing site (public/marketing.html):
- * ink navy ground, warm cream type, gold accents, sage for "live/ok",
- * hairline cream borders, sharp editorial radii, serif display type.
+ * Design tokens — 2026 redesign (design_handoff_shema_redesign).
+ * Warm parchment ground for marketing, night surfaces for product screens.
+ * Instrument Serif carries the preached words; IBM Plex Mono is machine
+ * labels only; Noto Serif KR carries all Korean.
  */
 :root {
-  --bg: #0A0E1A;
-  --surface: rgba(245, 241, 232, 0.025);
-  --surface2: rgba(245, 241, 232, 0.07);
-  --border: rgba(245, 241, 232, 0.12);
-  --text: #F5F1E8;
-  --text-muted: rgba(245, 241, 232, 0.55);
-  --accent: #C9A961;
-  --accent-hover: #D8BC7E;
-  --green: #8FB09B;
-  --red: #ff8a80;
-  --yellow: #D8BC7E;
+  /* ── Handoff palette ── */
+  --ink: #1B1B18;
+  --ink-soft: #33322C;
+  --paper: #F4F1EA;
+  --paper-2: #EDE7D9;
+  --paper-3: #EFEADD;
+  --text-2: #5E5A50;
+  --text-3: #6E6A60;
+  --text-4: #8A857A;
+  --text-5: #9C978B;
+  --rule: rgba(27, 27, 24, 0.10);
+  --rule-2: rgba(27, 27, 24, 0.14);
+  --rule-3: rgba(27, 27, 24, 0.18);
+  --gold: #C8A25E;
+  --gold-hover: #DCBB79;
+  --gold-ink: #8A6A2C;
+  --gold-link-hover: #B08A3F;
+  --night: #131318;
+  --night-2: #2A2A32;
+  --cream: #F4F1EA;
+  --sage: #93B5A0;
+  --sage-ink: #4F7360;
+  --alert: #FF8A80;
+  --alert-ink: #C96961;
+
+  /* ── Compatibility aliases (product pages predating the redesign) ── */
+  --bg: var(--night);
+  --surface: rgba(244, 241, 234, 0.03);
+  --surface2: rgba(244, 241, 234, 0.07);
+  --border: rgba(244, 241, 234, 0.12);
+  --text: var(--cream);
+  --text-muted: rgba(244, 241, 234, 0.55);
+  --accent: var(--gold);
+  --accent-hover: var(--gold-hover);
+  --green: var(--sage);
+  --red: var(--alert);
+  --yellow: var(--gold-hover);
   --orange: #f97316;
-  --radius: 6px;
-  --radius-sm: 2px;
+
+  --radius: 12px;
+  --radius-md: 10px;
+  --radius-sm: 8px;
   --font: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
+  --ease: cubic-bezier(0.2, 0.6, 0.2, 1);
+}
+
+html {
+  overflow-x: hidden;
 }
 
 body {
@@ -33,12 +67,15 @@ body {
   font-family: var(--font);
   line-height: 1.6;
   min-height: 100vh;
+  overflow-x: hidden;
 }
 
 h1, h2, h3 {
-  font-family: var(--font-display, serif);
-  font-weight: 600;
-  letter-spacing: 0.005em;
+  /* Instrument Serif ships one weight; Hangul glyphs fall through to Noto Serif KR. */
+  font-family: var(--font-display, serif), var(--font-serif, serif);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  text-wrap: pretty;
 }
 
 a {
@@ -55,13 +92,40 @@ button {
   font-family: var(--font);
   border: none;
   outline: none;
+  color: inherit;
+  background: none;
 }
 
-input, select {
+input, select, textarea {
   font-family: var(--font);
 }
 
-/* ── Utility classes ──────────────────────────────────────────────────────── */
+/* ── Type helpers ─────────────────────────────────────────────────────────── */
+
+/* The preached words (English): Instrument Serif, Hangul falls to Noto KR. */
+.serif-en {
+  font-family: var(--font-display, serif), var(--font-serif, serif);
+}
+
+/* Korean text: Noto Serif KR. */
+.serif-kr {
+  font-family: var(--font-serif, serif);
+}
+
+.prose-serif {
+  font-family: var(--font-display, serif), var(--font-serif, serif);
+}
+
+/* Machine label: mono, uppercase, tracked. */
+.mono-label {
+  font-family: var(--font-mono, monospace);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* ── Utility classes (product screens) ───────────────────────────────────── */
 
 .card {
   background: var(--surface);
@@ -84,8 +148,8 @@ input, select {
   display: inline-flex;
   align-items: center;
   gap: 0.4rem;
-  padding: 0.25rem 0.7rem;
-  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
   border: 1px solid var(--border);
   font-family: var(--font-mono, monospace);
   font-size: 0.68rem;
@@ -94,9 +158,9 @@ input, select {
   text-transform: uppercase;
 }
 
-.pill-green { background: rgba(143,176,155,.12); border-color: rgba(143,176,155,.4); color: var(--green); }
-.pill-red   { background: rgba(255,138,128,.10); border-color: rgba(255,138,128,.4); color: var(--red); }
-.pill-yellow{ background: rgba(201,169,97,.10);  border-color: rgba(201,169,97,.4);  color: var(--yellow); }
+.pill-green { background: rgba(147,181,160,.12); border-color: rgba(147,181,160,.4); color: var(--sage); }
+.pill-red   { background: rgba(255,138,128,.10); border-color: rgba(255,138,128,.4); color: var(--alert); }
+.pill-yellow{ background: rgba(200,162,94,.10);  border-color: rgba(200,162,94,.4);  color: var(--gold-hover); }
 .pill-muted { background: var(--surface2); color: var(--text-muted); }
 
 .dot {
@@ -108,12 +172,27 @@ input, select {
 }
 
 .dot-pulse {
-  animation: pulse 1.5s ease-in-out infinite;
+  animation: breathe 2.5s ease-in-out infinite;
 }
 
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.28; }
+}
+
+/* Legacy name — same animation. */
 @keyframes pulse {
   0%, 100% { opacity: 1; }
-  50%       { opacity: 0.3; }
+  50%      { opacity: 0.28; }
+}
+
+@keyframes caret {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0; }
+}
+
+.caret {
+  animation: caret 1s step-end infinite;
 }
 
 /* ── Buttons ─────────────────────────────────────────────────────────────── */
@@ -128,21 +207,21 @@ input, select {
   font-size: 0.92rem;
   font-weight: 600;
   letter-spacing: 0.01em;
-  transition: background 0.25s, color 0.25s, border-color 0.25s, transform 0.1s;
+  transition: background 0.3s var(--ease), color 0.3s var(--ease), border-color 0.3s var(--ease), transform 0.3s var(--ease);
   user-select: none;
 }
 
 .btn:active { transform: scale(0.98); }
 
 .btn-primary {
-  background: var(--accent);
-  color: #0A0E1A;
+  background: var(--gold);
+  color: var(--night);
 }
-.btn-primary:hover { background: var(--accent-hover); color: #0A0E1A; }
+.btn-primary:hover { background: var(--gold-hover); color: var(--night); }
 
 .btn-danger {
-  background: rgba(255,138,128,.10);
-  color: var(--red);
+  background: rgba(255,138,128,.09);
+  color: var(--alert);
   border: 1px solid rgba(255,138,128,.4);
 }
 .btn-danger:hover { background: rgba(255,138,128,.2); }
@@ -150,14 +229,13 @@ input, select {
 .btn-ghost {
   background: transparent;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 1px solid rgba(244,241,234,0.14);
 }
-.btn-ghost:hover { background: var(--surface2); color: var(--text); border-color: rgba(245,241,232,0.25); }
+.btn-ghost:hover { background: rgba(244,241,234,0.08); color: var(--text); border-color: rgba(244,241,234,0.25); }
 
 .btn-lg {
   padding: 1rem 2rem;
   font-size: 1.05rem;
-  border-radius: var(--radius-sm);
 }
 
 /* ── Toggle ──────────────────────────────────────────────────────────────── */
@@ -165,56 +243,58 @@ input, select {
 .toggle-group {
   display: flex;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid rgba(244,241,234,0.14);
   border-radius: var(--radius-sm);
-  padding: 2px;
-  gap: 2px;
+  padding: 3px;
+  gap: 3px;
 }
 
 .toggle-opt {
   flex: 1;
-  padding: 0.4rem 0.85rem;
-  border-radius: var(--radius-sm);
+  padding: 0.45rem 0.85rem;
+  border-radius: 6px;
   font-family: var(--font-mono, monospace);
   font-size: 0.68rem;
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
+  color: rgba(244,241,234,0.5);
   background: transparent;
   transition: background 0.2s, color 0.2s;
   white-space: nowrap;
 }
 
+.toggle-opt:hover { color: rgba(244,241,234,0.9); }
+
 .toggle-opt.active {
-  background: var(--accent);
-  color: #0A0E1A;
+  background: var(--gold);
+  color: var(--night);
+}
+
+/* Cream-filled variant (the /speak pacing control). */
+.toggle-opt.active-cream {
+  background: rgba(244,241,234,0.9);
+  color: var(--night);
 }
 
 /* ── Form fields ─────────────────────────────────────────────────────────── */
 
 .field {
-  background: rgba(245, 241, 232, 0.04);
-  border: 1px solid var(--border);
+  background: rgba(244, 241, 234, 0.04);
+  border: 1px solid rgba(244,241,234,0.14);
   border-radius: var(--radius-sm);
   padding: 0.55rem 0.8rem;
   color: var(--text);
   font-size: 0.92rem;
-  transition: border-color 0.25s;
+  transition: border-color 0.3s var(--ease);
 }
 
 .field:focus {
   outline: none;
-  border-color: rgba(201, 169, 97, 0.6);
+  border-color: rgba(200, 162, 94, 0.6);
 }
 
 .field:disabled { opacity: 0.55; }
-
-/* ── Reading text (transcripts / captions) ───────────────────────────────── */
-
-.prose-serif {
-  font-family: var(--font-serif, Georgia, serif);
-}
 
 /* ── Scrollable text panels ───────────────────────────────────────────────── */
 
@@ -249,7 +329,7 @@ input, select {
 .debug-val {
   font-size: 1.2rem;
   font-weight: 700;
-  color: var(--accent-hover);
+  color: var(--gold-hover);
 }
 
 .debug-key {
@@ -258,4 +338,27 @@ input, select {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.15em;
+}
+
+/* ── /speak desk grid (rail + transcript; stacks on narrow screens) ──────── */
+
+.sp-grid {
+  display: grid;
+  grid-template-columns: 330px minmax(0, 1fr);
+}
+
+@media (max-width: 900px) {
+  .sp-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ── Motion safety ───────────────────────────────────────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

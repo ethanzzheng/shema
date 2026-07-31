@@ -435,103 +435,72 @@ export default function ListenerView({ church }: { church: string }) {
   handleMessageRef.current = handleMessage;
 
   // ── Render ─────────────────────────────────────────────────────────────
+  // "Vigil" (redesign screen 1a): a dimmed sanctuary screen where the line
+  // being spoken NOW is the only bright thing. Full transcript preserved —
+  // history dims above, upcoming lines wait faint below.
   const connColor =
     connState === 'connected'
-      ? broadcastActive ? 'var(--green)' : 'var(--yellow)'
-      : connState === 'connecting' ? 'var(--yellow)' : 'var(--red)';
+      ? broadcastActive ? 'var(--sage)' : 'var(--gold-hover)'
+      : connState === 'connecting' ? 'var(--gold-hover)' : 'var(--alert)';
 
   // What the listener is hearing — label it so nobody wonders which language.
   const outputLang = direction === 'en-ko' ? 'Korean' : 'English';
 
   const connLabel =
     connState === 'connected'
-      ? broadcastActive ? `Live ${outputLang} Translation` : 'Connected — waiting for broadcast'
-      : connState === 'connecting' ? 'Connecting…' : 'Disconnected — reconnecting…';
+      ? broadcastActive ? 'Live' : 'Waiting'
+      : connState === 'connecting' ? 'Connecting…' : 'Reconnecting…';
+
+  const mono: React.CSSProperties = {
+    fontFamily: 'var(--font-mono, monospace)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.2em',
+  };
+  const baseSize = textSize === 's' ? '0.95rem' : textSize === 'l' ? '1.45rem' : '1.15rem';
+  const sizeBtn: React.CSSProperties = { minWidth: 44, minHeight: 44 };
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem', height: '100dvh', boxSizing: 'border-box' }}>
+    <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box', background: 'var(--night)' }}>
 
-      {/* Header — church name + subtle status, nothing else */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', flexShrink: 0 }}>
-        <h1 style={{ fontSize: '1.6rem', fontWeight: 600 }}>{church}</h1>
+      {/* Header — church name + breathing status */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', flexShrink: 0, padding: '1.1rem 1.25rem 0.6rem' }}>
+        <h1 className="serif-en" style={{ fontSize: '1.55rem', color: 'rgba(244,241,234,0.92)' }}>{church}</h1>
         <span
           style={{
-            fontFamily: 'var(--font-mono)',
-            fontSize: '0.68rem',
-            letterSpacing: '0.12em',
-            textTransform: 'uppercase',
+            ...mono,
+            fontSize: '0.62rem',
             color: connColor,
             display: 'inline-flex',
             alignItems: 'center',
-            gap: '0.4rem',
+            gap: '0.45rem',
           }}
         >
-          <span className={`dot${broadcastActive ? ' dot-pulse' : ''}`} style={{ background: 'currentColor' }} />
+          <span className={`dot${broadcastActive ? ' dot-pulse' : ''}`} style={{ background: 'currentColor', width: 7, height: 7 }} />
           {connLabel}
         </span>
       </div>
 
       {/* Audio init — one tap unlocks autoplay for the whole service */}
       {!audioStarted && (
-        <div className="card" style={{ textAlign: 'center', padding: '2.5rem 1.5rem', borderColor: 'rgba(201,169,97,.45)', background: 'rgba(201,169,97,.05)', flexShrink: 0 }}>
+        <div style={{ textAlign: 'center', padding: '2rem 1.25rem', flexShrink: 0 }}>
           <button
-            className="btn btn-primary"
             onClick={initAudio}
-            style={{ width: '100%', maxWidth: 380, padding: '1.1rem 1.5rem', fontSize: '1.2rem', fontWeight: 600 }}
+            style={{
+              width: '100%',
+              maxWidth: 380,
+              padding: '1.15rem 1.5rem',
+              fontSize: '1.2rem',
+              fontWeight: 600,
+              borderRadius: 12,
+              background: 'var(--gold)',
+              color: 'var(--night)',
+            }}
           >
             🔊 Tap to listen
           </button>
-          <p style={{ marginTop: '0.9rem', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+          <p style={{ marginTop: '0.9rem', color: 'rgba(244,241,234,0.5)', fontSize: '0.85rem' }}>
             One tap starts the {outputLang} audio — your browser blocks sound until you do.
           </p>
-        </div>
-      )}
-
-      {/* Controls row — pause, text size, caption source */}
-      {audioStarted && (
-        <div style={{ display: 'flex', gap: '0.9rem', flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}>
-          <button
-            className={paused ? 'btn btn-primary' : 'btn btn-ghost'}
-            onClick={togglePause}
-            style={{ padding: '0.55rem 1.3rem', fontSize: '0.95rem' }}
-          >
-            {paused ? (
-              <svg width="11" height="12" viewBox="0 0 11 12" fill="currentColor" aria-hidden>
-                <path d="M0 0 L11 6 L0 12 Z" />
-              </svg>
-            ) : (
-              <svg width="10" height="12" viewBox="0 0 10 12" fill="currentColor" aria-hidden>
-                <rect x="0" y="0" width="3.5" height="12" />
-                <rect x="6.5" y="0" width="3.5" height="12" />
-              </svg>
-            )}
-            {paused ? 'Listen' : 'Pause'}
-          </button>
-
-          {/* Caption size */}
-          <div className="toggle-group" aria-label="Caption text size">
-            <button className={`toggle-opt${textSize === 's' ? ' active' : ''}`} onClick={() => changeTextSize('s')} style={{ fontSize: '0.62rem' }}>A</button>
-            <button className={`toggle-opt${textSize === 'm' ? ' active' : ''}`} onClick={() => changeTextSize('m')} style={{ fontSize: '0.74rem' }}>A</button>
-            <button className={`toggle-opt${textSize === 'l' ? ' active' : ''}`} onClick={() => changeTextSize('l')} style={{ fontSize: '0.88rem' }}>A</button>
-          </div>
-
-          {/* Caption source */}
-          <div className="toggle-group" style={{ marginLeft: 'auto' }}>
-            <button
-              className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
-              onClick={() => setCaptionMode('sermon')}
-              title="Natural spoken-English rendering (matches the audio)"
-            >
-              Sermon
-            </button>
-            <button
-              className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
-              onClick={() => setCaptionMode('direct')}
-              title="More literal translation of the Korean"
-            >
-              Direct
-            </button>
-          </div>
         </div>
       )}
 
@@ -539,52 +508,52 @@ export default function ListenerView({ church }: { church: string }) {
           drift gets a one-tap escape (captions keep every line). */}
       {audioStarted && ttsMode === 'elevenlabs' && behindSec > 45 && (
         <div
-          className="card"
           style={{
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             gap: '0.75rem',
             padding: '0.6rem 1rem',
-            borderColor: 'rgba(201,169,97,.45)',
-            background: 'rgba(201,169,97,.07)',
+            margin: '0 1.25rem 0.5rem',
+            border: '1px solid rgba(200,162,94,0.45)',
+            background: 'rgba(200,162,94,0.07)',
+            borderRadius: 10,
             flexShrink: 0,
           }}
         >
-          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+          <span style={{ fontSize: '0.85rem', color: 'rgba(244,241,234,0.6)' }}>
             Audio is ~{behindSec}s behind live
           </span>
           <button
-            className="btn btn-primary"
             onClick={() => streamRef.current?.jumpToLive()}
-            style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}
+            style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, minHeight: 44, borderRadius: 8, background: 'var(--gold)', color: 'var(--night)' }}
           >
             Jump to live
           </button>
         </div>
       )}
 
-      {/* Rolling captions — history faded, current sentence emphasized */}
+      {/* The vigil: full transcript, only the spoken line burns bright */}
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="card prose-serif"
+        className="serif-en"
         style={{
           flex: 1,
           minHeight: 0,
           overflowY: 'auto',
-          fontSize: textSize === 's' ? '0.95rem' : textSize === 'l' ? '1.45rem' : '1.15rem',
-          lineHeight: 1.85,
-          padding: '1.5rem',
+          fontSize: baseSize,
+          lineHeight: 1.7,
+          padding: '1rem 1.5rem 2.5rem',
         }}
       >
         {transcript.length > 0 ? (
           <>
-            {/* Spotify-lyrics style, synced to the EAR: lines already heard
-                are faded above, the line whose audio is playing NOW glows,
-                and translated-but-not-yet-spoken lines wait dimmed below
-                (read ahead if you like). When audio isn't the driver
-                (captions-only), the newest line is the live one. */}
+            {/* Synced to the EAR: lines already heard fade above, the line
+                whose audio is playing NOW is the bright one, and
+                translated-but-not-yet-spoken lines wait faint below. When
+                audio isn't the driver (captions-only), the newest line is
+                the live one. */}
             {(() => {
               const lastSeq = transcript[transcript.length - 1].seq;
               const audioDriven = audioStarted && ttsMode !== 'off' && spokenSeq > 0;
@@ -593,9 +562,12 @@ export default function ListenerView({ church }: { church: string }) {
                 const text = captionMode === 'direct' ? entry.direct : entry.sermon;
                 if (entry.seq === highlightSeq) {
                   return (
-                    <p key={entry.seq} data-seq={entry.seq} style={{ color: 'var(--text)', whiteSpace: 'pre-wrap', fontSize: '1.35em', lineHeight: 1.6, marginBottom: '0.7em' }}>
-                      {text}
-                    </p>
+                    <div key={entry.seq} data-seq={entry.seq} style={{ margin: '1.1em 0' }}>
+                      <span aria-hidden style={{ display: 'block', width: 26, height: 2, background: 'var(--gold)', marginBottom: '0.55em' }} />
+                      <p style={{ color: 'rgba(244,241,234,0.96)', whiteSpace: 'pre-wrap', fontSize: '1.5em', lineHeight: 1.42 }}>
+                        {text}
+                      </p>
+                    </div>
                   );
                 }
                 const upcoming = entry.seq > highlightSeq;
@@ -604,10 +576,11 @@ export default function ListenerView({ church }: { church: string }) {
                     key={entry.seq}
                     data-seq={entry.seq}
                     style={{
-                      color: 'var(--text-muted)',
-                      opacity: upcoming ? 0.5 : 1,
+                      color: 'var(--cream)',
+                      opacity: upcoming ? 0.2 : 0.28,
                       whiteSpace: 'pre-wrap',
-                      marginBottom: '0.9em',
+                      marginBottom: '0.85em',
+                      transition: 'opacity 0.5s var(--ease)',
                     }}
                   >
                     {text}
@@ -618,82 +591,164 @@ export default function ListenerView({ church }: { church: string }) {
             {/* Tentative live line: raw source-language STT, clearly styled
                 as provisional; cleared when the confirmed translation lands. */}
             {partial && (
-              <p style={{ color: 'var(--text-muted)', opacity: 0.45, fontStyle: 'italic', whiteSpace: 'pre-wrap', fontSize: '0.85em' }}>
-                {partial}…
+              <p style={{ color: 'var(--cream)', opacity: 0.16, fontStyle: 'italic', whiteSpace: 'pre-wrap', fontSize: '0.85em' }}>
+                {partial}
+                <span className="caret" aria-hidden>▍</span>
               </p>
             )}
           </>
         ) : partial ? (
-          <p style={{ color: 'var(--text-muted)', opacity: 0.45, fontStyle: 'italic', fontSize: '0.85em' }}>
-            {partial}…
+          <p style={{ color: 'var(--cream)', opacity: 0.2, fontStyle: 'italic', fontSize: '0.85em' }}>
+            {partial}
+            <span className="caret" aria-hidden>▍</span>
           </p>
         ) : (
-          <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+          <p style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', paddingTop: '1rem' }}>
             {!broadcastActive ? 'Waiting for broadcast to start…' : 'Translating…'}
           </p>
         )}
       </div>
 
-      {/* Audio source — tucked away; only needed for troubleshooting */}
-      {audioStarted && (
-        <details style={{ flexShrink: 0 }}>
-          <summary className="label" style={{ cursor: 'pointer', marginBottom: 0, userSelect: 'none' }}>
-            Audio options
-          </summary>
-          <div className="toggle-group" style={{ marginTop: '0.5rem', maxWidth: 320 }}>
-            <button
-              className={`toggle-opt${ttsMode === 'browser' ? ' active' : ''}`}
-              onClick={() => { setTtsMode('browser'); browserTtsRef.current?.cancel(); }}
-              title="Fallback — your browser's built-in speech"
-            >
-              Basic voice
-            </button>
-            <button
-              className={`toggle-opt${ttsMode === 'elevenlabs' ? ' active' : ''}`}
-              onClick={() => { setTtsMode('elevenlabs'); browserTtsRef.current?.cancel(); }}
-              title="Studio voice (default)"
-            >
-              Studio voice
-            </button>
-            <button
-              className={`toggle-opt${ttsMode === 'off' ? ' active' : ''}`}
-              onClick={() => { setTtsMode('off'); browserTtsRef.current?.cancel(); }}
-              title="Captions only"
-            >
-              Captions only
-            </button>
-          </div>
-          {/* Catch-up speed: on = quietly play brisk when behind live;
-              off = always normal speed (the Jump-to-live pill still works). */}
-          <div className="label" style={{ marginTop: '0.8rem', marginBottom: '0.35rem' }}>
-            Catch-up speed
-          </div>
-          <div className="toggle-group" style={{ maxWidth: 320 }}>
-            <button
-              className={`toggle-opt${autoCatchUp ? ' active' : ''}`}
-              onClick={() => changeAutoCatchUp(true)}
-              title="Plays slightly faster when behind live so you stay close (default)"
-            >
-              Auto
-            </button>
-            <button
-              className={`toggle-opt${!autoCatchUp ? ' active' : ''}`}
-              onClick={() => changeAutoCatchUp(false)}
-              title="Always normal speed — you may drift behind live"
-            >
-              Off
-            </button>
-          </div>
-        </details>
-      )}
-
       {/* Errors */}
       {errors.length > 0 && (
-        <div className="card" style={{ borderColor: 'rgba(239,68,68,.4)', background: 'rgba(239,68,68,.05)', flexShrink: 0 }}>
-          <div className="label" style={{ color: 'var(--red)' }}>Errors</div>
+        <div style={{ border: '1px solid rgba(255,138,128,.4)', background: 'rgba(255,138,128,.05)', borderRadius: 10, flexShrink: 0, margin: '0 1.25rem 0.5rem', padding: '0.6rem 1rem' }}>
           {errors.map((e, i) => (
-            <p key={i} style={{ color: 'var(--red)', fontSize: '0.85rem', marginTop: '0.35rem' }}>{e}</p>
+            <p key={i} style={{ color: 'var(--alert)', fontSize: '0.85rem', marginTop: i === 0 ? 0 : '0.35rem' }}>{e}</p>
           ))}
+        </div>
+      )}
+
+      {/* Footer — pause, output language, caption source, text size.
+          Every control ≥44px: the audience is older congregants on phones. */}
+      {audioStarted && (
+        <div
+          style={{
+            flexShrink: 0,
+            padding: '0.9rem 1.25rem calc(0.9rem + env(safe-area-inset-bottom))',
+            background: 'linear-gradient(to top, var(--night) 78%, rgba(19,19,24,0))',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.7rem',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', flexWrap: 'wrap' }}>
+            <button
+              onClick={togglePause}
+              aria-label={paused ? 'Resume audio' : 'Pause audio'}
+              style={{
+                width: 56,
+                height: 56,
+                borderRadius: '50%',
+                background: 'var(--gold)',
+                color: 'var(--night)',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                flexShrink: 0,
+              }}
+            >
+              {paused ? (
+                <svg width="15" height="16" viewBox="0 0 11 12" fill="currentColor" aria-hidden>
+                  <path d="M0 0 L11 6 L0 12 Z" />
+                </svg>
+              ) : (
+                <svg width="13" height="16" viewBox="0 0 10 12" fill="currentColor" aria-hidden>
+                  <rect x="0" y="0" width="3.5" height="12" />
+                  <rect x="6.5" y="0" width="3.5" height="12" />
+                </svg>
+              )}
+            </button>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 90 }}>
+              <span style={{ ...mono, fontSize: '0.6rem', color: 'rgba(244,241,234,0.75)' }}>{outputLang} audio</span>
+              <span style={{ ...mono, fontSize: '0.55rem', color: 'rgba(244,241,234,0.4)' }}>
+                {paused ? 'Paused' : behindSec > 3 ? `${behindSec}s behind` : 'Live'}
+              </span>
+            </div>
+
+            {/* Caption source */}
+            <div className="toggle-group" style={{ marginLeft: 'auto' }}>
+              <button
+                className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
+                onClick={() => setCaptionMode('sermon')}
+                title="Natural rendering (matches the audio)"
+                style={{ minHeight: 44, minWidth: 44 }}
+              >
+                Sermon
+              </button>
+              <button
+                className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
+                onClick={() => setCaptionMode('direct')}
+                title="More literal rendering"
+                style={{ minHeight: 44, minWidth: 44 }}
+              >
+                Literal
+              </button>
+            </div>
+
+            {/* Caption size */}
+            <div className="toggle-group" aria-label="Caption text size">
+              <button className={`toggle-opt${textSize === 's' ? ' active' : ''}`} onClick={() => changeTextSize('s')} style={{ ...sizeBtn, fontSize: '0.62rem' }}>A</button>
+              <button className={`toggle-opt${textSize === 'm' ? ' active' : ''}`} onClick={() => changeTextSize('m')} style={{ ...sizeBtn, fontSize: '0.74rem' }}>A</button>
+              <button className={`toggle-opt${textSize === 'l' ? ' active' : ''}`} onClick={() => changeTextSize('l')} style={{ ...sizeBtn, fontSize: '0.88rem' }}>A</button>
+            </div>
+          </div>
+
+          {/* Audio source + catch-up — tucked away; only for troubleshooting */}
+          <details>
+            <summary style={{ ...mono, fontSize: '0.58rem', color: 'rgba(244,241,234,0.42)', cursor: 'pointer', userSelect: 'none', listStyle: 'none' }}>
+              ▸ Audio options
+            </summary>
+            <div className="toggle-group" style={{ marginTop: '0.6rem', maxWidth: 340 }}>
+              <button
+                className={`toggle-opt${ttsMode === 'browser' ? ' active' : ''}`}
+                onClick={() => { setTtsMode('browser'); browserTtsRef.current?.cancel(); }}
+                title="Fallback — your browser's built-in speech"
+                style={{ minHeight: 44 }}
+              >
+                Basic voice
+              </button>
+              <button
+                className={`toggle-opt${ttsMode === 'elevenlabs' ? ' active' : ''}`}
+                onClick={() => { setTtsMode('elevenlabs'); browserTtsRef.current?.cancel(); }}
+                title="Studio voice (default)"
+                style={{ minHeight: 44 }}
+              >
+                Studio voice
+              </button>
+              <button
+                className={`toggle-opt${ttsMode === 'off' ? ' active' : ''}`}
+                onClick={() => { setTtsMode('off'); browserTtsRef.current?.cancel(); }}
+                title="Captions only"
+                style={{ minHeight: 44 }}
+              >
+                Captions only
+              </button>
+            </div>
+            {/* Catch-up speed: on = quietly play brisk when behind live;
+                off = always normal speed (the Jump-to-live pill still works). */}
+            <div style={{ ...mono, fontSize: '0.55rem', color: 'rgba(244,241,234,0.42)', margin: '0.7rem 0 0.35rem' }}>
+              Catch-up speed
+            </div>
+            <div className="toggle-group" style={{ maxWidth: 340 }}>
+              <button
+                className={`toggle-opt${autoCatchUp ? ' active' : ''}`}
+                onClick={() => changeAutoCatchUp(true)}
+                title="Plays slightly faster when behind live so you stay close (default)"
+                style={{ minHeight: 44 }}
+              >
+                Auto
+              </button>
+              <button
+                className={`toggle-opt${!autoCatchUp ? ' active' : ''}`}
+                onClick={() => changeAutoCatchUp(false)}
+                title="Always normal speed — you may drift behind live"
+                style={{ minHeight: 44 }}
+              >
+                Off
+              </button>
+            </div>
+          </details>
         </div>
       )}
     </div>

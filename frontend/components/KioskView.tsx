@@ -267,17 +267,30 @@ export default function KioskView({ church }: { church: string }) {
   }, []);
   handleMessageRef.current = handleMessage;
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  const statusColor =
-    connState !== 'connected' ? 'var(--red)' : broadcastActive ? 'var(--green)' : 'var(--yellow)';
-  const statusLabel =
-    connState === 'connecting'
-      ? 'Connecting…'
-      : connState === 'disconnected'
-      ? 'Disconnected — reconnecting…'
-      : broadcastActive
-      ? 'Live'
-      : 'Waiting for broadcast';
+  // ── Render (redesign screen 1d) ─────────────────────────────────────────
+  // Designed to be read from across the room: one large pill answers the
+  // operator's only question — is sound going out?
+  const soundOut = started && broadcastActive && connState === 'connected';
+  const pillColor = soundOut
+    ? 'var(--sage)'
+    : connState !== 'connected'
+    ? 'var(--alert)'
+    : 'rgba(244,241,234,0.5)';
+  const pillLabel = soundOut
+    ? 'Sound is going out'
+    : connState === 'connecting'
+    ? 'Connecting…'
+    : connState === 'disconnected'
+    ? 'Reconnecting…'
+    : started
+    ? 'Waiting for broadcast'
+    : 'Output not started';
+
+  const mono: React.CSSProperties = {
+    fontFamily: 'var(--font-mono, monospace)',
+    textTransform: 'uppercase',
+    letterSpacing: '0.22em',
+  };
 
   // Waiting on the auth check (or being redirected to /login) — render nothing.
   if (gate !== 'ok') return null;
@@ -291,47 +304,63 @@ export default function KioskView({ church }: { church: string }) {
         padding: 'clamp(1.25rem, 3vw, 2.5rem)',
         gap: '1.25rem',
         boxSizing: 'border-box',
+        background: 'var(--night)',
       }}
     >
-      {/* ── Top bar: church + status ─────────────────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem' }}>
-          <h1 style={{ fontSize: 'clamp(1.6rem, 3.4vw, 2.6rem)', fontWeight: 600 }}>{church}</h1>
-          <span className="label" style={{ marginBottom: 0 }}>
-            Kiosk output · {direction === 'en-ko' ? 'Korean' : 'English'}
+      {/* ── Top bar: church + the one big answer ─────────────────────── */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', flexWrap: 'wrap' }}>
+          <h1 className="serif-en" style={{ fontSize: 26, color: 'rgba(244,241,234,0.92)' }}>{church}</h1>
+          <span style={{ ...mono, fontSize: 10, color: 'rgba(244,241,234,0.42)' }}>
+            Receiver output · {direction === 'en-ko' ? 'Korean' : 'English'}
           </span>
         </div>
-        <div className="pill" style={{ color: statusColor, borderColor: 'currentColor', fontSize: '0.8rem', padding: '0.45rem 1rem' }}>
-          <span className={`dot${broadcastActive && connState === 'connected' ? ' dot-pulse' : ''}`} />
-          {statusLabel}
-        </div>
+        <span
+          style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: '10px 22px',
+            borderRadius: 999,
+            border: `1px solid ${pillColor}`,
+            color: pillColor,
+            ...mono,
+            fontSize: 15,
+          }}
+        >
+          <span className={`dot${soundOut ? ' dot-pulse' : ''}`} style={{ width: 10, height: 10 }} />
+          {pillLabel}
+        </span>
       </div>
 
       {/* ── Main area ────────────────────────────────────────────────── */}
       {!started ? (
-        <div className="card" style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.25rem', borderColor: 'rgba(201,169,97,.45)', background: 'rgba(201,169,97,.04)' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.25rem', border: '1px solid rgba(200,162,94,.45)', background: 'rgba(200,162,94,.04)', borderRadius: 12 }}>
           <button
-            className="btn btn-primary"
             onClick={startOutput}
-            style={{ fontSize: '1.5rem', padding: '1.4rem 3.5rem', fontWeight: 600 }}
+            style={{ fontSize: '1.5rem', padding: '1.4rem 3.5rem', fontWeight: 600, borderRadius: 10, background: 'var(--gold)', color: 'var(--night)' }}
           >
             ▶ Start output
           </button>
-          <p style={{ color: 'var(--text-muted)', maxWidth: '46ch', textAlign: 'center', fontSize: '0.95rem' }}>
+          <p style={{ color: 'rgba(244,241,234,0.5)', maxWidth: '46ch', textAlign: 'center', fontSize: '0.95rem' }}>
             One click unlocks continuous audio out of this laptop&apos;s headphone / line-out.
             Use the test tone below to verify the church system hears it, then leave this
             screen open for the whole service.
           </p>
         </div>
       ) : (
-        <div className="card prose-serif" style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 'clamp(1.5rem, 4vw, 3rem)', gap: '1.5rem', overflow: 'hidden' }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 'clamp(1.5rem, 4vw, 3rem)', gap: '1.6rem', overflow: 'hidden' }}>
           {caption ? (
             <>
-              <p style={{ color: 'var(--text-muted)', fontSize: 'clamp(1rem, 1.8vw, 1.4rem)', lineHeight: 1.6 }}>{prevCaption}</p>
-              <p style={{ fontSize: 'clamp(1.4rem, 3vw, 2.3rem)', lineHeight: 1.55 }}>{caption}</p>
+              <p className="serif-en" style={{ color: 'var(--cream)', opacity: 0.24, fontSize: 'clamp(1.2rem, 2.3vw, 1.9rem)', lineHeight: 1.5 }}>
+                {prevCaption}
+              </p>
+              <p className="serif-en" style={{ color: 'rgba(244,241,234,0.96)', fontSize: 'clamp(1.8rem, 5vw, 4rem)', lineHeight: 1.28, maxWidth: '24ch' }}>
+                {caption}
+              </p>
             </>
           ) : (
-            <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: 'clamp(1.2rem, 2.2vw, 1.8rem)', textAlign: 'center' }}>
+            <p className="serif-en" style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', fontSize: 'clamp(1.2rem, 2.2vw, 1.8rem)', textAlign: 'center' }}>
               {broadcastActive ? 'Translating…' : 'Output armed — waiting for the broadcast to start.'}
             </p>
           )}
@@ -339,9 +368,19 @@ export default function KioskView({ church }: { church: string }) {
       )}
 
       {/* ── Operator bar: volume, test tone, wake lock ───────────────── */}
-      <div className="card" style={{ display: 'flex', alignItems: 'center', gap: '1.5rem', flexWrap: 'wrap', padding: '1rem 1.25rem' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '1.5rem',
+          flexWrap: 'wrap',
+          padding: '1rem 0 0',
+          borderTop: '1px solid rgba(244,241,234,0.08)',
+          flexShrink: 0,
+        }}
+      >
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 240 }}>
-          <span className="label" style={{ marginBottom: 0 }}>Volume</span>
+          <span style={{ ...mono, fontSize: 9.5, color: 'rgba(244,241,234,0.45)' }}>Output</span>
           <input
             type="range"
             min={0}
@@ -349,10 +388,10 @@ export default function KioskView({ church }: { church: string }) {
             step={0.01}
             value={volume}
             onChange={(e) => changeVolume(parseFloat(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--accent)' }}
+            style={{ flex: 1, accentColor: 'var(--gold)' }}
             aria-label="Output volume"
           />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'var(--text-muted)', width: 42, textAlign: 'right' }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'rgba(244,241,234,0.6)', width: 42, textAlign: 'right' }}>
             {Math.round(volume * 100)}%
           </span>
         </div>
@@ -361,25 +400,25 @@ export default function KioskView({ church }: { church: string }) {
           {toneBusy ? 'Playing…' : 'Test tone'}
         </button>
 
-        <div className="pill" style={{ color: wakeLockState === 'active' ? 'var(--green)' : 'var(--text-muted)' }}>
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, ...mono, fontSize: 9.5, color: wakeLockState === 'active' ? 'var(--sage)' : 'rgba(244,241,234,0.42)' }}>
           <span className="dot" />
           {wakeLockState === 'active'
             ? 'Screen stays awake'
             : wakeLockState === 'unavailable'
             ? 'Wake lock unavailable — disable sleep in OS settings'
             : 'Screen may sleep'}
-        </div>
+        </span>
 
         {started && (
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--text-muted)', letterSpacing: '0.08em' }}>
-            {segments} SEGMENTS
+          <span style={{ ...mono, fontSize: 9.5, color: 'rgba(244,241,234,0.42)' }}>
+            {segments} segments
           </span>
         )}
       </div>
 
       {error && (
-        <div className="card" style={{ borderColor: 'rgba(255,138,128,.4)', background: 'rgba(255,138,128,.05)', padding: '0.75rem 1.25rem' }}>
-          <span style={{ color: 'var(--red)', fontSize: '0.9rem' }}>{error}</span>
+        <div style={{ border: '1px solid rgba(255,138,128,.4)', background: 'rgba(255,138,128,.05)', borderRadius: 10, padding: '0.75rem 1.25rem', flexShrink: 0 }}>
+          <span style={{ color: 'var(--alert)', fontSize: '0.9rem' }}>{error}</span>
         </div>
       )}
     </div>

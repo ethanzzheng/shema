@@ -1,6 +1,19 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+/**
+ * /speak — the broadcast desk (redesign screen 1c).
+ *
+ * Everything a volunteer needs lives in the left rail and never moves:
+ * End broadcast → Direction → Sound source (with a live input meter) →
+ * Pacing → Congregation link. The old debug panel becomes three
+ * plain-language health readings, with the raw figures behind DIAGNOSTICS.
+ *
+ * All wire behavior is unchanged: same WsClient lifecycle, heartbeat,
+ * auto-resume, start/stop/mode/direction messages, church + device
+ * persistence, QR share, and error surfacing.
+ */
+
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { WsClient, ServerMessage, DebugMsg, TranslationMsg } from '@/lib/ws-client';
@@ -19,8 +32,8 @@ type Direction = 'ko-en' | 'en-ko';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 
 const DIRECTION_LABELS: Record<Direction, string> = {
-  'ko-en': 'Korean → English',
-  'en-ko': 'English → Korean',
+  'ko-en': '한국어 → EN',
+  'en-ko': 'EN → 한국어',
 };
 
 interface DebugPanel {
@@ -49,6 +62,60 @@ const DEFAULT_DEBUG: DebugPanel = {
   sttConnected: false,
 };
 
+const MONO: React.CSSProperties = {
+  fontFamily: 'var(--font-mono, monospace)',
+  textTransform: 'uppercase',
+  letterSpacing: '0.18em',
+};
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const hh = String(Math.floor(s / 3600)).padStart(2, '0');
+  const mm = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
+  const ss = String(s % 60).padStart(2, '0');
+  return `${hh}:${mm}:${ss}`;
+}
+
+/** 15-bar live input meter fed by the capture's PCM RMS (via a ref). */
+function InputMeter({ levelRef, active }: { levelRef: React.MutableRefObject<number>; active: boolean }) {
+  const [level, setLevel] = useState(0);
+  const lastSignalRef = useRef(0);
+  useEffect(() => {
+    if (!active) { setLevel(0); return; }
+    const t = setInterval(() => {
+      const v = levelRef.current;
+      if (v > 0.02) lastSignalRef.current = Date.now();
+      setLevel(v);
+    }, 150);
+    return () => clearInterval(t);
+  }, [active, levelRef]);
+
+  const lit = Math.round(Math.min(1, level * 6) * 15);
+  const good = active && Date.now() - lastSignalRef.current < 2000;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 18, flex: 1 }} aria-hidden>
+        {Array.from({ length: 15 }, (_, i) => (
+          <span
+            key={i}
+            style={{
+              flex: 1,
+              height: `${40 + (i % 4) * 18}%`,
+              borderRadius: 1,
+              background: i < lit ? 'var(--sage)' : 'rgba(244,241,234,0.14)',
+              opacity: i >= 11 ? 0.35 : 1,
+              transition: 'background 0.15s linear',
+            }}
+          />
+        ))}
+      </div>
+      <span style={{ ...MONO, fontSize: 9, color: good ? 'var(--sage)' : 'rgba(244,241,234,0.35)' }}>
+        {active ? (good ? 'Signal good' : 'No signal') : 'Idle'}
+      </span>
+    </div>
+  );
+}
+
 export default function SpeakPage() {
   // Staff page: redirects to /login when the backend enforces auth.
   const gate = useRequireAuth();
@@ -61,6 +128,8 @@ export default function SpeakPage() {
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);
   const [errors, setErrors] = useState<string[]>([]);
   const [listenerCount, setListenerCount] = useState(0);
+  const [showDiag, setShowDiag] = useState(false);
+  const [elapsed, setElapsed] = useState('00:00:00');
 
   // Committed church room (drives the WS connection); null until read from
   // the URL/localStorage on mount. churchDraft is the input's live text.
@@ -89,6 +158,9 @@ export default function SpeakPage() {
   const lastPongRef = useRef(0);
   const lastBeatRef = useRef(0);
   const missedBeatsRef = useRef(0);
+  // Live input level (RMS of the last PCM chunk), fed by the capture callback.
+  const levelRef = useRef(0);
+  const startedAtRef = useRef(0);
 
   // Restore the last-used direction (persists across services).
   useEffect(() => {
@@ -104,6 +176,14 @@ export default function SpeakPage() {
     directionRef.current = d;
     try { window.localStorage.setItem(DIRECTION_STORAGE_KEY, d); } catch {}
   };
+
+  // Elapsed on-air clock.
+  useEffect(() => {
+    if (!broadcasting) return;
+    if (!startedAtRef.current) startedAtRef.current = Date.now();
+    const t = setInterval(() => setElapsed(formatElapsed(Date.now() - startedAtRef.current)), 1000);
+    return () => clearInterval(t);
+  }, [broadcasting]);
 
   // ── Church room init: ?church= / legacy ?room= → last used → "default" ──
   useEffect(() => {
@@ -174,13 +254,64 @@ export default function SpeakPage() {
     if (autoScrollRef.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [script]);
+  }, [script, liveKorean]);
 
   const handleScroll = () => {
     if (!scrollRef.current) return;
     const { scrollTop, scrollHeight, clientHeight } = scrollRef.current;
     autoScrollRef.current = scrollHeight - scrollTop - clientHeight < 60;
   };
+
+  const handleMessage = useCallback((msg: ServerMessage) => {
+    switch (msg.type) {
+      case 'status':
+        // Deepgram connect/disconnect — the debug message also carries this,
+        // but only after a full pipeline round-trip; this is the live signal.
+        if ('sttConnected' in msg) {
+          setDebug((prev) => ({ ...prev, sttConnected: msg.sttConnected as boolean }));
+        }
+        break;
+
+      case 'transcript':
+        if ('korean' in msg) setLiveKorean(msg.korean as string);
+        break;
+
+      case 'listeners':
+        if ('count' in msg) setListenerCount(msg.count as number);
+        break;
+
+      case 'pong':
+        lastPongRef.current = Date.now();
+        break;
+      case 'translation': {
+        const t = msg as TranslationMsg;
+        setScript((prev) => {
+          if (prev.some((e) => e.seq === t.seq)) return prev;
+          return [...prev, { seq: t.seq, korean: t.korean ?? '', sermon: t.sermon }];
+        });
+        setLiveKorean(''); // clear interim korean after translation arrives
+        break;
+      }
+      case 'debug': {
+        const d = msg as DebugMsg;
+        setDebug({
+          chunkSize: d.chunkSize,
+          chunkerWaitMs: d.chunkerWaitMs ?? 0,
+          translationLatencyMs: d.translationLatencyMs,
+          ttsFirstByteMs: d.ttsFirstByteMs ?? 0,
+          ttsLatencyMs: d.ttsLatencyMs,
+          e2eLatencyMs: d.e2eLatencyMs,
+          sttConnected: d.sttConnected,
+        });
+        break;
+      }
+      case 'error':
+        if ('message' in msg) {
+          setErrors((prev) => [...prev.slice(-4), msg.message as string]);
+        }
+        break;
+    }
+  }, []);
 
   // ── WebSocket lifecycle (reconnects when the church room changes) ───────
   useEffect(() => {
@@ -287,57 +418,6 @@ export default function SpeakPage() {
     }
   };
 
-  const handleMessage = useCallback((msg: ServerMessage) => {
-    switch (msg.type) {
-      case 'status':
-        // Deepgram connect/disconnect — the debug message also carries this,
-        // but only after a full pipeline round-trip; this is the live signal.
-        if ('sttConnected' in msg) {
-          setDebug((prev) => ({ ...prev, sttConnected: msg.sttConnected as boolean }));
-        }
-        break;
-
-      case 'transcript':
-        if ('korean' in msg) setLiveKorean(msg.korean as string);
-        break;
-
-      case 'listeners':
-        if ('count' in msg) setListenerCount(msg.count as number);
-        break;
-
-      case 'pong':
-        lastPongRef.current = Date.now();
-        break;
-      case 'translation': {
-        const t = msg as TranslationMsg;
-        setScript((prev) => {
-          if (prev.some((e) => e.seq === t.seq)) return prev;
-          return [...prev, { seq: t.seq, korean: t.korean ?? '', sermon: t.sermon }];
-        });
-        setLiveKorean(''); // clear interim korean after translation arrives
-        break;
-      }
-      case 'debug': {
-        const d = msg as DebugMsg;
-        setDebug({
-          chunkSize: d.chunkSize,
-          chunkerWaitMs: d.chunkerWaitMs ?? 0,
-          translationLatencyMs: d.translationLatencyMs,
-          ttsFirstByteMs: d.ttsFirstByteMs ?? 0,
-          ttsLatencyMs: d.ttsLatencyMs,
-          e2eLatencyMs: d.e2eLatencyMs,
-          sttConnected: d.sttConnected,
-        });
-        break;
-      }
-      case 'error':
-        if ('message' in msg) {
-          setErrors((prev) => [...prev.slice(-4), msg.message as string]);
-        }
-        break;
-    }
-  }, []);
-
   // ── Start / Stop broadcast ───────────────────────────────────────────────
   const startBroadcast = async () => {
     if (broadcasting || !wsRef.current?.isConnected) return;
@@ -348,6 +428,11 @@ export default function SpeakPage() {
         deviceId: deviceId || undefined,
         onChunk: (pcm) => {
           wsRef.current?.sendBinary(pcm);
+          // Cheap RMS for the rail's input meter.
+          const view = new Int16Array(pcm);
+          let sum = 0;
+          for (let i = 0; i < view.length; i += 8) sum += view[i] * view[i];
+          levelRef.current = Math.sqrt(sum / Math.max(1, view.length / 8)) / 32768;
         },
         onDeviceEnded: () => {
           setErrors((prev) => [
@@ -367,6 +452,8 @@ export default function SpeakPage() {
       // The login session token authorizes the start (backend-verified).
       wsRef.current.sendJSON({ type: 'start', mode, direction, token: getToken() ?? undefined });
       wantBroadcastRef.current = true;
+      startedAtRef.current = Date.now();
+      setElapsed('00:00:00');
       setBroadcasting(true);
 
       setScript([]);
@@ -391,6 +478,7 @@ export default function SpeakPage() {
   const stopCapture = () => {
     captureRef.current?.stop();
     captureRef.current = null;
+    levelRef.current = 0;
   };
 
   const stopBroadcast = () => {
@@ -399,6 +487,7 @@ export default function SpeakPage() {
     wsRef.current?.sendJSON({ type: 'stop' });
     setBroadcasting(false);
     setLiveDeviceLabel('');
+    startedAtRef.current = 0;
   };
 
   const handleModeChange = (m: Mode) => {
@@ -409,342 +498,450 @@ export default function SpeakPage() {
     }
   };
 
-  // ── Render ───────────────────────────────────────────────────────────────
-  const stateColor =
-    connState === 'connected'
-      ? 'var(--green)'
-      : connState === 'connecting'
-      ? 'var(--yellow)'
-      : 'var(--red)';
-
-  const stateLabel =
-    connState === 'connected'
-      ? 'Connected'
-      : connState === 'connecting'
-      ? 'Connecting…'
-      : 'Disconnected';
+  // ── Derived ──────────────────────────────────────────────────────────────
+  const srcIsKorean = direction === 'ko-en';
+  const hearing = broadcasting && debug.sttConnected;
+  const onAir = broadcasting && connState === 'connected';
 
   // Waiting on the auth check (or being redirected to /login) — render nothing.
   if (gate !== 'ok') return null;
 
+  const railCard: React.CSSProperties = {
+    border: '1px solid rgba(244,241,234,0.12)',
+    borderRadius: 10,
+    padding: '14px 16px',
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 10,
+  };
+  const railLabel: React.CSSProperties = { ...MONO, fontSize: 9.5, color: 'rgba(244,241,234,0.45)' };
+
   return (
-    <div style={{ maxWidth: 860, margin: '0 auto', padding: '1.5rem 1rem', display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box', gap: '1rem' }}>
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+    <div style={{ minHeight: '100dvh', background: 'var(--night)', display: 'flex', flexDirection: 'column' }}>
+      {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div
         style={{
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'space-between',
+          gap: 14,
           flexWrap: 'wrap',
-          gap: '0.75rem',
-          flexShrink: 0,
+          padding: '12px clamp(14px, 2vw, 24px)',
+          borderBottom: '1px solid rgba(244,241,234,0.08)',
         }}
       >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-          <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>
-            ←
-          </Link>
-          <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Broadcaster</h1>
-        </div>
+        <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)' }} title="Home">
+          <svg width="12" height="16" viewBox="0 0 24 32" fill="none" aria-hidden>
+            <line x1="12" y1="1" x2="12" y2="31" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+            <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
+          </svg>
+          <span style={{ ...MONO, fontSize: 11, letterSpacing: '0.24em' }}>Shema</span>
+        </Link>
+        <span style={{ width: 1, height: 18, background: 'rgba(244,241,234,0.12)' }} aria-hidden />
+        <span className="serif-en" style={{ fontSize: 19, color: 'rgba(244,241,234,0.9)' }}>Broadcast desk</span>
 
-        <div className="pill" style={{ background: 'var(--surface2)', color: stateColor }}>
-          <span className={`dot${connState === 'connected' && broadcasting ? ' dot-pulse' : ''}`} />
-          {stateLabel}
-          {broadcasting && connState === 'connected' && (
-            <span style={{ marginLeft: 4 }}>· LIVE</span>
-          )}
-        </div>
-      </div>
+        {/* Church slug: chip while live, editable field otherwise */}
+        <input
+          className="field"
+          value={churchDraft}
+          onChange={(e) => setChurchDraft(e.target.value)}
+          onBlur={commitChurch}
+          onKeyDown={(e) => { if (e.key === 'Enter') commitChurch(); }}
+          disabled={broadcasting}
+          placeholder="church-slug"
+          aria-label="Church room"
+          style={{ width: 130, padding: '5px 10px', fontSize: 12.5, fontFamily: 'var(--font-mono, monospace)', borderRadius: 999 }}
+        />
 
-      {/* ── Control panel ──────────────────────────────────────────────── */}
-      <div
-        className="card"
-        style={{
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: '1rem',
-          flexWrap: 'wrap',
-          flexShrink: 0,
-        }}
-      >
-        {!broadcasting ? (
-          <button
-            className="btn btn-primary"
-            onClick={startBroadcast}
-            disabled={connState !== 'connected'}
-            style={{ opacity: connState !== 'connected' ? 0.5 : 1, padding: '0.8rem 2rem', fontSize: '1rem' }}
+        {/* Pacing echo — visible without looking down at the rail */}
+        {broadcasting && (
+          <span
+            style={{
+              ...MONO,
+              fontSize: 9,
+              color: 'var(--night)',
+              background: 'var(--gold)',
+              borderRadius: 999,
+              padding: '4px 10px',
+            }}
           >
-            ● Start Broadcast
-          </button>
-        ) : (
-          <button className="btn btn-danger" onClick={stopBroadcast} style={{ padding: '0.8rem 2rem', fontSize: '1rem' }}>
-            ■ Stop
-          </button>
+            {mode} pacing
+          </span>
         )}
 
-        {/* Translation direction */}
-        <div>
-          <div className="label" style={{ marginBottom: '0.3rem' }}>Direction</div>
-          <div className="toggle-group">
-            <button
-              className={`toggle-opt${direction === 'ko-en' ? ' active' : ''}`}
-              onClick={() => handleDirectionChange('ko-en')}
-              disabled={broadcasting}
-              title="Korean sermon in, English audio out"
-            >
-              Korean → English
-            </button>
-            <button
-              className={`toggle-opt${direction === 'en-ko' ? ' active' : ''}`}
-              onClick={() => handleDirectionChange('en-ko')}
-              disabled={broadcasting}
-              title="English sermon in, Korean audio out"
-            >
-              English → Korean
-            </button>
-          </div>
-        </div>
-
-        {/* Church room */}
-        <div>
-          <div className="label" style={{ marginBottom: '0.3rem' }}>Church</div>
-          <input
-            className="field"
-            value={churchDraft}
-            onChange={(e) => setChurchDraft(e.target.value)}
-            onBlur={commitChurch}
-            onKeyDown={(e) => { if (e.key === 'Enter') commitChurch(); }}
-            disabled={broadcasting}
-            placeholder="e.g. grace-church"
-            style={{ width: 150 }}
-          />
-        </div>
-
-        {/* Input device */}
-        <div>
-          <div className="label" style={{ marginBottom: '0.3rem' }}>Input</div>
-          <select
-            className="field"
-            value={deviceId}
-            onChange={(e) => selectDevice(e.target.value)}
-            disabled={broadcasting}
-            title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
-            style={{ maxWidth: 210 }}
-          >
-            <option value="">System default</option>
-            {devices
-              .filter((d) => d.deviceId && d.deviceId !== 'default')
-              .map((d, i) => (
-                <option key={d.deviceId} value={d.deviceId}>
-                  {d.label || `Microphone ${i + 1}`}
-                </option>
-              ))}
-          </select>
-          {needsPermission && !broadcasting && (
-            <button
-              className="btn btn-ghost"
-              onClick={unlockDeviceLabels}
-              style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem', marginLeft: 6 }}
-              title="Grant mic access once so device names show up"
-            >
-              List devices
-            </button>
+        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
+          {broadcasting && (
+            <span style={{ ...MONO, fontSize: 11, color: 'rgba(244,241,234,0.6)' }}>{elapsed}</span>
           )}
-        </div>
-
-        {/* Pacing */}
-        <div>
-          <div className="label" style={{ marginBottom: '0.3rem' }}>Pacing</div>
-          <div className="toggle-group">
-            <button
-              className={`toggle-opt${mode === 'fast' ? ' active' : ''}`}
-              onClick={() => handleModeChange('fast')}
-              title="Lower latency; rougher sentence edges"
-            >
-              Fast
-            </button>
-            <button
-              className={`toggle-opt${mode === 'smooth' ? ' active' : ''}`}
-              onClick={() => handleModeChange('smooth')}
-              title="Waits for natural pauses; cleanest sentences"
-            >
-              Smooth
-            </button>
-          </div>
-        </div>
-
-        <a
-          href={church ? `/listen/${church}` : '/listen'}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="btn btn-ghost"
-          style={{ marginLeft: 'auto', fontSize: '0.85rem', padding: '0.5rem 1rem' }}
-        >
-          Open Listener
-        </a>
+          <span
+            className="pill"
+            style={{
+              color: onAir ? 'var(--sage)' : connState === 'connecting' ? 'var(--gold-hover)' : connState === 'disconnected' ? 'var(--alert)' : 'rgba(244,241,234,0.5)',
+              borderColor: 'currentColor',
+            }}
+          >
+            <span className={`dot${onAir ? ' dot-pulse' : ''}`} />
+            {onAir ? 'On air' : connState === 'connected' ? 'Ready' : connState === 'connecting' ? 'Connecting…' : 'Disconnected'}
+          </span>
+        </span>
       </div>
 
-      {/* ── Status row (live) ──────────────────────────────────────────── */}
-      {broadcasting && (
-        <div style={{ display: 'flex', gap: '0.6rem', flexWrap: 'wrap', flexShrink: 0 }}>
-          <div className="pill" style={{ borderColor: 'rgba(201,169,97,.45)', color: 'var(--accent)', fontWeight: 600 }}>
-            {DIRECTION_LABELS[direction]}
-          </div>
-          <div className={`pill ${debug.sttConnected ? 'pill-green' : 'pill-red'}`}>
-            <span className={`dot${debug.sttConnected ? ' dot-pulse' : ''}`} />
-            STT {debug.sttConnected ? 'Active' : 'Waiting'}
-          </div>
-          <div className="pill pill-yellow">
-            <span className="dot" />
-            {listenerCount} listening
-          </div>
-          {debug.e2eLatencyMs > 0 && (
-            <div className="pill pill-muted">{(debug.e2eLatencyMs / 1000).toFixed(1)}s delay</div>
+      {/* ── Desk grid ───────────────────────────────────────────────────── */}
+      <div className="sp-grid" style={{ flex: 1, minHeight: 0, padding: 'clamp(12px, 1.6vw, 20px)', gap: 14 }}>
+        {/* ── Left rail ── */}
+        <aside style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+          {/* 1. Start / End broadcast */}
+          {!broadcasting ? (
+            <button
+              onClick={startBroadcast}
+              disabled={connState !== 'connected'}
+              style={{
+                width: '100%',
+                padding: '15px 16px',
+                borderRadius: 10,
+                fontSize: 16,
+                fontWeight: 600,
+                background: 'var(--gold)',
+                color: 'var(--night)',
+                opacity: connState !== 'connected' ? 0.5 : 1,
+                transition: 'background 0.3s var(--ease)',
+              }}
+            >
+              ● Start broadcast
+            </button>
+          ) : (
+            <button
+              onClick={stopBroadcast}
+              style={{
+                width: '100%',
+                padding: '15px 16px',
+                borderRadius: 10,
+                fontSize: 16,
+                fontWeight: 600,
+                background: 'rgba(255,138,128,0.09)',
+                color: 'var(--alert)',
+                border: '1px solid rgba(255,138,128,0.4)',
+              }}
+            >
+              ■ End broadcast
+            </button>
           )}
-          {liveDeviceLabel && (
-            <div className="pill pill-muted" style={{ maxWidth: 260 }} title={liveDeviceLabel}>
-              🎙 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{liveDeviceLabel}</span>
-            </div>
-          )}
-        </div>
-      )}
 
-      {/* ── Share card (QR + link for congregants) ─────────────────────── */}
-      {church && (
-        <div
-          className="card"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '1.25rem',
-            flexWrap: 'wrap',
-            flexShrink: 0,
-            borderColor: 'rgba(201,169,97,.45)',
-            background: 'rgba(201,169,97,.05)',
-          }}
-        >
-          {qrDataUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img
-              src={qrDataUrl}
-              alt={`QR code for ${listenUrl}`}
-              width={120}
-              height={120}
-              style={{ borderRadius: 2, background: '#fff', padding: 4 }}
-            />
-          )}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', minWidth: 220, flex: 1 }}>
-            <div className="label">Congregation link — scan or share</div>
-            <code style={{ fontSize: '0.95rem', wordBreak: 'break-all', color: 'var(--text)' }}>{listenUrl}</code>
-            <div>
-              <button className="btn btn-ghost" onClick={copyLink} style={{ fontSize: '0.85rem', padding: '0.45rem 0.9rem' }}>
-                {copied ? 'Copied ✓' : 'Copy link'}
+          {/* 2. Direction */}
+          <div style={railCard}>
+            <span style={railLabel}>Direction</span>
+            <div className="toggle-group">
+              {(['ko-en', 'en-ko'] as const).map((d) => (
+                <button
+                  key={d}
+                  className={`toggle-opt${direction === d ? ' active' : ''}`}
+                  onClick={() => handleDirectionChange(d)}
+                  disabled={broadcasting}
+                  title={d === 'ko-en' ? 'Korean sermon in, English audio out' : 'English sermon in, Korean audio out'}
+                  style={{ fontFamily: 'var(--font-sans)', fontSize: 12.5, textTransform: 'none', letterSpacing: 0 }}
+                >
+                  {DIRECTION_LABELS[d]}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 3. Sound source */}
+          <div style={railCard}>
+            <span style={railLabel}>Sound source</span>
+            <select
+              className="field"
+              value={deviceId}
+              onChange={(e) => selectDevice(e.target.value)}
+              disabled={broadcasting}
+              title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
+              style={{ width: '100%', fontSize: 13 }}
+            >
+              <option value="">System default</option>
+              {devices
+                .filter((d) => d.deviceId && d.deviceId !== 'default')
+                .map((d, i) => (
+                  <option key={d.deviceId} value={d.deviceId}>
+                    {d.label || `Microphone ${i + 1}`}
+                  </option>
+                ))}
+            </select>
+            {needsPermission && !broadcasting && (
+              <button
+                className="btn btn-ghost"
+                onClick={unlockDeviceLabels}
+                style={{ fontSize: '0.72rem', padding: '0.35rem 0.6rem', alignSelf: 'flex-start' }}
+                title="Grant mic access once so device names show up"
+              >
+                List devices
+              </button>
+            )}
+            <InputMeter levelRef={levelRef} active={broadcasting} />
+          </div>
+
+          {/* 4. Pacing */}
+          <div style={railCard}>
+            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
+              <span style={railLabel}>Pacing</span>
+              <span style={{ ...MONO, fontSize: 8.5, color: 'var(--sage)' }}>Safe to change on air</span>
+            </div>
+            <div className="toggle-group">
+              <button
+                className={`toggle-opt${mode === 'fast' ? ' active-cream' : ''}`}
+                onClick={() => handleModeChange('fast')}
+                title="Lower latency; rougher sentence edges"
+              >
+                Fast
+              </button>
+              <button
+                className={`toggle-opt${mode === 'smooth' ? ' active-cream' : ''}`}
+                onClick={() => handleModeChange('smooth')}
+                title="Waits for natural pauses; cleanest sentences"
+              >
+                Smooth
               </button>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ── Rolling script ──────────────────────────────────────────────── */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="card prose-serif"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          padding: '1.5rem',
-          lineHeight: 1.85,
-        }}
-      >
-        {script.length > 0 || liveKorean ? (
-          <div>
-            {/* Translated segments */}
-            {script.map((entry) => (
-              <p key={entry.seq} style={{ marginBottom: '0.8rem', fontSize: '1.05rem' }}>
-                <span style={{ color: 'var(--text)' }}>{entry.sermon}</span>
-                {entry.korean && (
-                  <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem', display: 'block', marginTop: '0.2rem' }}>
-                    {entry.korean}
-                  </span>
+          {/* 5. Congregation link — pinned to the rail's bottom */}
+          {church && (
+            <div style={{ ...railCard, marginTop: 'auto', borderColor: 'rgba(200,162,94,0.45)', background: 'rgba(200,162,94,0.05)' }}>
+              <span style={{ ...railLabel, color: 'var(--gold)' }}>Congregation link</span>
+              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                {qrDataUrl && (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={qrDataUrl}
+                    alt={`QR code for ${listenUrl}`}
+                    width={78}
+                    height={78}
+                    style={{ borderRadius: 4, background: '#fff', padding: 3, flexShrink: 0 }}
+                  />
                 )}
-              </p>
-            ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
+                  <code style={{ fontSize: 11.5, wordBreak: 'break-all', color: 'rgba(244,241,234,0.75)' }}>
+                    {listenUrl.replace(/^https?:\/\//, '')}
+                  </code>
+                  <button
+                    onClick={copyLink}
+                    style={{
+                      ...MONO,
+                      fontSize: 9,
+                      alignSelf: 'flex-start',
+                      padding: '5px 12px',
+                      borderRadius: 6,
+                      border: '1px solid rgba(244,241,234,0.16)',
+                      color: 'rgba(244,241,234,0.75)',
+                    }}
+                  >
+                    {copied ? 'Copied ✓' : 'Copy'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </aside>
 
-            {/* Live Korean being transcribed (not yet translated) */}
-            {liveKorean && (
-              <p style={{ color: 'var(--text-muted)', fontStyle: 'italic', fontSize: '0.95rem' }}>
-                {liveKorean}…
+        {/* ── Right pane ── */}
+        <main style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, minWidth: 0 }}>
+          {/* Health strip */}
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 'clamp(14px, 2.4vw, 34px)',
+              flexWrap: 'wrap',
+              border: '1px solid rgba(244,241,234,0.12)',
+              borderRadius: 10,
+              padding: '12px 18px',
+            }}
+          >
+            <div>
+              <div style={railLabel}>Hearing the pastor</div>
+              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
+                <span className={`dot${hearing ? ' dot-pulse' : ''}`} style={{ color: hearing ? 'var(--sage)' : 'rgba(244,241,234,0.3)' }} />
+                <span style={{ fontSize: 15, fontWeight: 600, color: hearing ? 'var(--sage)' : 'rgba(244,241,234,0.5)' }}>
+                  {hearing ? 'Yes' : broadcasting ? 'Waiting' : '—'}
+                </span>
+              </div>
+            </div>
+            <div>
+              <div style={railLabel}>Delay to the pews</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}>
+                {debug.e2eLatencyMs > 0 ? `${(debug.e2eLatencyMs / 1000).toFixed(1)} seconds` : '—'}
+              </div>
+            </div>
+            <div>
+              <div style={railLabel}>Listening now</div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}>
+                {listenerCount} {listenerCount === 1 ? 'person' : 'people'}
+              </div>
+            </div>
+            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, flexWrap: 'wrap' }}>
+              <button
+                onClick={() => setShowDiag((v) => !v)}
+                style={{
+                  ...MONO,
+                  fontSize: 9,
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: '1px solid rgba(244,241,234,0.16)',
+                  color: showDiag ? 'var(--night)' : 'rgba(244,241,234,0.6)',
+                  background: showDiag ? 'rgba(244,241,234,0.9)' : 'transparent',
+                }}
+              >
+                Diagnostics
+              </button>
+              <a
+                href={church ? `/listen/${church}` : '/listen'}
+                target="_blank"
+                rel="noopener noreferrer"
+                style={{ ...MONO, fontSize: 9, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(244,241,234,0.16)', color: 'rgba(244,241,234,0.6)' }}
+              >
+                Open listener ↗
+              </a>
+            </span>
+          </div>
+
+          {/* Diagnostics disclosure — the old raw figures */}
+          {showDiag && (
+            <div className="debug-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+              {[
+                [`${debug.chunkSize}`, 'last chunk (chars)'],
+                [`${debug.chunkerWaitMs}ms`, 'chunker wait'],
+                [`${debug.translationLatencyMs}ms`, 'translation'],
+                [`${debug.ttsFirstByteMs}ms`, 'tts first byte'],
+                [`${debug.ttsLatencyMs}ms`, 'tts total'],
+                [`${debug.e2eLatencyMs}ms`, 'end-to-end'],
+                [debug.sttConnected ? 'yes' : 'no', 'stt connected'],
+                [`${listenerCount}`, 'listeners'],
+              ].map(([val, key]) => (
+                <div key={key} className="debug-item">
+                  <div className="debug-val" style={{ fontSize: '1rem' }}>{val}</div>
+                  <div className="debug-key">{key}</div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Transcript */}
+          <div
+            ref={scrollRef}
+            onScroll={handleScroll}
+            style={{
+              flex: 1,
+              minHeight: 200,
+              overflowY: 'auto',
+              border: '1px solid rgba(244,241,234,0.12)',
+              borderRadius: 10,
+              padding: 'clamp(14px, 1.8vw, 22px)',
+            }}
+          >
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
+                gap: '0 clamp(14px, 2vw, 28px)',
+                paddingBottom: 8,
+                borderBottom: '1px solid rgba(244,241,234,0.12)',
+                marginBottom: 4,
+              }}
+            >
+              <span style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.42)' }}>
+                {srcIsKorean ? '한국어 · Spoken' : 'English · Spoken'}
+              </span>
+              <span style={{ ...MONO, fontSize: 9, color: 'var(--gold)' }}>
+                {srcIsKorean ? 'English · Sent to the pews' : '한국어 · Sent to the pews'}
+              </span>
+            </div>
+
+            {script.length > 0 || liveKorean ? (
+              <>
+                {script.map((entry, i) => {
+                  const fromEnd = script.length - 1 - i;
+                  const opacity = liveKorean ? (fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32) : fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32;
+                  return (
+                    <div
+                      key={entry.seq}
+                      style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
+                        gap: '0 clamp(14px, 2vw, 28px)',
+                        padding: '12px 0',
+                        borderTop: i === 0 ? 'none' : '1px solid rgba(244,241,234,0.08)',
+                        opacity,
+                        transition: 'opacity 0.5s var(--ease)',
+                      }}
+                    >
+                      <span
+                        className={srcIsKorean ? 'serif-kr' : 'serif-en'}
+                        lang={srcIsKorean ? 'ko' : 'en'}
+                        style={{ fontSize: 15, lineHeight: 1.65, color: 'rgba(244,241,234,0.75)' }}
+                      >
+                        {entry.korean}
+                      </span>
+                      <span
+                        className={srcIsKorean ? 'serif-en' : 'serif-kr'}
+                        lang={srcIsKorean ? 'en' : 'ko'}
+                        style={{ fontSize: 19, lineHeight: 1.55, color: 'var(--cream)' }}
+                      >
+                        {entry.sermon}
+                      </span>
+                    </div>
+                  );
+                })}
+
+                {/* In-progress source line */}
+                {liveKorean && (
+                  <div
+                    style={{
+                      display: 'grid',
+                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
+                      gap: '0 clamp(14px, 2vw, 28px)',
+                      padding: '12px 0',
+                      borderTop: '1px solid rgba(244,241,234,0.08)',
+                    }}
+                  >
+                    <span
+                      className={srcIsKorean ? 'serif-kr' : 'serif-en'}
+                      lang={srcIsKorean ? 'ko' : 'en'}
+                      style={{ fontSize: 15, lineHeight: 1.65, fontStyle: 'italic', color: 'rgba(244,241,234,0.6)' }}
+                    >
+                      {liveKorean}
+                      <span className="caret" aria-hidden>▍</span>
+                    </span>
+                    <span style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.35)', alignSelf: 'center' }}>
+                      Holding for the sentence…
+                    </span>
+                  </div>
+                )}
+              </>
+            ) : (
+              <p className="serif-en" style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', padding: '18px 0' }}>
+                {broadcasting ? 'Listening…' : 'Start a broadcast to begin translating.'}
               </p>
             )}
           </div>
-        ) : (
-          <p style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
-            {broadcasting ? 'Listening…' : 'Start a broadcast to begin translating.'}
-          </p>
-        )}
+
+          {/* Errors */}
+          {errors.length > 0 && (
+            <div
+              style={{
+                border: '1px solid rgba(255,138,128,0.4)',
+                background: 'rgba(255,138,128,0.05)',
+                borderRadius: 10,
+                padding: '10px 16px',
+              }}
+            >
+              <div style={{ ...MONO, fontSize: 9, color: 'var(--alert)', marginBottom: 4 }}>Errors</div>
+              {errors.map((e, i) => (
+                <p key={i} style={{ color: 'var(--alert)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                  {e}
+                </p>
+              ))}
+            </div>
+          )}
+        </main>
       </div>
-
-      {/* ── Debug (collapsed by default — out of a volunteer's way) ────── */}
-      <details className="card" style={{ flexShrink: 0, padding: '0.8rem 1.25rem' }}>
-        <summary className="label" style={{ cursor: 'pointer', marginBottom: 0, userSelect: 'none' }}>
-          Debug
-        </summary>
-        <div className="debug-grid" style={{ marginTop: '0.9rem', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))' }}>
-          <div className="debug-item">
-            <div className="debug-val">{debug.chunkSize}</div>
-            <div className="debug-key">last chunk (chars)</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.chunkerWaitMs}ms</div>
-            <div className="debug-key">chunker wait</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.translationLatencyMs}ms</div>
-            <div className="debug-key">translation</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.ttsFirstByteMs}ms</div>
-            <div className="debug-key">tts first byte</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.ttsLatencyMs}ms</div>
-            <div className="debug-key">tts total</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.e2eLatencyMs}ms</div>
-            <div className="debug-key">end-to-end</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{debug.sttConnected ? 'yes' : 'no'}</div>
-            <div className="debug-key">stt connected</div>
-          </div>
-          <div className="debug-item">
-            <div className="debug-val">{listenerCount}</div>
-            <div className="debug-key">listeners</div>
-          </div>
-        </div>
-      </details>
-
-      {/* ── Errors ──────────────────────────────────────────────────────── */}
-      {errors.length > 0 && (
-        <div
-          className="card"
-          style={{
-            borderColor: 'rgba(239,68,68,.4)',
-            background: 'rgba(239,68,68,.05)',
-            flexShrink: 0,
-          }}
-        >
-          <div className="label" style={{ color: 'var(--red)' }}>Errors</div>
-          {errors.map((e, i) => (
-            <p key={i} style={{ color: 'var(--red)', fontSize: '0.85rem', marginTop: '0.35rem' }}>
-              {e}
-            </p>
-          ))}
-        </div>
-      )}
     </div>
   );
 }

@@ -1,28 +1,32 @@
 import type { Metadata, Viewport } from 'next';
 import {
-  Cormorant_Garamond,
   IBM_Plex_Mono,
   Instrument_Sans,
+  Instrument_Serif,
   Noto_Serif_KR,
 } from 'next/font/google';
 import './globals.css';
+import './marketing.css';
 import RegisterSW from '@/components/RegisterSW';
 
-// Same faces as the marketing site (public/marketing.html), self-hosted at
-// build time so the product pages share its editorial look.
-const display = Cormorant_Garamond({
+// 2026 redesign faces, self-hosted at build time. Instrument Serif carries
+// display type and the preached English; Noto Serif KR carries all Korean
+// (and catches Hangul glyphs falling through from Instrument Serif);
+// IBM Plex Mono is machine labels only; Instrument Sans is UI.
+const display = Instrument_Serif({
   subsets: ['latin'],
-  weight: ['500', '600', '700'],
+  weight: '400',
+  style: ['normal', 'italic'],
   variable: '--font-display',
 });
 const mono = IBM_Plex_Mono({
   subsets: ['latin'],
-  weight: ['400', '500', '600'],
+  weight: ['400', '500'],
   variable: '--font-mono',
 });
 const sans = Instrument_Sans({
   subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+  weight: ['400', '500', '600'],
   variable: '--font-sans',
 });
 const serifKr = Noto_Serif_KR({
@@ -32,8 +36,9 @@ const serifKr = Noto_Serif_KR({
 });
 
 export const metadata: Metadata = {
-  title: 'Shema — Live Korean Sermon Translation',
-  description: 'Real-time Korean sermon to English translation',
+  title: 'Shema — Live Sermon Translation',
+  description:
+    'Live sermon translation between Korean and English, built for how preaching actually sounds.',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/icon-192.png',
@@ -47,7 +52,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0A0E1A',
+  themeColor: '#131318',
   width: 'device-width',
   initialScale: 1,
 };
