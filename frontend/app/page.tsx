@@ -241,7 +241,13 @@ function HeroDemo({ reduced }: { reduced: boolean }) {
       <p
         className={`mk-demo-src ${srcKorean ? 'serif-kr' : 'serif-en'}`}
         lang={srcKorean ? 'ko' : 'en'}
-        style={{ fontSize: srcKorean ? 'clamp(17px, 1.7vw, 21px)' : 'clamp(16px, 1.6vw, 19px)', color: 'rgba(244,241,234,0.9)' }}
+        style={{
+          fontSize: srcKorean ? 'clamp(17px, 1.7vw, 21px)' : 'clamp(16px, 1.6vw, 19px)',
+          color: 'rgba(244,241,234,0.9)',
+          // Reserve the LARGER direction's height so the pane never resizes
+          // when the toggle switches fonts.
+          minHeight: 'calc(clamp(17px, 1.7vw, 21px) * 3.3)',
+        }}
       >
         {src}
       </p>
@@ -252,7 +258,11 @@ function HeroDemo({ reduced }: { reduced: boolean }) {
       <p
         className={`mk-demo-out ${srcKorean ? 'serif-en' : 'serif-kr'}`}
         lang={srcKorean ? 'en' : 'ko'}
-        style={{ fontSize: srcKorean ? 'clamp(24px, 2.6vw, 32px)' : 'clamp(20px, 2.1vw, 26px)', color: 'var(--gold)' }}
+        style={{
+          fontSize: srcKorean ? 'clamp(24px, 2.6vw, 32px)' : 'clamp(20px, 2.1vw, 26px)',
+          color: 'var(--gold)',
+          minHeight: 'calc(clamp(24px, 2.6vw, 32px) * 2.7)',
+        }}
       >
         {out}
       </p>
