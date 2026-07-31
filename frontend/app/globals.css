@@ -340,11 +340,32 @@ input, select, textarea {
   letter-spacing: 0.15em;
 }
 
-/* ── /speak desk grid (rail + transcript; stacks on narrow screens) ──────── */
+/* ── /speak desk (rail + transcript; stacks on narrow screens) ──────────── */
+
+/* The desk is an APP FRAME, not a document: on desktop it locks to the
+ * viewport so the rail (and the QR at its foot) never scroll away — the
+ * transcript scrolls inside its own pane. Narrow screens fall back to
+ * normal page flow. */
+.sp-root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  background: var(--night);
+}
 
 .sp-grid {
   display: grid;
   grid-template-columns: 330px minmax(0, 1fr);
+}
+
+@media (min-width: 901px) {
+  .sp-root {
+    height: 100dvh;
+    overflow: hidden;
+  }
+  .sp-rail {
+    overflow-y: auto;
+  }
 }
 
 @media (max-width: 900px) {

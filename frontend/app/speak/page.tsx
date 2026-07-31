@@ -517,7 +517,7 @@ export default function SpeakPage() {
   const railLabel: React.CSSProperties = { ...MONO, fontSize: 9.5, color: 'rgba(244,241,234,0.45)' };
 
   return (
-    <div style={{ minHeight: '100dvh', background: 'var(--night)', display: 'flex', flexDirection: 'column' }}>
+    <div className="sp-root">
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
       <div
         style={{
@@ -588,7 +588,7 @@ export default function SpeakPage() {
       {/* ── Desk grid ───────────────────────────────────────────────────── */}
       <div className="sp-grid" style={{ flex: 1, minHeight: 0, padding: 'clamp(12px, 1.6vw, 20px)', gap: 14 }}>
         {/* ── Left rail ── */}
-        <aside style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+        <aside className="sp-rail" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
           {/* 1. Start / End broadcast */}
           {!broadcasting ? (
             <button
