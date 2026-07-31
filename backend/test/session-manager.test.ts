@@ -134,6 +134,34 @@ describe('SessionManager', () => {
     assert.equal(room.translationHistory.length, 0);
   });
 
+  test('pews progress: most-behind listener wins; leavers and strangers ignored', () => {
+    const mgr = new SessionManager();
+    const room = mgr.getOrCreate('a');
+    const a = fakeSocket();
+    const b = fakeSocket();
+    room.addListener(a as any);
+    room.addListener(b as any);
+
+    assert.equal(room.pewsSeq, null);
+    room.recordListenerProgress(a as any, 5);
+    room.recordListenerProgress(b as any, 3);
+    assert.equal(room.pewsSeq, 3, 'the most-behind listener defines the pews');
+
+    // A socket that is not a listener in this room cannot report.
+    room.recordListenerProgress(fakeSocket() as any, 1);
+    assert.equal(room.pewsSeq, 3);
+
+    // When the behind listener leaves, the pews advance.
+    room.removeListener(b as any);
+    assert.equal(room.pewsSeq, 5);
+
+    // Broadcasters receive pushed payloads via sendToBroadcasters.
+    const desk = fakeSocket();
+    room.addBroadcaster(desk as any);
+    room.sendToBroadcasters({ type: 'pews', seq: 5 });
+    assert.match(desk.sent[desk.sent.length - 1], /"type":"pews".*"seq":5/);
+  });
+
   test('stats reports per-room listener counts', () => {
     const mgr = new SessionManager();
     const roomA = mgr.getOrCreate('a');

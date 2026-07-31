@@ -130,6 +130,8 @@ export default function SpeakPage() {
   const [listenerCount, setListenerCount] = useState(0);
   const [showDiag, setShowDiag] = useState(false);
   const [elapsed, setElapsed] = useState('00:00:00');
+  // The seq the most-behind listener's audio is actually playing.
+  const [pewsSeq, setPewsSeq] = useState(0);
 
   // Committed church room (drives the WS connection); null until read from
   // the URL/localStorage on mount. churchDraft is the input's live text.
@@ -278,6 +280,10 @@ export default function SpeakPage() {
 
       case 'listeners':
         if ('count' in msg) setListenerCount(msg.count as number);
+        break;
+
+      case 'pews':
+        if ('seq' in msg) setPewsSeq(msg.seq as number);
         break;
 
       case 'pong':
@@ -858,7 +864,8 @@ export default function SpeakPage() {
               <>
                 {script.map((entry, i) => {
                   const fromEnd = script.length - 1 - i;
-                  const opacity = liveKorean ? (fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32) : fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32;
+                  const inPews = entry.seq === pewsSeq && listenerCount > 0;
+                  const opacity = inPews ? 1 : fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32;
                   return (
                     <div
                       key={entry.seq}
@@ -866,10 +873,12 @@ export default function SpeakPage() {
                         display: 'grid',
                         gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
                         gap: '0 clamp(14px, 2vw, 28px)',
-                        padding: '12px 0',
+                        padding: inPews ? '12px 0 12px 12px' : '12px 0',
                         borderTop: i === 0 ? 'none' : '1px solid rgba(244,241,234,0.08)',
+                        borderLeft: inPews ? '2px solid var(--gold)' : '2px solid transparent',
+                        background: inPews ? 'rgba(200,162,94,0.05)' : 'transparent',
                         opacity,
-                        transition: 'opacity 0.5s var(--ease)',
+                        transition: 'opacity 0.5s var(--ease), background 0.5s var(--ease), border-color 0.5s var(--ease)',
                       }}
                     >
                       <span
@@ -885,6 +894,11 @@ export default function SpeakPage() {
                         style={{ fontSize: 19, lineHeight: 1.55, color: 'var(--cream)' }}
                       >
                         {entry.sermon}
+                        {inPews && (
+                          <span style={{ ...MONO, display: 'block', fontSize: 8.5, color: 'var(--gold)', marginTop: 5 }}>
+                            ♪ In the pews
+                          </span>
+                        )}
                       </span>
                     </div>
                   );

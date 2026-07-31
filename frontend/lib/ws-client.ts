@@ -74,6 +74,15 @@ export interface ListenersMsg {
 }
 
 /**
+ * Where the pews are: the seq the most-behind listener's audio is actually
+ * playing (listeners report it; the broadcaster desk marks that row).
+ */
+export interface PewsMsg {
+  type: 'pews';
+  seq: number;
+}
+
+/**
  * Full transcript of the current broadcast, sent to a listener on connect
  * (late join / refresh) and broadcast with empty chunks when a new sermon
  * starts. Authoritative: replaces local transcript state.
@@ -110,6 +119,7 @@ export type ServerMessage =
   | AudioEndMsg
   | StatusMsg
   | ListenersMsg
+  | PewsMsg
   | PartialTranscriptMsg
   | TranscriptHistoryMsg
   | DebugMsg

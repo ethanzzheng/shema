@@ -31,6 +31,21 @@ export function handleListenerConnection(ws: WebSocket, session: Session): void 
   // whole sermon (text only — audio is live from the join point on).
   safeSend(ws, { type: 'transcript_history', chunks: session.transcriptForListeners() });
 
+  // Listeners report which seq their audio is actually playing (throttled
+  // client-side); the broadcaster desk shows where the pews are.
+  ws.on('message', (data) => {
+    try {
+      const msg = JSON.parse((data as Buffer).toString());
+      if (msg.type === 'playing' && typeof msg.seq === 'number') {
+        session.recordListenerProgress(ws, msg.seq);
+        const pews = session.pewsSeq;
+        if (pews !== null) session.sendToBroadcasters({ type: 'pews', seq: pews });
+      }
+    } catch {
+      /* listeners send nothing else; ignore malformed frames */
+    }
+  });
+
   ws.on('close', () => {
     console.log(`[Listener] Disconnected (room "${session.roomId}")`);
     session.removeListener(ws);

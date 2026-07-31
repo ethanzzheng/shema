@@ -73,6 +73,7 @@ export class Session {
   }
 
   removeListener(ws: WebSocket): void {
+    this.listenerProgress.delete(ws);
     if (this.listeners.delete(ws)) this.notifyListenerCount();
   }
 
@@ -84,12 +85,36 @@ export class Session {
     }
   }
 
-  /** Tell every broadcaster how many congregants are connected right now. */
-  private notifyListenerCount(): void {
-    const msg = JSON.stringify({ type: 'listeners', count: this.listeners.size });
+  /** Push a JSON payload to every broadcaster in this room. */
+  sendToBroadcasters(payload: unknown): void {
+    const msg = JSON.stringify(payload);
     for (const ws of this.broadcasters) {
       if (ws.readyState === WebSocket.OPEN) ws.send(msg);
     }
+  }
+
+  /** Tell every broadcaster how many congregants are connected right now. */
+  private notifyListenerCount(): void {
+    this.sendToBroadcasters({ type: 'listeners', count: this.listeners.size });
+  }
+
+  // ── Pews progress ──────────────────────────────────────────────────────────
+  // Listeners report which seq their AUDIO is actually playing; the
+  // broadcaster desk marks that row so the operator can see where the pews
+  // are. With several listeners we report the most-behind one.
+  private listenerProgress = new Map<WebSocket, number>();
+
+  recordListenerProgress(ws: WebSocket, seq: number): void {
+    if (this.listeners.has(ws)) this.listenerProgress.set(ws, seq);
+  }
+
+  /** The seq the most-behind listener is hearing right now (null = none). */
+  get pewsSeq(): number | null {
+    let min: number | null = null;
+    for (const seq of this.listenerProgress.values()) {
+      if (min === null || seq < min) min = seq;
+    }
+    return min;
   }
 
   removeBroadcaster(ws: WebSocket): void {

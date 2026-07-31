@@ -36,6 +36,7 @@ export class AudioStreamPlayer {
   private pending: { bytes: Uint8Array; seq: number | null }[] = [];
   private active = false;
   private volume = 1;
+  private muted = false;
 
   // ── Starvation-resume warmup ──────────────────────────────────────────────
   // Translation gaps drain the buffer at nearly every sentence boundary, so
@@ -70,6 +71,8 @@ export class AudioStreamPlayer {
   onStalled: (() => void) | null = null;
   /** Listener opt-out for automatic catch-up speed (rate pins to 1.0). */
   catchUpEnabled = true;
+  /** Where the catch-up ramp is heading (rates glide, never jump). */
+  private rateTarget = 1.0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private lastProgressTime = -1;
   private stallTicks = 0;
@@ -98,14 +101,19 @@ export class AudioStreamPlayer {
     // pipeline latency) and every line starts from a starvation-resume.
     // A deliberate cushion absorbs those inter-clip gaps; only genuine
     // speaker pauses reach the listener's ears.
-    let rate = el.playbackRate;
-    if (!this.catchUpEnabled) rate = 1.0;
-    else if (ahead > 40) rate = 1.5;
-    else if (ahead > 15) rate = 1.3;
-    else if (ahead < 10) rate = 1.0; // hysteresis: hold current rate between 10-15s
-    if (el.playbackRate !== rate) {
-      el.playbackRate = rate;
-      console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${rate}`);
+    if (!this.catchUpEnabled) this.rateTarget = 1.0;
+    else if (ahead > 40) this.rateTarget = 1.5;
+    else if (ahead > 15) this.rateTarget = 1.3;
+    else if (ahead < 10) this.rateTarget = 1.0; // hysteresis: hold target between 10-15s
+    // RAMP toward the target — abrupt rate jumps glitch audibly (a brief
+    // stutter at every tier change). ~0.08 per 1.5s tick ≈ a gentle glide.
+    const cur = el.playbackRate;
+    let next = cur;
+    if (Math.abs(this.rateTarget - cur) <= 0.08) next = this.rateTarget;
+    else next = Math.round((cur + Math.sign(this.rateTarget - cur) * 0.08) * 100) / 100;
+    if (next !== cur) {
+      el.playbackRate = next;
+      if (next === this.rateTarget) console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${next}`);
     }
 
     // With real audio buffered ahead and no starvation pending, the playhead
@@ -160,6 +168,11 @@ export class AudioStreamPlayer {
     this.audioEl = new Audio();
     this.audioEl.autoplay = true;
     this.audioEl.volume = this.volume;
+    this.audioEl.muted = this.muted;
+    // Pitch-corrected rate changes (explicit: Safari needs the webkit name).
+    const elp = this.audioEl as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean };
+    elp.preservesPitch = true;
+    elp.webkitPreservesPitch = true;
     // Podcast-style element: inline (no fullscreen takeover on iOS)...
     (this.audioEl as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     this.audioEl.setAttribute('playsinline', '');
@@ -391,6 +404,7 @@ export class AudioStreamPlayer {
     } catch {
       /* seek can throw mid-update; the catch-up rate keeps working regardless */
     }
+    this.rateTarget = 1.0;
     el.playbackRate = 1.0;
     el.play().catch(() => {});
   }
@@ -399,6 +413,16 @@ export class AudioStreamPlayer {
   setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v));
     if (this.audioEl) this.audioEl.volume = this.volume;
+  }
+
+  /**
+   * Mute (the listener's Pause). iOS ignores the `volume` property on media
+   * elements, so muting is the only cross-platform silence; the stream keeps
+   * flowing so resuming stays near-live. Survives player rebuilds.
+   */
+  setMuted(m: boolean): void {
+    this.muted = m;
+    if (this.audioEl) this.audioEl.muted = m;
   }
 
   get isActive(): boolean {

@@ -78,9 +78,6 @@ export default function ListenerView({ church }: { church: string }) {
   // Output language of the broadcast (from status messages); ko-en = English.
   const [direction, setDirection] = useState<'ko-en' | 'en-ko'>('ko-en');
   const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
-  // Captions default to the polished sermon rendering; "direct" is the more
-  // literal pass for anyone who wants to track the Korean phrasing closely.
-  const [captionMode, setCaptionMode] = useState<'sermon' | 'direct'>('sermon');
   // Caption size — accessibility for older members. Persisted per device.
   const [textSize, setTextSize] = useState<'s' | 'm' | 'l'>('m');
   // Pause = output muted; the stream keeps flowing so resuming stays near-live.
@@ -95,6 +92,17 @@ export default function ListenerView({ church }: { church: string }) {
   // Translations arrive ahead of their audio; highlighting the latest
   // translation runs ahead of what the ear hears.
   const [spokenSeq, setSpokenSeq] = useState(0);
+  // Report the playing seq upstream (throttled) so the broadcaster desk can
+  // mark where the pews are.
+  const lastReportRef = useRef<{ seq: number; at: number }>({ seq: 0, at: 0 });
+  const onSeqPlaying = useCallback((seq: number) => {
+    setSpokenSeq(seq);
+    const now = Date.now();
+    if (seq !== lastReportRef.current.seq && now - lastReportRef.current.at > 1500) {
+      lastReportRef.current = { seq, at: now };
+      wsRef.current?.sendJSON({ type: 'playing', seq });
+    }
+  }, []);
   // How far the audio runs behind live (drives the Jump-to-live pill).
   const [behindSec, setBehindSec] = useState(0);
   // Auto catch-up speed (on by default; opt-out for anyone who finds the
@@ -177,8 +185,9 @@ export default function ListenerView({ church }: { church: string }) {
     const next = !paused;
     setPaused(next);
     pausedRef.current = next;
-    streamRef.current?.setVolume(next ? 0 : 1);
-    playbackRef.current?.setVolume(next ? 0 : 1);
+    // muted, not volume: iOS ignores the volume property on media elements.
+    streamRef.current?.setMuted(next);
+    playbackRef.current?.setVolume(next ? 0 : 1); // WebAudio gain — works everywhere
     if (next) browserTtsRef.current?.cancel();
   };
   const togglePauseRef = useRef<() => void>(() => {});
@@ -232,7 +241,7 @@ export default function ListenerView({ church }: { church: string }) {
 
   const buildStream = useCallback(function build(): void {
     const s = new AudioStreamPlayer();
-    s.onSeqPlaying = (seq) => setSpokenSeq(seq);
+    s.onSeqPlaying = onSeqPlaying;
     s.onStalled = () => {
       // The media pipeline died (observed on iOS: text flows, audio silent,
       // page still says live). Tear down and rebuild; if it keeps dying,
@@ -253,10 +262,10 @@ export default function ListenerView({ church }: { church: string }) {
       build();
     };
     s.catchUpEnabled = autoCatchUpRef.current;
-    s.setVolume(pausedRef.current ? 0 : 1);
+    s.setMuted(pausedRef.current);
     s.start();
     streamRef.current = s;
-  }, []);
+  }, [onSeqPlaying]);
 
   const initAudio = () => {
     if (audioStarted) return;
@@ -266,13 +275,13 @@ export default function ListenerView({ church }: { church: string }) {
       buildStream();
     } else {
       const q = new AudioPlaybackQueue();
-      q.onSeqStart = (seq) => setSpokenSeq(seq);
+      q.onSeqStart = onSeqPlaying;
       q.start();
       playbackRef.current = q;
     }
 
     browserTtsRef.current = new BrowserTTS();
-    browserTtsRef.current.onSeqStart = (seq) => setSpokenSeq(seq);
+    browserTtsRef.current.onSeqStart = onSeqPlaying;
 
     setAudioStarted(true);
   };
@@ -559,7 +568,7 @@ export default function ListenerView({ church }: { church: string }) {
               const audioDriven = audioStarted && ttsMode !== 'off' && spokenSeq > 0;
               const highlightSeq = audioDriven ? Math.min(spokenSeq, lastSeq) : lastSeq;
               return transcript.map((entry) => {
-                const text = captionMode === 'direct' ? entry.direct : entry.sermon;
+                const text = entry.sermon;
                 if (entry.seq === highlightSeq) {
                   return (
                     <div key={entry.seq} data-seq={entry.seq} style={{ margin: '1.1em 0' }}>
@@ -666,28 +675,8 @@ export default function ListenerView({ church }: { church: string }) {
               </span>
             </div>
 
-            {/* Caption source */}
-            <div className="toggle-group" style={{ marginLeft: 'auto' }}>
-              <button
-                className={`toggle-opt${captionMode === 'sermon' ? ' active' : ''}`}
-                onClick={() => setCaptionMode('sermon')}
-                title="Natural rendering (matches the audio)"
-                style={{ minHeight: 44, minWidth: 44 }}
-              >
-                Sermon
-              </button>
-              <button
-                className={`toggle-opt${captionMode === 'direct' ? ' active' : ''}`}
-                onClick={() => setCaptionMode('direct')}
-                title="More literal rendering"
-                style={{ minHeight: 44, minWidth: 44 }}
-              >
-                Literal
-              </button>
-            </div>
-
             {/* Caption size */}
-            <div className="toggle-group" aria-label="Caption text size">
+            <div className="toggle-group" aria-label="Caption text size" style={{ marginLeft: 'auto' }}>
               <button className={`toggle-opt${textSize === 's' ? ' active' : ''}`} onClick={() => changeTextSize('s')} style={{ ...sizeBtn, fontSize: '0.62rem' }}>A</button>
               <button className={`toggle-opt${textSize === 'm' ? ' active' : ''}`} onClick={() => changeTextSize('m')} style={{ ...sizeBtn, fontSize: '0.74rem' }}>A</button>
               <button className={`toggle-opt${textSize === 'l' ? ' active' : ''}`} onClick={() => changeTextSize('l')} style={{ ...sizeBtn, fontSize: '0.88rem' }}>A</button>
