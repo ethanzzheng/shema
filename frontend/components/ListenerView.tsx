@@ -515,7 +515,7 @@ export default function ListenerView({ church }: { church: string }) {
 
       {/* Behind-live indicator: catch-up handles small drift silently; deep
           drift gets a one-tap escape (captions keep every line). */}
-      {audioStarted && ttsMode === 'elevenlabs' && behindSec > 45 && (
+      {audioStarted && ttsMode === 'elevenlabs' && behindSec > 30 && (
         <div
           style={{
             display: 'flex',
