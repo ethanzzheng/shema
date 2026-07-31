@@ -201,15 +201,43 @@ export default function ListenerView({ church }: { church: string }) {
   }, [audioStarted, paused]);
 
   // ── Init audio (requires user gesture) ────────────────────────────────
+  // Rebuilds within this window count toward the self-heal cap; past the cap
+  // we assume the OS revoked autoplay and surface the tap gate again.
+  const rebuildsRef = useRef<{ n: number; at: number }>({ n: 0, at: 0 });
+
+  const buildStream = useCallback(function build(): void {
+    const s = new AudioStreamPlayer();
+    s.onSeqPlaying = (seq) => setSpokenSeq(seq);
+    s.onStalled = () => {
+      // The media pipeline died (observed on iOS: text flows, audio silent,
+      // page still says live). Tear down and rebuild; if it keeps dying,
+      // playback needs a fresh user gesture — show "Tap to listen" again.
+      streamRef.current?.stop();
+      streamRef.current = null;
+      const rc = rebuildsRef.current;
+      const now = Date.now();
+      if (now - rc.at > 60_000) rc.n = 0;
+      rc.at = now;
+      rc.n++;
+      if (rc.n > 2) {
+        console.warn('[Listener] audio pipeline keeps dying — asking for a fresh tap');
+        setAudioStarted(false);
+        return;
+      }
+      console.warn('[Listener] audio pipeline stalled — rebuilding player');
+      build();
+    };
+    s.setVolume(pausedRef.current ? 0 : 1);
+    s.start();
+    streamRef.current = s;
+  }, []);
+
   const initAudio = () => {
     if (audioStarted) return;
 
     // Prefer progressive MediaSource streaming; fall back to per-clip playback.
     if (AudioStreamPlayer.isSupported()) {
-      const s = new AudioStreamPlayer();
-      s.onSeqPlaying = (seq) => setSpokenSeq(seq);
-      s.start();
-      streamRef.current = s;
+      buildStream();
     } else {
       const q = new AudioPlaybackQueue();
       q.onSeqStart = (seq) => setSpokenSeq(seq);

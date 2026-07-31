@@ -59,6 +59,55 @@ export class AudioStreamPlayer {
   private starvedClipStart: number | null = null;
   private lastResumeAt = 0;
 
+  // ── Stall watchdog ────────────────────────────────────────────────────────
+  // Observed live on iPhone: the page stays connected and text keeps
+  // flowing, but the media pipeline dies silently (MediaSource closes after
+  // an OS interruption / element error / appends failing) and the sermon
+  // goes mute with the UI still saying "live". There is no in-place recovery
+  // from a closed MediaSource — detect the death and ask the owner to
+  // REBUILD the whole player.
+  /** Fired once when the stream is unrecoverably stalled. */
+  onStalled: (() => void) | null = null;
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private lastProgressTime = -1;
+  private stallTicks = 0;
+  private appendFailures = 0;
+
+  private checkHealth(): void {
+    const el = this.audioEl;
+    const ms = this.mediaSource;
+    if (!this.active || !el || !ms) return;
+    if (ms.readyState === 'closed') return this.fatal('MediaSource closed');
+    if (el.error) return this.fatal(`element error: ${el.error.message || el.error.code}`);
+    const end = this.bufferedEnd();
+    const ahead = end !== null ? end - el.currentTime : 0;
+    // With real audio buffered ahead and no starvation pending, the playhead
+    // must be moving. Frozen playhead → nudge once, then declare it dead.
+    if (ahead > 1.5 && !this.starved) {
+      if (el.currentTime === this.lastProgressTime) {
+        this.stallTicks++;
+        if (this.stallTicks === 2) el.play().catch(() => {});
+        if (this.stallTicks >= 4) return this.fatal('playhead frozen with buffered audio');
+      } else {
+        this.stallTicks = 0;
+      }
+    } else {
+      this.stallTicks = 0;
+    }
+    this.lastProgressTime = el.currentTime;
+  }
+
+  private fatal(reason: string): void {
+    console.warn(`[AudioStream] unrecoverable stall (${reason}) — requesting rebuild`);
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+    const cb = this.onStalled;
+    this.onStalled = null; // fire once
+    cb?.();
+  }
+
   // ── Spoken-seq tracking ───────────────────────────────────────────────────
   // Each appended chunk carries its sentence seq, so we can map every seq to
   // its time range in the element's timeline. On 'timeupdate' we report which
@@ -115,6 +164,10 @@ export class AudioStreamPlayer {
     this.objectUrl = URL.createObjectURL(this.mediaSource);
     this.audioEl.src = this.objectUrl;
     this.mediaSource.addEventListener('sourceopen', this.onSourceOpen);
+    this.mediaSource.addEventListener('sourceclose', () => {
+      if (this.active) this.fatal('sourceclose event');
+    });
+    this.healthTimer = setInterval(() => this.checkHealth(), 1500);
     this.audioEl.play().catch(() => {});
     // Debug handle for live diagnosis (harmless; not part of any API).
     (window as unknown as Record<string, unknown>).__shemaStream = this;
@@ -176,12 +229,16 @@ export class AudioStreamPlayer {
     try {
       sb.appendBuffer(next.bytes as BufferSource);
       if (next.seq !== null) this.lastAppendedSeq = next.seq;
+      this.appendFailures = 0;
     } catch (e) {
       if ((e as DOMException)?.name === 'QuotaExceededError') {
         this.evictPlayed();
         this.pending.unshift(next); // retry on next updateend, after eviction frees space
       } else {
         console.error('[AudioStream] appendBuffer failed:', e);
+        // A SourceBuffer that keeps rejecting appends is dead — every later
+        // chunk would fail too while the page still looks "live".
+        if (++this.appendFailures >= 3) this.fatal('appendBuffer failing repeatedly');
       }
     }
 
@@ -260,6 +317,10 @@ export class AudioStreamPlayer {
   stop(): void {
     this.active = false;
     this.pending = [];
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
     try {
       if (this.mediaSource && this.mediaSource.readyState === 'open') {
         this.mediaSource.endOfStream();

@@ -89,14 +89,39 @@ export default function KioskView({ church }: { church: string }) {
   }, [started, wakeLockState, acquireWakeLock]);
 
   // ── Start output (single user gesture unlocks audio + wake lock) ────────
+  const rebuildsRef = useRef<{ n: number; at: number }>({ n: 0, at: 0 });
+
+  const buildStream = useCallback(function build(): void {
+    const s = new AudioStreamPlayer();
+    s.onStalled = () => {
+      // Dead media pipeline: rebuild; if it keeps dying, re-arm the start
+      // button so the operator's next click gives it a fresh gesture.
+      streamRef.current?.stop();
+      streamRef.current = null;
+      const rc = rebuildsRef.current;
+      const now = Date.now();
+      if (now - rc.at > 60_000) rc.n = 0;
+      rc.at = now;
+      rc.n++;
+      if (rc.n > 2) {
+        console.warn('[Kiosk] audio pipeline keeps dying — re-arming Start output');
+        setStarted(false);
+        setError('Audio output stopped — click Start output again.');
+        return;
+      }
+      console.warn('[Kiosk] audio pipeline stalled — rebuilding player');
+      build();
+    };
+    s.setVolume(volumeRef.current);
+    s.start();
+    streamRef.current = s;
+  }, []);
+
   const startOutput = () => {
     if (started) return;
 
     if (AudioStreamPlayer.isSupported()) {
-      const s = new AudioStreamPlayer();
-      s.setVolume(volumeRef.current);
-      s.start();
-      streamRef.current = s;
+      buildStream();
     } else {
       const q = new AudioPlaybackQueue();
       q.setVolume(volumeRef.current);
