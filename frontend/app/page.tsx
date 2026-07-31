@@ -468,7 +468,7 @@ function useContactSubmit(subject: string) {
 }
 
 function PilotForm() {
-  const { state, submit } = useContactSubmit('New pilot request — Shema');
+  const { state, submit } = useContactSubmit('New demo request — Shema');
   const [invalid, setInvalid] = useState('');
   const churchRef = useRef<HTMLInputElement>(null);
   const sizeRef = useRef<HTMLSelectElement>(null);
@@ -504,7 +504,7 @@ function PilotForm() {
       <label className="mk-micro" style={{ color: 'rgba(244,241,234,0.5)' }} htmlFor="pilot-email">Your email</label>
       <input id="pilot-email" ref={emailRef} name="email" type="email" className={`mk-input${invalid === 'email' ? ' invalid' : ''}`} placeholder="you@church.org" />
       <button type="submit" className={`mk-btn mk-btn-gold${state === 'success' ? ' sent' : ''}`} disabled={state === 'sending' || state === 'success'} style={{ marginTop: 6 }}>
-        {state === 'success' ? "Thank you. We'll be in touch." : state === 'sending' ? 'Sending…' : 'Request a pilot'}
+        {state === 'success' ? "Thank you. We'll be in touch." : state === 'sending' ? 'Sending…' : 'Request a demo'}
       </button>
       <p className="mk-micro" style={{ color: 'rgba(244,241,234,0.42)' }}>We reply within two business days.</p>
     </form>
@@ -617,7 +617,7 @@ export default function MarketingPage() {
             <a href="#why" className="mk-nav-link mk-nav-hide-sm">Why Shema</a>
             <a href="#how" className="mk-nav-link mk-nav-hide-sm">How it works</a>
             <Link href="/login" className="mk-nav-link">Log in</Link>
-            <a href="#pilot" className="mk-btn mk-btn-ink" style={{ padding: '10px 20px', fontSize: 13.5 }}>Request a pilot</a>
+            <a href="#demo" className="mk-btn mk-btn-ink" style={{ padding: '10px 20px', fontSize: 13.5 }}>Request a demo</a>
           </div>
         </div>
       </nav>
@@ -642,13 +642,13 @@ export default function MarketingPage() {
               of the Korean church.
             </p>
             <div className="rv" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <a href="#pilot" className="mk-btn mk-btn-ink">Request a pilot</a>
+              <a href="#demo" className="mk-btn mk-btn-ink">Request a demo</a>
               <a href="#how" className="mk-btn mk-btn-outline">See how it works</a>
             </div>
             <div className="rv" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <span className="dot" style={{ color: 'var(--sage-ink)', width: 7, height: 7 }} />
               <span className="mk-micro" style={{ color: 'var(--text-4)' }}>
-                Piloting with Korean-American congregations in the Northeast
+                Serving Korean-American congregations in the Northeast
               </span>
             </div>
           </div>
@@ -827,14 +827,14 @@ export default function MarketingPage() {
         </div>
       </section>
 
-      {/* ── Pilot (dark) ── */}
-      <section id="pilot" className="mk-night mk-section">
+      {/* ── Demo request (dark) ── */}
+      <section id="demo" className="mk-night mk-section">
         <div className="mk-pilot-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             <h2 className="mk-h2 rv">Bring it to your church.</h2>
             <p className="rv" style={{ color: 'rgba(244,241,234,0.6)', fontSize: 'clamp(15px, 1.4vw, 17px)', lineHeight: 1.65, maxWidth: '46ch' }}>
               A human interpreter runs $200–500 a Sunday and covers one language. Tell us
-              about your congregation and we&apos;ll run a pilot service. No cost, no commitment.
+              about your congregation and we&apos;ll set up a live demo service. No cost, no commitment.
             </p>
             <div className="rv" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {[
@@ -896,7 +896,7 @@ export default function MarketingPage() {
             <div className="mk-eyebrow" style={{ marginBottom: 4 }}>Product</div>
             <a href="#why">Why Shema</a>
             <a href="#how">How it works</a>
-            <a href="#pilot">Request a pilot</a>
+            <a href="#demo">Request a demo</a>
             <Link href="/login">Staff log in</Link>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
