@@ -34,7 +34,7 @@ const PROBLEM_CARDS = [
   {
     mono: '요한복음 3:16 → a guess',
     title: 'Scripture gets re-translated from scratch.',
-    body: 'The congregation hears a paraphrase of a paraphrase — not the verse printed in their own Bible.',
+    body: 'The congregation hears a paraphrase of a paraphrase, not the verse printed in their own Bible.',
   },
   {
     mono: '…하지 → cut short',
@@ -72,8 +72,8 @@ const CONTEXT_LINES = [
 
 const STEPS = [
   { n: '01', title: 'The pastor preaches.', body: 'No new lapel mic, no pausing for an interpreter, nothing different from a normal Sunday.' },
-  { n: '02', title: 'Shema listens and translates.', body: 'The sermon is recognized, translated, and spoken back in a natural voice in about two seconds — Korean into English, or English into Korean.' },
-  { n: '03', title: 'The congregation listens.', body: 'Earbuds, the receiver packs from the welcome desk, or a link on their phone — with the transcript to read along.' },
+  { n: '02', title: 'Shema listens and translates.', body: 'The sermon is recognized, translated, and spoken back in a natural voice in about two seconds: Korean into English, or English into Korean.' },
+  { n: '03', title: 'The congregation listens.', body: 'Earbuds, the receiver packs from the welcome desk, or a link on their phone, with the transcript to read along.' },
 ];
 
 const SETUP_CARDS = [
@@ -638,7 +638,7 @@ export default function MarketingPage() {
             </h1>
             <p className="mk-hero-lead rv">
               Korean to English and English to Korean, built for how preaching actually
-              sounds — the verse citations, the verb that arrives last, the vocabulary
+              sounds: the verse citations, the verb that arrives last, the vocabulary
               of the Korean church.
             </p>
             <div className="rv" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
@@ -687,8 +687,8 @@ export default function MarketingPage() {
             <div className="mk-eyebrow rv">The problem</div>
             <h2 className="mk-h2 rv" style={{ maxWidth: '20ch' }}>Generic translators break in church.</h2>
             <p className="rv" style={{ color: 'rgba(244,241,234,0.6)', fontSize: 'clamp(16px, 1.5vw, 19px)', lineHeight: 1.6, maxWidth: '56ch' }}>
-              Korean and English are among the hardest pairs for a machine — in either
-              direction — and a sermon is the worst place to get it wrong.
+              Korean and English are among the hardest pairs for a machine, in either
+              direction, and a sermon is the worst place to get it wrong.
             </p>
           </div>
           <div className="mk-cards">
@@ -722,7 +722,7 @@ export default function MarketingPage() {
               <div className="mk-cap-num rv">01</div>
               <h3 className="rv">It quotes the verse. It doesn&apos;t guess it.</h3>
               <p className="mk-body rv">
-                When your pastor cites scripture — even through a rough microphone —
+                When your pastor cites scripture, even through a rough microphone,
                 Shema recognizes the reference and anchors the English to the actual passage.
               </p>
             </div>
@@ -867,7 +867,7 @@ export default function MarketingPage() {
           <div className="mk-eyebrow rv">More languages coming</div>
           <h2 className="mk-h2 rv" style={{ maxWidth: '18ch' }}>We started with Korean. We&apos;re not stopping there.</h2>
           <p className="mk-body rv" style={{ margin: '0 auto' }}>
-            Each new language gets tuned to how preaching actually sounds in that tongue —
+            Each new language gets tuned to how preaching actually sounds in that tongue,
             the same way Shema was built for Korean.
           </p>
           <div className="mk-lang-chips rv">
@@ -888,7 +888,7 @@ export default function MarketingPage() {
             <span className="mk-brand"><CrossGlyph />Shema</span>
             <span className="serif-en" style={{ fontSize: 22, color: 'var(--gold-ink)' }} lang="he">שְׁמַע</span>
             <p className="mk-body-sm" style={{ maxWidth: '38ch' }}>
-              &ldquo;Hear, O Israel&rdquo; — Deuteronomy 6:4. The name is our prayer that
+              &ldquo;Hear, O Israel&rdquo; (Deuteronomy 6:4). The name is our prayer that
               everyone gets to hear.
             </p>
           </div>
