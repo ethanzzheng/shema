@@ -189,7 +189,9 @@
   left: clamp(-60px, 1vw, 20px);
   top: clamp(10px, 4vh, 50px);
   z-index: 0;
-  opacity: 0.1;
+  /* Thin line work reads lighter than the old solid bars — a touch more
+     opacity keeps the same blended-into-the-paper presence. */
+  opacity: 0.16;
   pointer-events: none;
 }
 .mk-hero-rule {

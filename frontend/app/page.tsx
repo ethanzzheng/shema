@@ -145,23 +145,45 @@ function CrossGlyph({ size = 20, stroke = 'var(--gold-ink)' }: { size?: number; 
   );
 }
 
-/** Hero watermark: draws itself in on mount; wrapper gets the parallax. */
+/**
+ * Hero watermark: a structured Latin cross in the sanctuary drawing's
+ * line-art language — outlined silhouette, an inner inset line, and a faint
+ * nimbus ring behind the crossing. Each path draws itself in on mount
+ * (pathLength normalizes the dash animation); the wrapper gets the parallax.
+ */
 function CrossWatermark({ reduced }: { reduced: boolean }) {
   const [drawn, setDrawn] = useState(false);
   useEffect(() => {
     const id = requestAnimationFrame(() => setDrawn(true));
     return () => cancelAnimationFrame(id);
   }, []);
-  const line = (drawnLen: number) => ({
-    strokeDasharray: drawnLen,
-    strokeDashoffset: reduced || drawn ? 0 : drawnLen,
+  const draw = (delay: number, dur = 1.6) => ({
+    strokeDasharray: 100,
+    strokeDashoffset: reduced || drawn ? 0 : 100,
+    transition: `stroke-dashoffset ${dur}s cubic-bezier(.4,0,.2,1) ${delay}s`,
   });
   return (
-    <svg width={Math.min(520, 420)} height={560} viewBox="0 0 24 32" fill="none" aria-hidden style={{ overflow: 'visible' }}>
-      <line x1="12" y1="1" x2="12" y2="31" stroke="var(--gold-ink)" strokeWidth="1.5" strokeLinecap="round"
-        style={{ ...line(30), transition: 'stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1)' }} />
-      <line x1="3" y1="10" x2="21" y2="10" stroke="var(--gold-ink)" strokeWidth="1.5" strokeLinecap="round"
-        style={{ ...line(18), transition: 'stroke-dashoffset 1.2s cubic-bezier(.4,0,.2,1) 0.35s' }} />
+    <svg width={420} height={560} viewBox="0 0 240 320" fill="none" aria-hidden style={{ overflow: 'visible' }}>
+      {/* Nimbus ring behind the crossing */}
+      <circle cx="120" cy="92" r="64" pathLength={100} stroke="var(--gold-ink)" strokeWidth="1.2" opacity="0.55" style={draw(0.55, 1.4)} />
+      {/* Cross silhouette */}
+      <path
+        d="M106 20 H134 V78 H210 V106 H134 V300 H106 V106 H30 V78 H106 Z"
+        pathLength={100}
+        stroke="var(--gold-ink)"
+        strokeWidth="2"
+        strokeLinejoin="round"
+        style={draw(0)}
+      />
+      {/* Inner inset line */}
+      <path
+        d="M114 28 H126 V86 H202 V98 H126 V292 H114 V98 H38 V86 H114 Z"
+        pathLength={100}
+        stroke="var(--gold-ink)"
+        strokeWidth="1"
+        opacity="0.7"
+        style={draw(0.3)}
+      />
     </svg>
   );
 }
