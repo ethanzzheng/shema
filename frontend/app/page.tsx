@@ -896,8 +896,7 @@ export default function MarketingPage() {
       {/* ── Languages ── */}
       <section className="mk-section" style={{ textAlign: 'center' }}>
         <div className="mk-wrap-narrow" style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center' }}>
-          <div className="mk-eyebrow rv">More languages coming</div>
-          <h2 className="mk-h2 rv" style={{ maxWidth: '18ch' }}>We started with Korean. We&apos;re not stopping there.</h2>
+          <h2 className="mk-h2 rv" style={{ maxWidth: '18ch' }}>More languages coming soon</h2>
           <p className="mk-body rv" style={{ margin: '0 auto' }}>
             Each new language gets tuned to how preaching actually sounds in that tongue,
             the same way Shema was built for Korean.
