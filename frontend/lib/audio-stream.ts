@@ -68,6 +68,8 @@ export class AudioStreamPlayer {
   // REBUILD the whole player.
   /** Fired once when the stream is unrecoverably stalled. */
   onStalled: (() => void) | null = null;
+  /** Listener opt-out for automatic catch-up speed (rate pins to 1.0). */
+  catchUpEnabled = true;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private lastProgressTime = -1;
   private stallTicks = 0;
@@ -92,7 +94,8 @@ export class AudioStreamPlayer {
     // preacher + Korean rendering): the first tier must BEAT that ratio or
     // backlog creeps until the next tier. Steady state ≈ the first threshold.
     let rate = el.playbackRate;
-    if (ahead > 35) rate = 1.5;
+    if (!this.catchUpEnabled) rate = 1.0;
+    else if (ahead > 35) rate = 1.5;
     else if (ahead > 12) rate = 1.3;
     else if (ahead < 6) rate = 1.0; // hysteresis: hold current rate between 6-12s
     if (el.playbackRate !== rate) {

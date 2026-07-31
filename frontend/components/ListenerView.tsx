@@ -97,6 +97,10 @@ export default function ListenerView({ church }: { church: string }) {
   const [spokenSeq, setSpokenSeq] = useState(0);
   // How far the audio runs behind live (drives the Jump-to-live pill).
   const [behindSec, setBehindSec] = useState(0);
+  // Auto catch-up speed (on by default; opt-out for anyone who finds the
+  // brisk playback distracting). Persisted per device.
+  const [autoCatchUp, setAutoCatchUp] = useState(true);
+  const autoCatchUpRef = useRef(true);
 
   const wsRef = useRef<WsClient | null>(null);
   const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
@@ -143,7 +147,17 @@ export default function ListenerView({ church }: { church: string }) {
   useEffect(() => {
     const saved = window.localStorage.getItem('shema-caption-size');
     if (saved === 's' || saved === 'm' || saved === 'l') setTextSize(saved);
+    const catchUp = window.localStorage.getItem('shema-auto-catchup') !== 'off';
+    setAutoCatchUp(catchUp);
+    autoCatchUpRef.current = catchUp;
   }, []);
+
+  const changeAutoCatchUp = (on: boolean) => {
+    setAutoCatchUp(on);
+    autoCatchUpRef.current = on;
+    if (streamRef.current) streamRef.current.catchUpEnabled = on;
+    try { window.localStorage.setItem('shema-auto-catchup', on ? 'on' : 'off'); } catch {}
+  };
 
   // Track the audio backlog for the Jump-to-live control.
   useEffect(() => {
@@ -238,6 +252,7 @@ export default function ListenerView({ church }: { church: string }) {
       console.warn('[Listener] audio pipeline stalled — rebuilding player');
       build();
     };
+    s.catchUpEnabled = autoCatchUpRef.current;
     s.setVolume(pausedRef.current ? 0 : 1);
     s.start();
     streamRef.current = s;
@@ -646,6 +661,27 @@ export default function ListenerView({ church }: { church: string }) {
               title="Captions only"
             >
               Captions only
+            </button>
+          </div>
+          {/* Catch-up speed: on = quietly play brisk when behind live;
+              off = always normal speed (the Jump-to-live pill still works). */}
+          <div className="label" style={{ marginTop: '0.8rem', marginBottom: '0.35rem' }}>
+            Catch-up speed
+          </div>
+          <div className="toggle-group" style={{ maxWidth: 320 }}>
+            <button
+              className={`toggle-opt${autoCatchUp ? ' active' : ''}`}
+              onClick={() => changeAutoCatchUp(true)}
+              title="Plays slightly faster when behind live so you stay close (default)"
+            >
+              Auto
+            </button>
+            <button
+              className={`toggle-opt${!autoCatchUp ? ' active' : ''}`}
+              onClick={() => changeAutoCatchUp(false)}
+              title="Always normal speed — you may drift behind live"
+            >
+              Off
             </button>
           </div>
         </details>
