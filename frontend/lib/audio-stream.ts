@@ -37,6 +37,7 @@ export class AudioStreamPlayer {
   private active = false;
   private volume = 1;
   private muted = false;
+  private sinkId = '';
 
   // ── Starvation-resume warmup ──────────────────────────────────────────────
   // Translation gaps drain the buffer at nearly every sentence boundary, so
@@ -77,12 +78,20 @@ export class AudioStreamPlayer {
   private lastProgressTime = -1;
   private stallTicks = 0;
   private appendFailures = 0;
+  private hadOpened = false;
+  private startedAtMs = 0;
 
   private checkHealth(): void {
     const el = this.audioEl;
     const ms = this.mediaSource;
     if (!this.active || !el || !ms) return;
-    if (ms.readyState === 'closed') return this.fatal('MediaSource closed');
+    if (ms.readyState === 'closed') {
+      // 'closed' is the NORMAL state until the element attaches the source —
+      // fatal only if it closed after opening, or never opens at all.
+      if (this.hadOpened) return this.fatal('MediaSource closed');
+      if (Date.now() - this.startedAtMs > 8000) return this.fatal('MediaSource never opened');
+      return;
+    }
     if (el.error) return this.fatal(`element error: ${el.error.message || el.error.code}`);
     const end = this.bufferedEnd();
     const ahead = end !== null ? end - el.currentTime : 0;
@@ -175,6 +184,7 @@ export class AudioStreamPlayer {
     const elp = this.audioEl as HTMLAudioElement & { preservesPitch?: boolean; webkitPreservesPitch?: boolean };
     elp.preservesPitch = true;
     elp.webkitPreservesPitch = true;
+    if (this.sinkId) this.setSinkId(this.sinkId);
     // Podcast-style element: inline (no fullscreen takeover on iOS)...
     (this.audioEl as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     this.audioEl.setAttribute('playsinline', '');
@@ -207,8 +217,11 @@ export class AudioStreamPlayer {
     this.audioEl.src = this.objectUrl;
     this.mediaSource.addEventListener('sourceopen', this.onSourceOpen);
     this.mediaSource.addEventListener('sourceclose', () => {
-      if (this.active) this.fatal('sourceclose event');
+      // Only fatal if it had actually opened; a close during attach is part
+      // of normal setup churn.
+      if (this.active && this.hadOpened) this.fatal('sourceclose event');
     });
+    this.startedAtMs = Date.now();
     this.healthTimer = setInterval(() => this.checkHealth(), 1500);
     this.audioEl.play().catch(() => {});
     // Debug handle for live diagnosis (harmless; not part of any API).
@@ -216,6 +229,7 @@ export class AudioStreamPlayer {
   }
 
   private onSourceOpen = (): void => {
+    this.hadOpened = true;
     if (!this.mediaSource || this.sourceBuffer) return;
     try {
       const sb = this.mediaSource.addSourceBuffer('audio/mpeg');
@@ -425,6 +439,18 @@ export class AudioStreamPlayer {
   setMuted(m: boolean): void {
     this.muted = m;
     if (this.audioEl) this.audioEl.muted = m;
+  }
+
+  /**
+   * Route playback to a specific audio OUTPUT device (setSinkId — Chrome/
+   * Edge; a no-op where unsupported). Survives player rebuilds. Lets /speak
+   * capture from a USB interface while sending translated audio to the
+   * headphone jack feeding the church system.
+   */
+  setSinkId(id: string): void {
+    this.sinkId = id;
+    const el = this.audioEl as (HTMLAudioElement & { setSinkId?: (id: string) => Promise<void> }) | null;
+    el?.setSinkId?.(id).catch((e) => console.warn('[AudioStream] setSinkId failed:', e));
   }
 
   get isActive(): boolean {

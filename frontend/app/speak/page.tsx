@@ -16,8 +16,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
-import { WsClient, ServerMessage, DebugMsg, TranslationMsg } from '@/lib/ws-client';
+import { WsClient, ServerMessage, DebugMsg, TranslationMsg, AudioChunkMsg } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
+import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
 import { getToken, getUsername } from '@/lib/auth';
@@ -26,6 +27,8 @@ import { useRequireAuth } from '@/lib/use-require-auth';
 const CHURCH_STORAGE_KEY = 'shema-church';
 const DEVICE_STORAGE_KEY = 'shema-input-device';
 const DIRECTION_STORAGE_KEY = 'shema-direction';
+const OUTPUT_DEVICE_STORAGE_KEY = 'shema-output-device';
+const LOCAL_VOLUME_STORAGE_KEY = 'shema-local-volume';
 
 type Mode = 'fast' | 'smooth';
 type Direction = 'ko-en' | 'en-ko';
@@ -148,6 +151,23 @@ export default function SpeakPage() {
   const [needsPermission, setNeedsPermission] = useState(false);
   const [liveDeviceLabel, setLiveDeviceLabel] = useState('');
 
+  // ── Local output ("one laptop" mode for soundboard churches) ─────────────
+  // Plays the translated audio stream — the same one listeners get — through
+  // a chosen OUTPUT device via setSinkId, while capture stays on the chosen
+  // input. The kiosk page remains for the two-device setup.
+  const [localOutput, setLocalOutput] = useState(false);
+  const [outputDevices, setOutputDevices] = useState<MediaDeviceInfo[]>([]);
+  const [outputDeviceId, setOutputDeviceId] = useState('');
+  const [outVolume, setOutVolume] = useState(1);
+  const [toneBusy, setToneBusy] = useState(false);
+  const [sinkSupported, setSinkSupported] = useState(true);
+  const outWsRef = useRef<WsClient | null>(null);
+  const outStreamRef = useRef<AudioStreamPlayer | null>(null);
+  const outVolumeRef = useRef(1);
+  const outSinkRef = useRef('');
+  const toneCtxRef = useRef<AudioContext | null>(null);
+  const outReportRef = useRef<{ seq: number; at: number }>({ seq: 0, at: 0 });
+
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -211,10 +231,10 @@ export default function SpeakPage() {
   const refreshDevices = useCallback(async () => {
     if (!navigator.mediaDevices?.enumerateDevices) return;
     try {
-      const list = (await navigator.mediaDevices.enumerateDevices()).filter(
-        (d) => d.kind === 'audioinput',
-      );
+      const all = await navigator.mediaDevices.enumerateDevices();
+      const list = all.filter((d) => d.kind === 'audioinput');
       setDevices(list);
+      setOutputDevices(all.filter((d) => d.kind === 'audiooutput'));
       const hasLabels = list.some((d) => d.label);
       setNeedsPermission(list.length > 0 && !hasLabels);
       // Drop a saved selection whose device is gone — but only once labels are
@@ -229,6 +249,14 @@ export default function SpeakPage() {
 
   useEffect(() => {
     setDeviceId(window.localStorage.getItem(DEVICE_STORAGE_KEY) ?? '');
+    setOutputDeviceId(window.localStorage.getItem(OUTPUT_DEVICE_STORAGE_KEY) ?? '');
+    outSinkRef.current = window.localStorage.getItem(OUTPUT_DEVICE_STORAGE_KEY) ?? '';
+    const v = parseFloat(window.localStorage.getItem(LOCAL_VOLUME_STORAGE_KEY) ?? '');
+    if (!Number.isNaN(v) && v >= 0 && v <= 1) {
+      setOutVolume(v);
+      outVolumeRef.current = v;
+    }
+    setSinkSupported('setSinkId' in HTMLMediaElement.prototype);
     refreshDevices();
     const onChange = () => refreshDevices();
     navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
@@ -250,6 +278,158 @@ export default function SpeakPage() {
       setErrors((prev) => [...prev.slice(-4), `Mic permission error: ${(err as Error).message}`]);
     }
   };
+
+  // ── Local output machinery (reuses the listener stream + player) ─────────
+  const outRebuildsRef = useRef<{ n: number; at: number }>({ n: 0, at: 0 });
+
+  const buildOutStream = useCallback(function build(): void {
+    const s = new AudioStreamPlayer();
+    s.setVolume(outVolumeRef.current);
+    if (outSinkRef.current) s.setSinkId(outSinkRef.current);
+    // This output IS what the room hears in a one-laptop church — report
+    // its playhead so the pews marker stays meaningful.
+    s.onSeqPlaying = (seq) => {
+      const now = Date.now();
+      if (seq !== outReportRef.current.seq && now - outReportRef.current.at > 1500) {
+        outReportRef.current = { seq, at: now };
+        outWsRef.current?.sendJSON({ type: 'playing', seq });
+      }
+    };
+    s.onStalled = () => {
+      // Same self-heal as the listener/kiosk: rebuild in place — but capped,
+      // so a player that can't start doesn't loop forever.
+      outStreamRef.current?.stop();
+      outStreamRef.current = null;
+      const rc = outRebuildsRef.current;
+      const now = Date.now();
+      if (now - rc.at > 60_000) rc.n = 0;
+      rc.at = now;
+      rc.n++;
+      if (rc.n > 2) {
+        console.warn('[Speak] local output keeps dying — turning it off');
+        outWsRef.current?.disconnect();
+        outWsRef.current = null;
+        setLocalOutput(false);
+        setErrors((prev) => [...prev.slice(-4), 'Local output stopped — click On to start it again.']);
+        return;
+      }
+      console.warn('[Speak] local output stalled — rebuilding player');
+      build();
+    };
+    s.start();
+    outStreamRef.current = s;
+  }, []);
+
+  const handleOutMessage = useCallback((msg: ServerMessage) => {
+    switch (msg.type) {
+      case 'status': {
+        const st = msg as { type: 'status'; active?: boolean };
+        if (st.active === true) outStreamRef.current?.reset();
+        break;
+      }
+      case 'audio_chunk': {
+        const a = msg as AudioChunkMsg;
+        outStreamRef.current?.appendChunk(base64ToBytes(a.data), a.seq);
+        break;
+      }
+    }
+  }, []);
+
+  const teardownLocalOutput = useCallback(() => {
+    outWsRef.current?.disconnect();
+    outWsRef.current = null;
+    outStreamRef.current?.stop();
+    outStreamRef.current = null;
+  }, []);
+
+  const toggleLocalOutput = () => {
+    if (localOutput) {
+      teardownLocalOutput();
+      setLocalOutput(false);
+      return;
+    }
+    if (!church) return;
+    // A deliberate retry deserves a fresh rebuild allowance — the cap guards
+    // against automatic loops, not the operator clicking On again.
+    outRebuildsRef.current = { n: 0, at: 0 };
+    // The click is the user gesture that unlocks audio — start the player now.
+    buildOutStream();
+    const client = new WsClient({
+      url: getBackendWsUrl(),
+      role: 'listener',
+      room: church,
+      onMessage: handleOutMessage,
+      reconnectDelayMs: 2000,
+    });
+    outWsRef.current = client;
+    client.connect();
+    setLocalOutput(true);
+  };
+
+  const selectOutputDevice = (id: string) => {
+    setOutputDeviceId(id);
+    outSinkRef.current = id;
+    outStreamRef.current?.setSinkId(id);
+    try { window.localStorage.setItem(OUTPUT_DEVICE_STORAGE_KEY, id); } catch {}
+  };
+
+  const changeOutVolume = (v: number) => {
+    setOutVolume(v);
+    outVolumeRef.current = v;
+    outStreamRef.current?.setVolume(v);
+    try { window.localStorage.setItem(LOCAL_VOLUME_STORAGE_KEY, String(v)); } catch {}
+  };
+
+  // Test tone through the SELECTED output (AudioContext.setSinkId where
+  // supported) so the operator can verify the church system hears it.
+  const playTestTone = () => {
+    if (toneBusy) return;
+    try {
+      if (!toneCtxRef.current || toneCtxRef.current.state === 'closed') {
+        toneCtxRef.current = new AudioContext();
+      }
+      const ctx = toneCtxRef.current as AudioContext & { setSinkId?: (id: string) => Promise<void> };
+      if (outSinkRef.current) ctx.setSinkId?.(outSinkRef.current).catch(() => {});
+      if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.value = 440;
+      const peak = 0.5 * outVolumeRef.current;
+      const t = ctx.currentTime;
+      gain.gain.setValueAtTime(0, t);
+      gain.gain.linearRampToValueAtTime(peak, t + 0.05);
+      gain.gain.setValueAtTime(peak, t + 1.4);
+      gain.gain.linearRampToValueAtTime(0, t + 1.5);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(t);
+      osc.stop(t + 1.55);
+      setToneBusy(true);
+      osc.onended = () => setToneBusy(false);
+    } catch {
+      setToneBusy(false);
+    }
+  };
+
+  // Local output follows the room: church change tears it down (re-toggle).
+  useEffect(() => {
+    return () => {
+      teardownLocalOutput();
+      setLocalOutput(false);
+      toneCtxRef.current?.close().catch(() => {});
+      toneCtxRef.current = null;
+    };
+  }, [church, teardownLocalOutput]);
+
+  // Feedback guard: same physical device as input+output would loop the
+  // translation back into STT.
+  const feedbackRisk = (() => {
+    if (!localOutput || !outputDeviceId || !deviceId) return false;
+    const inDev = devices.find((d) => d.deviceId === deviceId);
+    const outDev = outputDevices.find((d) => d.deviceId === outputDeviceId);
+    return Boolean(inDev && outDev && inDev.groupId && inDev.groupId === outDev.groupId);
+  })();
 
   // Auto-scroll
   useEffect(() => {
@@ -708,7 +888,77 @@ export default function SpeakPage() {
             </div>
           </div>
 
-          {/* 5. Congregation link — pinned to the rail's bottom */}
+          {/* 5. Local output — one-laptop mode for soundboard churches */}
+          <div style={railCard}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={railLabel} title="Play translated audio from this device into the church system">
+                Local output
+              </span>
+              <div className="toggle-group" style={{ flex: '0 0 auto' }}>
+                <button className={`toggle-opt${!localOutput ? ' active-cream' : ''}`} onClick={() => localOutput && toggleLocalOutput()}>
+                  Off
+                </button>
+                <button className={`toggle-opt${localOutput ? ' active' : ''}`} onClick={() => !localOutput && toggleLocalOutput()}>
+                  On
+                </button>
+              </div>
+            </div>
+            {localOutput && (
+              <>
+                {sinkSupported ? (
+                  <select
+                    className="field"
+                    value={outputDeviceId}
+                    onChange={(e) => selectOutputDevice(e.target.value)}
+                    style={{ width: '100%', fontSize: 13 }}
+                    aria-label="Output device"
+                  >
+                    <option value="">System default output</option>
+                    {outputDevices
+                      .filter((d) => d.deviceId && d.deviceId !== 'default')
+                      .map((d, i) => (
+                        <option key={d.deviceId} value={d.deviceId}>
+                          {d.label || `Output ${i + 1}`}
+                        </option>
+                      ))}
+                  </select>
+                ) : (
+                  <span style={{ fontSize: 11.5, color: 'rgba(244,241,234,0.5)' }}>
+                    This browser can&apos;t pick an output device — audio plays on the system default output.
+                  </span>
+                )}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.01}
+                    value={outVolume}
+                    onChange={(e) => changeOutVolume(parseFloat(e.target.value))}
+                    style={{ flex: 1, accentColor: 'var(--gold)' }}
+                    aria-label="Local output volume"
+                  />
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'rgba(244,241,234,0.6)', width: 38, textAlign: 'right' }}>
+                    {Math.round(outVolume * 100)}%
+                  </span>
+                  <button
+                    onClick={playTestTone}
+                    disabled={toneBusy}
+                    style={{ ...MONO, fontSize: 9, padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(244,241,234,0.16)', color: 'rgba(244,241,234,0.75)', opacity: toneBusy ? 0.5 : 1 }}
+                  >
+                    {toneBusy ? 'Playing…' : 'Test tone'}
+                  </button>
+                </div>
+                {feedbackRisk && (
+                  <span style={{ fontSize: 11.5, color: 'var(--alert)' }}>
+                    Output and input are the same device — the translation would feed back into the microphone. Pick a different output.
+                  </span>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* 6. Congregation link — pinned to the rail's bottom */}
           {church && (
             <div style={{ ...railCard, marginTop: 'auto', borderColor: 'rgba(200,162,94,0.45)', background: 'rgba(200,162,94,0.05)' }}>
               <span style={{ ...railLabel, color: 'var(--gold)' }}>Congregation link</span>
@@ -778,8 +1028,14 @@ export default function SpeakPage() {
             </div>
             <div>
               <div style={railLabel}>Listening now</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}>
-                {listenerCount} {listenerCount === 1 ? 'person' : 'people'}
+              <div
+                style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}
+                title={localOutput ? "Excludes this device's own local output" : undefined}
+              >
+                {(() => {
+                  const n = Math.max(0, listenerCount - (localOutput ? 1 : 0));
+                  return `${n} ${n === 1 ? 'person' : 'people'}`;
+                })()}
               </div>
             </div>
             <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, flexWrap: 'wrap' }}>
