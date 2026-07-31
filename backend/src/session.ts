@@ -131,6 +131,16 @@ export class Session {
   lastStoppedAt = 0;
 
   /**
+   * Tears down the pipeline (STT/chunker) of the connection that OWNS the
+   * current broadcast. Set by that connection's start; invoked when another
+   * connection's `start` takes over. Ownership is what keeps a zombie
+   * broadcaster tab's disconnect from killing a live session it never owned
+   * (observed live: an old backgrounded /speak tab flapping every ~60s
+   * executed the real broadcast each time).
+   */
+  activeBroadcastTeardown: (() => void) | null = null;
+
+  /**
    * Record a completed translation. The seq is assigned earlier, at dispatch
    * time (spoken order), by the chunker via nextSeq() — NOT here — so it
    * reflects spoken order rather than translation-completion order.

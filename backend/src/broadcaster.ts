@@ -274,6 +274,27 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // the start as a fresh sermon and begin with a clean transcript.
   const RESUME_WINDOW_MS = 5 * 60 * 1000;
 
+  // True only for the connection whose `start` owns the current broadcast.
+  // Non-owners (zombie tabs, stale reconnects) can neither stop the session
+  // nor kill it by disconnecting.
+  let ownsSession = false;
+
+  /** Tear down THIS connection's pipeline (STT + chunker), draining first. */
+  function teardownPipeline(): void {
+    const c = chunker;
+    chunker = null;
+    if (c) {
+      // Drain queued + in-flight translations before teardown. Destroying
+      // immediately used to clear the pending queue and silently drop the
+      // final chunk(s) whenever two translations were still in flight.
+      c.forceFlush()
+        .catch(() => {})
+        .finally(() => c.destroy());
+    }
+    stt?.disconnect();
+    stt = null;
+  }
+
   // ── Start broadcast session ────────────────────────────────────────────────
   function startSession(mode: 'fast' | 'smooth', direction: Direction): void {
     const cfg = getDirectionConfig(direction);
@@ -283,16 +304,33 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     if (!resolveTtsVoiceId(direction)) {
       throw new Error(`No TTS voice configured for direction "${direction}".`);
     }
-    if (session.isActive) stopSession();
 
+    // A start while the session is live counts as a resume regardless of
+    // which connection ran it (an operator reloading /speak takes over the
+    // running broadcast without wiping the congregation's transcript).
     const isResume =
-      session.lastStoppedAt !== 0 && Date.now() - session.lastStoppedAt < RESUME_WINDOW_MS;
+      session.isActive ||
+      (session.lastStoppedAt !== 0 && Date.now() - session.lastStoppedAt < RESUME_WINDOW_MS);
+
+    // Take over: tear down whichever connection's pipeline ran the previous
+    // broadcast — this one's on a restart, or another tab's on a takeover —
+    // WITHOUT ending the session itself.
+    if (session.activeBroadcastTeardown) {
+      session.activeBroadcastTeardown();
+      session.activeBroadcastTeardown = null;
+    }
     if (!isResume) {
       session.clearTranscript();
       // Connected listeners' screens reset too — history is authoritative.
       session.broadcast({ type: 'transcript_history', chunks: [] });
     }
 
+    ownsSession = true;
+    session.activeBroadcastTeardown = () => {
+      teardownPipeline();
+      ownsSession = false;
+    };
+    audioStarvedSince = Date.now(); // gap attribution restarts with the session
     session.isActive = true;
     session.mode = mode;
     session.direction = direction;
@@ -355,21 +393,19 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     console.log(`[Broadcaster] Session started, mode = ${mode}, direction = ${direction}`);
   }
 
+  /** End the broadcast — only the owning connection may do this. */
   function stopSession(): void {
+    if (!ownsSession) {
+      // A non-owner (zombie tab, stale reconnect) tears down only its own
+      // leftovers; the live session it never owned continues untouched.
+      teardownPipeline();
+      return;
+    }
+    ownsSession = false;
+    session.activeBroadcastTeardown = null;
     session.isActive = false;
     session.lastStoppedAt = Date.now();
-    const c = chunker;
-    chunker = null;
-    if (c) {
-      // Drain queued + in-flight translations before teardown. Destroying
-      // immediately used to clear the pending queue and silently drop the
-      // final chunk(s) whenever two translations were still in flight.
-      c.forceFlush()
-        .catch(() => {})
-        .finally(() => c.destroy());
-    }
-    stt?.disconnect();
-    stt = null;
+    teardownPipeline();
 
     session.broadcast({ type: 'status', active: false, direction: session.direction });
     logLatencyReport();
@@ -445,8 +481,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   });
 
   ws.on('close', () => {
-    console.log(`[Broadcaster] Disconnected (room "${session.roomId}")`);
-    stopSession();
+    console.log(`[Broadcaster] Disconnected (room "${session.roomId}", ownsSession=${ownsSession})`);
+    stopSession(); // no-op teardown unless this connection owns the broadcast
     session.removeBroadcaster(ws);
   });
 
