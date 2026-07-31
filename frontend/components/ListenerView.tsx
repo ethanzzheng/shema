@@ -95,6 +95,8 @@ export default function ListenerView({ church }: { church: string }) {
   // Translations arrive ahead of their audio; highlighting the latest
   // translation runs ahead of what the ear hears.
   const [spokenSeq, setSpokenSeq] = useState(0);
+  // How far the audio runs behind live (drives the Jump-to-live pill).
+  const [behindSec, setBehindSec] = useState(0);
 
   const wsRef = useRef<WsClient | null>(null);
   const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
@@ -142,6 +144,15 @@ export default function ListenerView({ church }: { church: string }) {
     const saved = window.localStorage.getItem('shema-caption-size');
     if (saved === 's' || saved === 'm' || saved === 'l') setTextSize(saved);
   }, []);
+
+  // Track the audio backlog for the Jump-to-live control.
+  useEffect(() => {
+    if (!audioStarted) return;
+    const t = setInterval(() => {
+      setBehindSec(Math.round(streamRef.current?.backlogSeconds ?? 0));
+    }, 2000);
+    return () => clearInterval(t);
+  }, [audioStarted]);
 
   const changeTextSize = (size: 's' | 'm' | 'l') => {
     setTextSize(size);
@@ -506,6 +517,35 @@ export default function ListenerView({ church }: { church: string }) {
               Direct
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Behind-live indicator: catch-up handles small drift silently; deep
+          drift gets a one-tap escape (captions keep every line). */}
+      {audioStarted && ttsMode === 'elevenlabs' && behindSec > 45 && (
+        <div
+          className="card"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: '0.75rem',
+            padding: '0.6rem 1rem',
+            borderColor: 'rgba(201,169,97,.45)',
+            background: 'rgba(201,169,97,.07)',
+            flexShrink: 0,
+          }}
+        >
+          <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>
+            Audio is ~{behindSec}s behind live
+          </span>
+          <button
+            className="btn btn-primary"
+            onClick={() => streamRef.current?.jumpToLive()}
+            style={{ padding: '0.45rem 1rem', fontSize: '0.85rem' }}
+          >
+            Jump to live
+          </button>
         </div>
       )}
 

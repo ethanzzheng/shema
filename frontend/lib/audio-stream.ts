@@ -357,6 +357,34 @@ export class AudioStreamPlayer {
     this.objectUrl = null;
   }
 
+  /** Seconds of audio buffered ahead of the playhead (how far behind live). */
+  get backlogSeconds(): number {
+    const el = this.audioEl;
+    const end = this.bufferedEnd();
+    if (!el || end === null) return 0;
+    return Math.max(0, end - el.currentTime);
+  }
+
+  /**
+   * Skip to ~1s behind the freshest buffered audio. Nothing is lost — the
+   * transcript keeps every line — the listener just stops hearing old
+   * content. Used by the "Jump to live" control when drift runs deep.
+   */
+  jumpToLive(): void {
+    const el = this.audioEl;
+    const sb = this.sourceBuffer;
+    const end = this.bufferedEnd();
+    if (!el || !sb || end === null) return;
+    const start = sb.buffered.length > 0 ? sb.buffered.start(sb.buffered.length - 1) : 0;
+    try {
+      el.currentTime = Math.max(start, end - 1.0);
+    } catch {
+      /* seek can throw mid-update; the catch-up rate keeps working regardless */
+    }
+    el.playbackRate = 1.0;
+    el.play().catch(() => {});
+  }
+
   /** Output volume, 0–1. Applies immediately and to future start() calls. */
   setVolume(v: number): void {
     this.volume = Math.max(0, Math.min(1, v));
