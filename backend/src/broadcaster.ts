@@ -118,6 +118,18 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     );
   }
 
+  // Speaking rate (drift control): Korean renderings often run longer than
+  // the English they translate, so en-ko can take TTS_SPEED_KO (falling back
+  // to TTS_SPEED); ko-en uses TTS_SPEED alone.
+  function ttsSpeed(direction: Direction): number | undefined {
+    const raw =
+      direction === 'en-ko'
+        ? process.env.TTS_SPEED_KO ?? process.env.TTS_SPEED
+        : process.env.TTS_SPEED;
+    const v = parseFloat(raw ?? '');
+    return Number.isFinite(v) ? v : undefined;
+  }
+
   // Voice + model come from the direction config; rebuilt on each start so a
   // direction change takes effect. Startup validation guarantees the English
   // voice env var exists, so the ko-en default here can never be ''.
@@ -126,6 +138,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       apiKey: ELEVENLABS_API_KEY,
       voiceId: resolveTtsVoiceId(direction) ?? '',
       modelId: resolveTtsModelId(direction),
+      speed: ttsSpeed(direction),
     });
   }
   let tts = createTts('ko-en');

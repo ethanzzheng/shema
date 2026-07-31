@@ -81,6 +81,23 @@ export class AudioStreamPlayer {
     if (el.error) return this.fatal(`element error: ${el.error.message || el.error.code}`);
     const end = this.bufferedEnd();
     const ahead = end !== null ? end - el.currentTime : 0;
+
+    // ── Drift catch-up ──────────────────────────────────────────────────
+    // Dense preaching outpaces the pipeline (Korean renderings often take
+    // longer to SAY than the English did), so the queued audio can drift
+    // minutes behind live. Nothing is ever dropped — instead, when the
+    // backlog runs deep, play slightly fast (browsers pitch-correct by
+    // default, so it just sounds brisk) and ease back to 1.0 near live.
+    let rate = el.playbackRate;
+    if (ahead > 60) rate = 1.5;
+    else if (ahead > 30) rate = 1.3;
+    else if (ahead > 15) rate = 1.15;
+    else if (ahead < 8) rate = 1.0; // hysteresis: hold current rate between 8-15s
+    if (el.playbackRate !== rate) {
+      el.playbackRate = rate;
+      console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${rate}`);
+    }
+
     // With real audio buffered ahead and no starvation pending, the playhead
     // must be moving. Frozen playhead → nudge once, then declare it dead.
     if (ahead > 1.5 && !this.starved) {

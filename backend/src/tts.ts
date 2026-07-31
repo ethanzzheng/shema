@@ -11,6 +11,8 @@ interface TTSOptions {
   apiKey: string;
   voiceId: string;
   modelId?: string;
+  /** Speaking rate (ElevenLabs voice_settings.speed, ~0.7–1.2). Omit = model default. */
+  speed?: number;
 }
 
 interface VoiceSettings {
@@ -18,6 +20,7 @@ interface VoiceSettings {
   similarity_boost: number;
   style?: number;
   use_speaker_boost?: boolean;
+  speed?: number;
 }
 
 /** Parse an env float, falling back when unset or not a number. */
@@ -42,11 +45,16 @@ export class ElevenLabsTTS {
   private apiKey: string;
   private voiceId: string;
   private modelId: string;
+  private voiceSettings: VoiceSettings;
 
   constructor(opts: TTSOptions) {
     this.apiKey = opts.apiKey;
     this.voiceId = opts.voiceId;
     this.modelId = opts.modelId ?? process.env.TTS_MODEL ?? 'eleven_turbo_v2_5';
+    this.voiceSettings = {
+      ...DEFAULT_VOICE_SETTINGS,
+      ...(opts.speed && opts.speed !== 1 ? { speed: opts.speed } : {}),
+    };
   }
 
   /**
@@ -59,7 +67,7 @@ export class ElevenLabsTTS {
     const body = JSON.stringify({
       text,
       model_id: this.modelId,
-      voice_settings: DEFAULT_VOICE_SETTINGS,
+      voice_settings: this.voiceSettings,
     });
 
     const response = await fetch(url, {
@@ -102,7 +110,7 @@ export class ElevenLabsTTS {
     const body = JSON.stringify({
       text,
       model_id: this.modelId,
-      voice_settings: DEFAULT_VOICE_SETTINGS,
+      voice_settings: this.voiceSettings,
     });
 
     const controller = new AbortController();
