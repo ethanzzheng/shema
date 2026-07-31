@@ -12,6 +12,8 @@ import {
   strayEnglishWords,
   hangulRatio,
   englishBookNamesIn,
+  sentenceEndingForms,
+  maxConsecutiveEnding,
 } from '../evals/run-en-ko';
 
 test('registerViolations: 하십시오체 sentences pass', () => {
@@ -79,6 +81,20 @@ test('hangulRatio: Korean output scores high, half-English scores low', () => {
   assert.ok(hangulRatio('하나님께서 여러분을 사랑하십니다.') === 1);
   assert.ok(hangulRatio('God loves you, 여러분.') < 0.8);
   assert.equal(hangulRatio('123 !?'), 0);
+});
+
+test('sentenceEndingForms: classifies formal endings, most specific first', () => {
+  // 일하십니다 (honorific) and plain 합니다 share the ear's '니다' cadence.
+  assert.deepEqual(
+    sentenceEndingForms('하나님께서 일하십니다. 그것이 은혜인 것입니다. 함께 기도하시기 바랍니다. 그렇지 않습니까?'),
+    ['니다', '것입니다', '바랍니다', '않습니까'],
+  );
+});
+
+test('maxConsecutiveEnding: counts the longest identical-ending run', () => {
+  assert.equal(maxConsecutiveEnding(['습니다', '습니다', '습니다', '것입니다']), 3);
+  assert.equal(maxConsecutiveEnding(['습니다', '것입니다', '습니다']), 1);
+  assert.equal(maxConsecutiveEnding([]), 0);
 });
 
 test('englishBookNamesIn: catches English book names, word-bounded', () => {

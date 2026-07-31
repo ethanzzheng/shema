@@ -41,6 +41,8 @@ interface Fixture {
    * a rendering and stuck with it.
    */
   consistentTerms?: string[];
+  /** Sequence fixtures only: assert varied sentence-final endings. */
+  checkVariety?: boolean;
   /** Prior segments to seed as context ({source: English, target: Korean}). */
   context?: { source: string; target: string }[];
   expectEmpty?: boolean;
@@ -146,6 +148,43 @@ export function hangulRatio(text: string): number {
   const latin = (text.match(/[A-Za-z]/g) ?? []).length;
   if (hangul + latin === 0) return 0;
   return hangul / (hangul + latin);
+}
+
+/**
+ * Sentence-final ending FORMS, for variety checking (reviewer feedback: an
+ * unbroken "-습니다" cadence sounds machine-made). Longest-first so the most
+ * specific form wins; unknown endings fall back to their last two syllables.
+ */
+// The plain declarative family (합니다/하십니다/입니다...) all share one
+// cadence to the ear — they collapse into the '니다' bucket. The forms
+// listed before it are the structurally distinct endings variety comes from.
+const ENDING_FORMS = [
+  '것입니다', '바랍니다', '때문입니다', '않습니까', '습니까', '됩니다', '십시오', '소서',
+  '니다',
+];
+
+export function sentenceEndingForms(text: string): string[] {
+  const forms: string[] = [];
+  for (const m of text.match(/[^.?!]+[.?!]/g) ?? []) {
+    const core = m.trim().replace(/[.?!…]+$/, '').replace(/[)\]"'”’]+$/, '').trim();
+    if (!core) continue;
+    const form = ENDING_FORMS.find((f) => core.endsWith(f)) ?? core.slice(-2);
+    forms.push(form);
+  }
+  return forms;
+}
+
+/** Longest run of the identical ending form across consecutive sentences. */
+export function maxConsecutiveEnding(forms: string[]): number {
+  let max = 0;
+  let run = 0;
+  let prev = '';
+  for (const f of forms) {
+    run = f === prev ? run + 1 : 1;
+    prev = f;
+    if (run > max) max = run;
+  }
+  return max;
 }
 
 // English book names must never survive into Korean output ("John 3:16").
@@ -316,6 +355,21 @@ async function main() {
       }
       const output = segOutputs.join(' ');
       const checks = runChecks(fx, output);
+
+      // Ending variety across a sequence: unrelated declaratives must not
+      // all fall into the identical final-ending cadence. (Parallel rhetoric
+      // fixtures should not use checkVariety.)
+      if (fx.checkVariety && segOutputs.length > 2) {
+        const forms = sentenceEndingForms(segOutputs.join(' '));
+        const distinct = new Set(forms).size;
+        const maxRun = maxConsecutiveEnding(forms);
+        const pass = distinct >= 2 && maxRun <= 3;
+        checks.push({
+          name: 'ending-variety',
+          pass,
+          detail: pass ? undefined : `forms=[${forms.join(',')}] distinct=${distinct} maxRun=${maxRun}`,
+        });
+      }
 
       // Terminology consistency across a sequence: one rendering, every segment.
       if (fx.consistentTerms && segOutputs.length > 1) {
