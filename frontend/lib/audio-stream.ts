@@ -93,11 +93,16 @@ export class AudioStreamPlayer {
     // Tiers tuned against a measured live emission ratio of 1.23x (fast
     // preacher + Korean rendering): the first tier must BEAT that ratio or
     // backlog creeps until the next tier. Steady state ≈ the first threshold.
+    // Floor at ~10s: catching up all the way to the live edge sounds CHOPPY —
+    // the buffer hits zero between clips (each sentence costs ~2-3s of
+    // pipeline latency) and every line starts from a starvation-resume.
+    // A deliberate cushion absorbs those inter-clip gaps; only genuine
+    // speaker pauses reach the listener's ears.
     let rate = el.playbackRate;
     if (!this.catchUpEnabled) rate = 1.0;
-    else if (ahead > 35) rate = 1.5;
-    else if (ahead > 12) rate = 1.3;
-    else if (ahead < 6) rate = 1.0; // hysteresis: hold current rate between 6-12s
+    else if (ahead > 40) rate = 1.5;
+    else if (ahead > 15) rate = 1.3;
+    else if (ahead < 10) rate = 1.0; // hysteresis: hold current rate between 10-15s
     if (el.playbackRate !== rate) {
       el.playbackRate = rate;
       console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${rate}`);
