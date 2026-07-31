@@ -101,10 +101,11 @@ export class AudioStreamPlayer {
     // pipeline latency) and every line starts from a starvation-resume.
     // A deliberate cushion absorbs those inter-clip gaps; only genuine
     // speaker pauses reach the listener's ears.
-    // 1.3x max — reviewer verdict: 1.5x is audibly too fast for a sermon.
-    // Deep backlogs rely on the Jump-to-live control instead of speed.
+    // 1.15x max: gentle enough to stack with a TTS-side speed bump without
+    // reaching the 1.3-1.5x territory reviewers reject. Deep backlogs rely
+    // on the Jump-to-live control, not speed.
     if (!this.catchUpEnabled) this.rateTarget = 1.0;
-    else if (ahead > 15) this.rateTarget = 1.3;
+    else if (ahead > 15) this.rateTarget = 1.15;
     else if (ahead < 10) this.rateTarget = 1.0; // hysteresis: hold target between 10-15s
     // RAMP toward the target — abrupt rate jumps glitch audibly (a brief
     // stutter at every tier change). ~0.08 per 1.5s tick ≈ a gentle glide.
