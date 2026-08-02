@@ -4,6 +4,7 @@ import {
   sanitizeForSpeech,
   looksLikeMetaCommentary,
   extractJsonObject,
+  salvageTranslation,
   SYSTEM_PROMPT_KO_EN,
   SYSTEM_PROMPT_EN_KO,
 } from '../src/translation';
@@ -124,4 +125,38 @@ test('extractJsonObject: extracts object from surrounding prose', () => {
     extractJsonObject('Here is the result: {"translation": "hi"} hope that helps'),
     '{"translation": "hi"}',
   );
+});
+
+test('salvageTranslation: recovers unescaped inner quotes', () => {
+  // The live-pilot failure mode: quoted sermon speech emitted as raw quotes,
+  // making the JSON unparseable ("Unterminated string").
+  const raw = '{"translation": "He said "come work for us" and I just went."}';
+  assert.throws(() => JSON.parse(extractJsonObject(raw)));
+  assert.equal(salvageTranslation(raw), 'He said "come work for us" and I just went.');
+});
+
+test('salvageTranslation: recovers a truncated response', () => {
+  const raw = '{"translation": "The sentence was cut off mid';
+  assert.throws(() => JSON.parse(extractJsonObject(raw)));
+  assert.equal(salvageTranslation(raw), 'The sentence was cut off mid');
+});
+
+test('salvageTranslation: unescapes standard JSON escapes', () => {
+  assert.equal(salvageTranslation('{"translation": "She said \\"hello\\" to me"}'), 'She said "hello" to me');
+});
+
+test('salvageTranslation: null when no translation key', () => {
+  assert.equal(salvageTranslation('I could not translate this.'), null);
+  assert.equal(salvageTranslation('{"error": "nope"}'), null);
+});
+
+test('salvageTranslation: null for empty value', () => {
+  assert.equal(salvageTranslation('{"translation": ""}'), null);
+});
+
+test('salvageTranslation: does not disturb valid JSON path', () => {
+  // Valid JSON still parses first; salvage only ever runs on parse failure —
+  // but it should agree with the parsed value for simple cases anyway.
+  const raw = '{"translation": "Simple sentence."}';
+  assert.equal(JSON.parse(extractJsonObject(raw)).translation, salvageTranslation(raw));
 });

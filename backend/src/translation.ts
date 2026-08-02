@@ -152,6 +152,25 @@ export function extractJsonObject(raw: string): string {
   return cleaned;
 }
 
+/**
+ * Last-resort recovery when the model's JSON is unparseable — typically an
+ * unescaped quote inside the translation (quoted speech in the sermon) or a
+ * truncated response. Dropping the sentence is the worst outcome for a live
+ * congregation, and each parse-retry cycle costs ~10s of dead air, so pull
+ * the translation value out with string surgery instead: take everything
+ * after `"translation": "` and trim the trailing `"}` if it survived.
+ */
+export function salvageTranslation(raw: string): string | null {
+  const m = raw.match(/"translation"\s*:\s*"([\s\S]*)$/);
+  if (!m) return null;
+  let s = m[1];
+  const closing = s.match(/"\s*\}?\s*$/);
+  if (closing) s = s.slice(0, closing.index);
+  s = s.replace(/\\"/g, '"').replace(/\\n/g, ' ').replace(/\\\\/g, '\\');
+  const out = s.trim();
+  return out.length > 0 ? out : null;
+}
+
 export class ClaudeTranslator {
   private client: Anthropic;
   private model: string;
@@ -260,12 +279,19 @@ export class ClaudeTranslator {
           .join('')
           .trim();
 
-        const parsed = JSON.parse(extractJsonObject(raw)) as { translation?: unknown };
-        if (typeof parsed.translation !== 'string') {
-          throw new Error('Unexpected JSON shape from Claude');
+        let translated: string;
+        try {
+          const parsed = JSON.parse(extractJsonObject(raw)) as { translation?: unknown };
+          if (typeof parsed.translation !== 'string') {
+            throw new Error('Unexpected JSON shape from Claude');
+          }
+          translated = parsed.translation.trim();
+        } catch (parseErr) {
+          const salvaged = salvageTranslation(raw);
+          if (salvaged === null) throw parseErr;
+          console.warn('[Translation] JSON parse failed — salvaged translation from raw response');
+          translated = salvaged;
         }
-
-        let translated = parsed.translation.trim();
 
         // Guard: if the model described the input instead of translating, drop it.
         if (translated && looksLikeMetaCommentary(translated)) {
