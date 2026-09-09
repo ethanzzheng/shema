@@ -185,8 +185,13 @@ export default function ListenerView({ church }: { church: string }) {
     const next = !paused;
     setPaused(next);
     pausedRef.current = next;
-    // muted, not volume: iOS ignores the volume property on media elements.
-    streamRef.current?.setMuted(next);
+    // A real pause, not a mute. Muting kept the element running so a resume
+    // could stay near live, but an inaudible page is a background-suspension
+    // candidate on every platform — pausing and pocketing the phone was the
+    // most reliable way to lose audio for good. Resume jumps to live, so the
+    // listener misses exactly what they would have missed either way.
+    if (next) streamRef.current?.pause();
+    else streamRef.current?.resume();
     playbackRef.current?.setVolume(next ? 0 : 1); // WebAudio gain — works everywhere
     if (next) browserTtsRef.current?.cancel();
   };
@@ -237,6 +242,7 @@ export default function ListenerView({ church }: { church: string }) {
   // ── Init audio (requires user gesture) ────────────────────────────────
   // Rebuilds within this window count toward the self-heal cap; past the cap
   // we assume the OS revoked autoplay and surface the tap gate again.
+  const pendingRebuildRef = useRef(false);
   const rebuildsRef = useRef<{ n: number; at: number }>({ n: 0, at: 0 });
 
   const buildStream = useCallback(function build(): void {
@@ -246,6 +252,15 @@ export default function ListenerView({ church }: { church: string }) {
       // The media pipeline died (observed on iOS: text flows, audio silent,
       // page still says live). Tear down and rebuild; if it keeps dying,
       // playback needs a fresh user gesture — show "Tap to listen" again.
+      // Never rebuild while hidden: a fresh Audio() with no user gesture is
+      // autoplay-blocked, which turns a recoverable stall into permanent
+      // silence behind a UI that still says "live". Defer to the next time
+      // the page is visible.
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        console.warn('[Listener] stall while hidden — deferring rebuild until visible');
+        pendingRebuildRef.current = true;
+        return;
+      }
       streamRef.current?.stop();
       streamRef.current = null;
       const rc = rebuildsRef.current;
@@ -262,10 +277,32 @@ export default function ListenerView({ church }: { church: string }) {
       build();
     };
     s.catchUpEnabled = autoCatchUpRef.current;
-    s.setMuted(pausedRef.current);
     s.start();
+    if (pausedRef.current) s.pause();
     streamRef.current = s;
   }, [onSeqPlaying]);
+
+  // Returning to a visible page is when deferred recovery can safely happen:
+  // rebuilding needs a document that is allowed to play audio, and a page that
+  // was frozen may also be holding a zombie socket that never fired 'close'.
+  useEffect(() => {
+    if (!audioStarted) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      if (pendingRebuildRef.current) {
+        pendingRebuildRef.current = false;
+        console.warn('[Listener] page visible again — running deferred rebuild');
+        streamRef.current?.stop();
+        streamRef.current = null;
+        buildStream();
+        return;
+      }
+      // Not dead, just suspended: nudge playback if the OS paused us.
+      if (!pausedRef.current) streamRef.current?.resume();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [audioStarted, buildStream]);
 
   const initAudio = () => {
     if (audioStarted) return;

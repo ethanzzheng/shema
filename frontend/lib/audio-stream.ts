@@ -88,6 +88,8 @@ export class AudioStreamPlayer {
   private rateTarget = 1.0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
   private lastProgressTime = -1;
+  private lastTickAt = 0;
+  private lastTickHidden = false;
   private stallTicks = 0;
   private appendFailures = 0;
   private hadOpened = false;
@@ -97,6 +99,24 @@ export class AudioStreamPlayer {
     const el = this.audioEl;
     const ms = this.mediaSource;
     if (!this.active || !el || !ms) return;
+
+    // Background tabs get their timers clamped, and a frozen page stops them
+    // outright, so two consecutive samples can be a minute apart or straddle a
+    // suspension during which the playhead legitimately did not move. Judging
+    // health on that produces a false "dead" verdict, and the rebuild it
+    // triggers constructs a fresh Audio() with no user gesture — autoplay
+    // blocked, permanent silence, UI still saying "live". That is the reported
+    // phone-lock symptom, so skip all fatal decisions across such a gap.
+    const now = Date.now();
+    const gap = now - this.lastTickAt;
+    const wasHidden = this.lastTickHidden;
+    this.lastTickAt = now;
+    this.lastTickHidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    if (gap > 4000 || wasHidden || this.lastTickHidden) {
+      this.stallTicks = 0;
+      this.lastProgressTime = el.currentTime;
+      return;
+    }
     if (ms.readyState === 'closed') {
       // 'closed' is the NORMAL state until the element attaches the source —
       // fatal only if it closed after opening, or never opens at all.
@@ -208,6 +228,18 @@ export class AudioStreamPlayer {
     elp.preservesPitch = true;
     elp.webkitPreservesPitch = true;
     if (this.sinkId) this.setSinkId(this.sinkId);
+    // Declare this as long-form playback audio. With the default 'auto',
+    // WebKit can classify a MediaSource-fed element in a way that respects the
+    // ringer switch and does not survive screen lock — the exact symptom
+    // reported from the pew.
+    const nav = navigator as unknown as { audioSession?: { type: string } };
+    if (nav.audioSession) {
+      try {
+        nav.audioSession.type = 'playback';
+      } catch {
+        /* not supported on this engine */
+      }
+    }
     // Podcast-style element: inline (no fullscreen takeover on iOS)...
     (this.audioEl as HTMLAudioElement & { playsInline?: boolean }).playsInline = true;
     this.audioEl.setAttribute('playsinline', '');
@@ -252,7 +284,21 @@ export class AudioStreamPlayer {
       // of normal setup churn.
       if (this.active && this.hadOpened) this.fatal('sourceclose event');
     });
+    // Keep the element in the document. A detached HTMLAudioElement is
+    // spec-protected from GC while playing, but WebKit has a history of
+    // lifecycle and now-playing-attribution bugs with detached media, and the
+    // cost of being wrong here is the whole background-playback feature.
+    // Inline styles rather than `hidden`/`display:none`, which some engines
+    // treat differently for media elements.
+    try {
+      const el = this.audioEl as unknown as HTMLElement;
+      el.setAttribute('style', 'position:fixed;width:1px;height:1px;opacity:0;pointer-events:none');
+      document.body.appendChild(el);
+    } catch {
+      /* SSR or a detached document — playback works either way */
+    }
     this.startedAtMs = Date.now();
+    this.lastTickAt = Date.now();
     this.healthTimer = setInterval(() => this.checkHealth(), 1500);
     this.audioEl.play().catch(() => {});
     // Debug handle for live diagnosis (harmless; not part of any API).
@@ -470,6 +516,27 @@ export class AudioStreamPlayer {
   setMuted(m: boolean): void {
     this.muted = m;
     if (this.audioEl) this.audioEl.muted = m;
+  }
+
+  /**
+   * Really pause, rather than muting a still-running element.
+   *
+   * Muting was chosen so a resume could stay near live, but every platform
+   * treats an inaudible page as a background-suspension candidate — a listener
+   * who paused and pocketed their phone was the most reliable way to lose
+   * audio permanently. Pausing is also what the lock-screen transport and
+   * MediaSession actually read, so the OS state now matches what the user did.
+   */
+  pause(): void {
+    this.wantPlaying = false;
+    this.audioEl?.pause();
+  }
+
+  /** Resume and skip the accumulated backlog — you cannot hear what you missed. */
+  resume(): void {
+    this.wantPlaying = true;
+    this.jumpToLive();
+    this.audioEl?.play().catch(() => {});
   }
 
   /**
