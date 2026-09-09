@@ -38,6 +38,11 @@ const MIN_STT_OVERLAP_CHARS = 6;
 // this delays nothing meaningful (the merged sentence lands when it lands).
 const TINY_FRAGMENT_CHARS = 25;
 
+// How much of the last dispatched chunk to remember for re-send detection,
+// and how long a match still counts as a re-send rather than real repetition.
+const DISPATCHED_TAIL_CHARS = 200;
+const RESEND_WINDOW_MS = 2500;
+
 /**
  * waitMs = time from the last STT final that fed the buffer to this chunk's
  * dispatch — the chunker's hold cost, the (a) stage of pipeline latency.
@@ -136,6 +141,17 @@ export class KoreanChunker {
   /** When the current buffer started filling — bounds total hold time.
    *  -1 means 'no buffer yet'; 0 is a legitimate timestamp. */
   private bufferStartedAt = -1;
+  /**
+   * Tail of what we most recently dispatched, and when.
+   *
+   * stripOverlap only compared against the live buffer, which is cleared on
+   * dispatch — so a Deepgram re-send arriving just AFTER a dispatch had
+   * nothing to compare against and the already-spoken tail was translated and
+   * spoken a second time. Keeping a short memory of dispatched text closes
+   * that window.
+   */
+  private dispatchedTail = '';
+  private dispatchedAt = 0;
 
   // Bounded-parallel dispatch queue. 2 = at most one sentence translates ahead
   // of the current one, so context loss during bursts is limited to the
@@ -261,6 +277,19 @@ export class KoreanChunker {
         return incoming.slice(k).trim();
       }
     }
+    // Nothing in the live buffer matched. The buffer is empty right after a
+    // dispatch, which is exactly when a re-send lands, so also compare against
+    // what we just shipped — but only briefly. A pastor repeating a phrase for
+    // emphasis takes seconds to say it again and is genuinely new speech;
+    // beyond this window, treat a match as real repetition and keep it.
+    if (this.dispatchedTail && Date.now() - this.dispatchedAt < RESEND_WINDOW_MS) {
+      const dmax = Math.min(this.dispatchedTail.length, incoming.length);
+      for (let k = dmax; k >= MIN_STT_OVERLAP_CHARS; k--) {
+        if (this.dispatchedTail.endsWith(incoming.slice(0, k))) {
+          return incoming.slice(k).trim();
+        }
+      }
+    }
     return incoming;
   }
 
@@ -312,6 +341,8 @@ export class KoreanChunker {
 
   /** Queue one chunk for translation, assigning its spoken-order seq now. */
   private dispatchText(text: string): void {
+    this.dispatchedTail = text.slice(-DISPATCHED_TAIL_CHARS);
+    this.dispatchedAt = Date.now();
     const seq = this.nextSeq();
     const waitMs = this.lastFinalAt ? Date.now() - this.lastFinalAt : 0;
     this.pending.push({ text, seq, waitMs });

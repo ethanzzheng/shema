@@ -70,6 +70,17 @@ export class ElevenLabsSTT {
 
   // Track recent utterances to prevent exact duplicates only
   private recentUtterances: string[] = [];
+  /**
+   * End of the audio we have already forwarded, in Deepgram stream seconds.
+   *
+   * Deepgram sometimes re-emits a previous final — occasionally re-recognized
+   * with different words ("There's an elder I know" then "This elder I know").
+   * Text comparison cannot separate that from a pastor genuinely repeating
+   * himself, but the audio interval can: a re-send covers audio we have
+   * already consumed, while a real repetition covers new audio. Reset on every
+   * (re)connect — Deepgram restarts this clock at 0.
+   */
+  private consumedEndSec = 0;
 
   constructor(opts: {
     apiKey: string;
@@ -135,6 +146,10 @@ export class ElevenLabsSTT {
 
     this.ws.on('open', () => {
       console.log('[STT] Deepgram WebSocket connected');
+      // Deepgram restarts its stream clock at 0 on each connection, so a stale
+      // watermark here would silently suppress the first minutes after the
+      // watchdog reconnects mid-sermon.
+      this.consumedEndSec = 0;
       this.onStatusChange(true);
       this.startKeepAlive();
       this.startWatchdog();
@@ -186,6 +201,21 @@ export class ElevenLabsSTT {
 
     if (!transcript || !isFinal) return;
 
+    // Drop finals whose audio we have already forwarded.
+    const startSec = typeof msg.start === 'number' ? msg.start : null;
+    const durSec = typeof msg.duration === 'number' ? msg.duration : null;
+    if (startSec !== null && durSec !== null) {
+      const endSec = startSec + durSec;
+      if (endSec <= this.consumedEndSec + 0.05) {
+        console.log(
+          `[STT] dropped re-send covering ${startSec.toFixed(2)}-${endSec.toFixed(2)}s ` +
+            `(already consumed to ${this.consumedEndSec.toFixed(2)}s): "${transcript.slice(0, 40)}"`,
+        );
+        return;
+      }
+      this.consumedEndSec = Math.max(this.consumedEndSec, endSec);
+    }
+
     // Forward every finalized segment IMMEDIATELY — the chunker owns sentence
     // assembly. This layer used to hold text until it ended on a sentence
     // boundary, but during a rapid ramble Deepgram finalizes mid-clause and
@@ -199,9 +229,16 @@ export class ElevenLabsSTT {
   }
 
   private isDuplicate(text: string): boolean {
+    const norm = (t: string) => t.replace(/[\s.,!?…]+/g, '');
+    const n = norm(text);
+    if (!n) return true;
     for (const recent of this.recentUtterances) {
-      // Only block exact matches — anything else is new speech worth translating
-      if (recent === text) return true;
+      const r = norm(recent);
+      // Exact repeats, and re-sends that merely re-punctuate or extend a
+      // recent final, are the same speech arriving twice. A genuine
+      // repetition by the pastor carries its own audio interval and is
+      // already allowed through by the check in handleMessage.
+      if (r === n || r.includes(n)) return true;
     }
     return false;
   }
