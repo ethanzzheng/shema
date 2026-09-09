@@ -18,6 +18,8 @@
  * neither works (older iPhones — those will pause in the background).
  */
 
+import { silencePad } from './silence-mp3';
+
 /** ManagedMediaSource (iOS/Safari 17.1+) or classic MediaSource, if usable. */
 function mediaSourceClass(): typeof MediaSource | null {
   if (typeof window === 'undefined') return null;
@@ -39,27 +41,37 @@ export class AudioStreamPlayer {
   private muted = false;
   private sinkId = '';
 
-  // ── Starvation-resume warmup ──────────────────────────────────────────────
-  // Translation gaps drain the buffer at nearly every sentence boundary, so
-  // almost every clip begins with a resume-from-empty. TTS clips carry only
-  // ~30–130ms of leading silence, and a resume can start late (MSE stall
-  // recovery, clock overshoot on Safari/MMS) or into a sleeping output device
-  // (Bluetooth wake ≈ hundreds of ms) — either way the sentence's first word
-  // gets swallowed. Clips END with ~300–450ms of silence though, so on every
-  // starvation-resume we seek back WARMUP_SEC into the previous clip's silent
-  // tail before playing: the audio path wakes during silence and the new
-  // words begin on a warm device. The explicit seek also corrects any clock
-  // drift past the buffered edge.
-  private static readonly WARMUP_SEC = 0.3;
-  /** Don't resume until this much of the new clip is buffered (prevents an
-   *  immediate re-starve → re-rewind stutter when chunks trickle in). */
-  private static readonly MIN_AHEAD_SEC = 0.25;
-  /** Within this window after a resume, re-starves play on without another
-   *  rewind — rapid rewind loops would stutter the sentence onset. */
-  private static readonly RESUME_COOLDOWN_MS = 500;
-  private starved = true; // starts starved: the very first clip anchors at 0
-  private starvedClipStart: number | null = null;
-  private lastResumeAt = 0;
+  // ── Continuous silence fill ───────────────────────────────────────────────
+  // Translation gaps drain the buffer at nearly every sentence boundary. A
+  // drained MediaSource element is not paused, it is *buffering* — so the
+  // browser resumes on its own the instant the next clip's first bytes land,
+  // and the listener hears the sentence onset immediately.
+  //
+  // An earlier fix tried to correct a related problem (the first word being
+  // clipped on phones) by seeking ~0.3s backwards into the previous clip's
+  // silent tail on every resume. That seek necessarily runs AFTER the browser
+  // has already resumed, so the onset played, then replayed: "Go- God says…",
+  // on nearly every sentence. Reported from the field, reproduced in
+  // test/audio-stream.test.ts.
+  //
+  // Both problems have one cause — letting the buffer run dry — so the buffer
+  // is simply never allowed to run dry. When no real audio is queued and the
+  // lead is short, silence is appended ahead of the playhead. The device stays
+  // awake through the gap, the next clip starts on a warm output, nothing is
+  // ever seeked to, and `currentTime` is strictly monotonic.
+  //
+  // Padding only happens when there is no real audio waiting, so speech is
+  // never delayed and a genuine backlog still reads as a backlog to the
+  // catch-up logic below.
+  private static readonly FILL_AHEAD_SEC = 0.4;
+  /** Hidden tabs get throttled timers, so hold a deeper cushion there. */
+  private static readonly FILL_AHEAD_HIDDEN_SEC = 0.9;
+  /** Only our own code decides when to play; an external pause must stick. */
+  private wantPlaying = false;
+  /** Disabled for the session if the device rejects a pad append. */
+  private padSupported = true;
+  private padsAppended = 0;
+  private starved = true; // diagnostics only now: nothing seeks on it
 
   // ── Stall watchdog ────────────────────────────────────────────────────────
   // Observed live on iPhone: the page stays connected and text keeps
@@ -127,9 +139,12 @@ export class AudioStreamPlayer {
       if (next === this.rateTarget) console.log(`[AudioStream] backlog ${ahead.toFixed(1)}s → playbackRate ${next}`);
     }
 
-    // With real audio buffered ahead and no starvation pending, the playhead
-    // must be moving. Frozen playhead → nudge once, then declare it dead.
-    if (ahead > 1.5 && !this.starved) {
+    // Silence fill keeps the lead near FILL_AHEAD_SEC, so the old `ahead > 1.5`
+    // gate would now disable this watchdog entirely. Because data ahead is
+    // guaranteed, a much smaller margin is enough — and a frozen playhead with
+    // any real lead is unambiguous. Only check while we actually want to be
+    // playing, so a deliberate pause is never mistaken for a stall.
+    if (ahead > 0.25 && this.wantPlaying && !el.paused) {
       if (el.currentTime === this.lastProgressTime) {
         this.stallTicks++;
         if (this.stallTicks === 2) el.play().catch(() => {});
@@ -141,6 +156,13 @@ export class AudioStreamPlayer {
       this.stallTicks = 0;
     }
     this.lastProgressTime = el.currentTime;
+
+    // Backstop driver for the fill, in case append/timeupdate both go quiet.
+    this.topUpSilence();
+    // Now that nothing ever seeks backwards, played audio can be released on a
+    // schedule instead of only under quota pressure — the fill adds data during
+    // long silences that would otherwise accumulate for the whole service.
+    this.evictPlayed();
   }
 
   private fatal(reason: string): void {
@@ -175,6 +197,7 @@ export class AudioStreamPlayer {
     const MS = mediaSourceClass();
     if (!MS) return;
     this.active = true;
+    this.wantPlaying = true;
 
     this.audioEl = new Audio();
     this.audioEl.autoplay = true;
@@ -193,13 +216,21 @@ export class AudioStreamPlayer {
     if (w.ManagedMediaSource && MS === w.ManagedMediaSource) {
       (this.audioEl as HTMLAudioElement & { disableRemotePlayback?: boolean }).disableRemotePlayback = true;
     }
-    // The element fires 'waiting' when it runs out of buffered data — that
-    // marks the next append as a starvation-resume needing warmup.
+    // 'waiting' means the buffer ran dry. With the fill running this should be
+    // rare; it is kept purely as a signal (nothing seeks on it any more) and
+    // as a prompt to top up immediately rather than wait for the next tick.
     this.audioEl.addEventListener('waiting', () => {
       this.starved = true;
+      this.topUpSilence();
+    });
+    this.audioEl.addEventListener('playing', () => {
+      this.starved = false;
     });
     // Report which sentence the playhead is inside (fires ~4x/second).
+    // Also the primary fill driver: a media event, so unlike a timer it keeps
+    // firing at full rate while the tab is hidden and audio is playing.
     this.audioEl.addEventListener('timeupdate', () => {
+      this.topUpSilence();
       if (!this.onSeqPlaying || !this.audioEl) return;
       const t = this.audioEl.currentTime;
       for (const [seq, r] of this.seqRanges) {
@@ -261,15 +292,11 @@ export class AudioStreamPlayer {
       if (r && end !== null && end > r.end) r.end = end;
     }
 
-    // New data has landed since starvation → warm-seek and resume.
-    this.maybeResumeFromStarvation();
-
-    if (sb.updating || this.pending.length === 0) return;
-
-    // First append after starvation: remember where the new clip begins
-    // (current buffered end) so the resume can target just before it.
-    if (this.starved && this.starvedClipStart === null) {
-      this.starvedClipStart = this.bufferedEnd() ?? 0;
+    if (sb.updating || this.pending.length === 0) {
+      // Nothing real to append — top up with silence so the element keeps
+      // producing audio instead of underrunning between sentences.
+      if (!sb.updating) this.topUpSilence();
+      return;
     }
 
     const next = this.pending.shift()!;
@@ -298,50 +325,54 @@ export class AudioStreamPlayer {
       }
     }
 
-    // Resume if the element underran while waiting for data.
-    if (!this.starved && this.audioEl && this.audioEl.paused) this.audioEl.play().catch(() => {});
+    // Resume only if WE want playback. Resuming on any paused element would
+    // undo a lock-screen or OS pause on the very next chunk.
+    if (this.wantPlaying && this.audioEl && this.audioEl.paused) this.audioEl.play().catch(() => {});
   };
+
+  /**
+   * Keep real audio buffered ahead of the playhead by appending silence when
+   * the pipeline has nothing to send. Deliberately yields to real audio: if
+   * any speech is queued it returns immediately, so padding can never delay a
+   * sentence, and a genuine backlog still looks like one to the catch-up
+   * tiers.
+   */
+  private topUpSilence(): void {
+    const el = this.audioEl;
+    const sb = this.sourceBuffer;
+    if (!el || !sb || !this.active || !this.padSupported || sb.updating) return;
+    if (this.pending.length > 0) return; // real audio wins, always
+    const end = this.bufferedEnd();
+    if (end === null) return; // nothing buffered yet; the first clip anchors the timeline
+
+    // Buffered lead is in MEDIA seconds but is consumed at playbackRate, so
+    // during catch-up (up to 1.15x) it is worth less wall-clock time.
+    const aheadWall = (end - el.currentTime) / (el.playbackRate || 1);
+    const hidden = typeof document !== 'undefined' && document.visibilityState === 'hidden';
+    const target = hidden
+      ? AudioStreamPlayer.FILL_AHEAD_HIDDEN_SEC
+      : AudioStreamPlayer.FILL_AHEAD_SEC;
+    if (aheadWall >= target) return;
+
+    try {
+      sb.appendBuffer(silencePad() as BufferSource);
+      this.padsAppended++;
+    } catch (e) {
+      if ((e as DOMException)?.name === 'QuotaExceededError') {
+        this.evictPlayed();
+        return;
+      }
+      // A device that will not take the pad still plays fine without it —
+      // degrade rather than spam failures into the append-failure watchdog.
+      console.warn('[AudioStream] silence pad rejected; disabling fill for this session:', e);
+      this.padSupported = false;
+    }
+  }
 
   private bufferedEnd(): number | null {
     const sb = this.sourceBuffer;
     if (!sb || sb.buffered.length === 0) return null;
     return sb.buffered.end(sb.buffered.length - 1);
-  }
-
-  /**
-   * After starvation, once the incoming clip's data is actually buffered,
-   * seek to WARMUP_SEC before the clip start (inside the previous clip's
-   * silent tail) and play. Never skips new content — the target is always at
-   * or before the new clip's first sample.
-   */
-  private maybeResumeFromStarvation(): void {
-    const el = this.audioEl;
-    const sb = this.sourceBuffer;
-    if (!el || !sb || sb.updating || !this.starved || this.starvedClipStart === null) return;
-
-    // Right after a warmup resume, a re-starve just plays on — another
-    // rewind would replay the onset we just played (audible stutter).
-    if (Date.now() - this.lastResumeAt < AudioStreamPlayer.RESUME_COOLDOWN_MS) {
-      this.starved = false;
-      this.starvedClipStart = null;
-      el.play().catch(() => {});
-      return;
-    }
-
-    const end = this.bufferedEnd();
-    if (end === null || end < this.starvedClipStart + AudioStreamPlayer.MIN_AHEAD_SEC) return; // not enough of the new clip yet
-
-    const rangeStart = sb.buffered.start(0);
-    const target = Math.max(rangeStart, this.starvedClipStart - AudioStreamPlayer.WARMUP_SEC);
-    try {
-      el.currentTime = target;
-    } catch {
-      /* seek can throw during teardown; playback will still resume below */
-    }
-    el.play().catch(() => {});
-    this.lastResumeAt = Date.now();
-    this.starved = false;
-    this.starvedClipStart = null;
   }
 
   /** Free SourceBuffer quota by dropping audio that has already played. */
@@ -362,7 +393,6 @@ export class AudioStreamPlayer {
   reset(): void {
     this.pending = [];
     this.starved = true;
-    this.starvedClipStart = null;
     // Seq numbering restarts with the new broadcast; old ranges would
     // mis-attribute the new timeline.
     this.seqRanges.clear();
@@ -372,6 +402,7 @@ export class AudioStreamPlayer {
 
   stop(): void {
     this.active = false;
+    this.wantPlaying = false;
     this.pending = [];
     if (this.healthTimer) {
       clearInterval(this.healthTimer);

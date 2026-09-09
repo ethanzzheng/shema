@@ -1,7 +1,7 @@
 {
   "name": "jc-translate-backend",
   "version": "1.0.0",
-  "description": "Korean sermon → English translation backend",
+  "description": "Korean sermon \u2192 English translation backend",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",
@@ -10,7 +10,9 @@
     "test": "tsx --test test/*.test.ts",
     "eval": "tsx evals/run.ts",
     "eval:en-ko": "tsx evals/run-en-ko.ts",
-    "soak:en-ko": "tsx evals/soak-en-ko.ts"
+    "soak:en-ko": "tsx evals/soak-en-ko.ts",
+    "pilot:run": "tsx evals/pilot-run.ts",
+    "pilot:report": "tsx evals/pilot-report.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.110.0",
