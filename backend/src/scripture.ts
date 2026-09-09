@@ -57,6 +57,10 @@ export function parseKoreanNumber(input: string): number | null {
 
   // Sino-Korean (has 십/백 or sino digits, no native words)
   if (/^[영공일이삼사오육륙칠팔구십백천]+$/.test(s)) {
+    // Bare digit syllables with no place marker are not a number — they are
+    // two separate words that happened to sit next to each other. "이 구"
+    // ("this" + the 구 of 구절) previously summed to 9 and invented a verse.
+    if (s.length > 1 && !/[십백천]/.test(s)) return null;
     let total = 0;
     let current = 0;
     for (const ch of s) {
@@ -87,8 +91,59 @@ export function parseKoreanNumber(input: string): number | null {
 // collide with the tens word 서른, and 복 with nothing, etc.
 const NUM_TOKEN =
   '(?:영|공|일|이|삼|사|오|육|륙|칠|팔|구|십|백|천|하나|둘|셋|넷|다섯|여섯|일곱|여덟|아홉|열|스물|스무|서른|마흔|쉰|예순|일흔|여든|아흔|한|두|세|네|[0-9])';
-const CHAP_RE = new RegExp(`((?:${NUM_TOKEN}|\\s)+)\\s*장`);
-const VERSE_RE = new RegExp(`((?:${NUM_TOKEN}|\\s)+)\\s*절`);
+/** A run of number tokens, e.g. "9", "사", "이 십 육", "열 세". */
+const NUM_RUN = `${NUM_TOKEN}(?:\\s*${NUM_TOKEN})*`;
+const CHAP_RE = new RegExp(`(제)?(${NUM_RUN})(\\s*)장`, 'g');
+const VERSE_RE = new RegExp(`(제)?(${NUM_RUN})(\\s*)절`, 'g');
+
+/**
+ * What may legitimately follow 장/절 in a spoken reference: end of segment,
+ * anything non-Hangul, or a particle/copula. 로 is deliberately absent — it is
+ * what makes 장로님 ("elder") look like "chapter 1" when the preceding word
+ * happens to end in 한.
+ */
+const REF_SUFFIX = /^(?:[^가-힣]|을|를|은|는|이|가|에|의|도|만|과|와|부|까|입|말|이?니|였|였|서)/;
+
+/**
+ * Find a chapter or verse number, rejecting the ordinary Korean words that
+ * merely contain a number syllable.
+ *
+ * This matters more than it looks. 구절 is the everyday noun for "passage",
+ * and its 구 is also the Sino numeral 9 — so "이 구절을 보시면" ("if you look
+ * at this passage") used to parse as verse 9, silently rewriting a live
+ * 2 Peter 1:3 anchor into 2 Peter 1:9 and feeding the translator the wrong
+ * verse window. Likewise "귀한 장로님" ("precious elder") parsed as chapter 1.
+ * Both were observed in the recorded service.
+ *
+ * The discriminator comes from how references are actually transcribed:
+ * Deepgram renders a spoken reference with the number separated — "3 절",
+ * "사 장", "일 장 3 절" — or as digits. The collisions are always glued into a
+ * word. So a lone Sino syllable fused directly onto 장/절, with no 제 prefix
+ * and no digit, is treated as an ordinary word.
+ *
+ * The trade is deliberately asymmetric: missing a reference costs a
+ * chapter-level anchor, while inventing one puts a wrong verse number in the
+ * pastor's mouth.
+ */
+function scanRefNumber(text: string, re: RegExp): number | null {
+  re.lastIndex = 0;
+  for (let m = re.exec(text); m !== null; m = re.exec(text)) {
+    const [full, jePrefix, run, gap] = m;
+    const before = m.index > 0 ? text[m.index - 1] : '';
+    // Must start at a boundary: a number fused to the end of a preceding word
+    // is part of that word, not a reference.
+    if (before && /[가-힣0-9]/.test(before)) continue;
+    // Must not run on into a longer word (장로님, 절대…).
+    const after = text.slice(m.index + full.length);
+    if (after && !REF_SUFFIX.test(after)) continue;
+    // A single Sino syllable glued to the marker is an ordinary noun.
+    const glued = gap.length === 0 && !jePrefix;
+    if (glued && run.length === 1 && !/[0-9]/.test(run)) continue;
+    const n = parseKoreanNumber(run);
+    if (n !== null && n > 0 && n < 200) return n;
+  }
+  return null;
+}
 
 /**
  * Detect a Bible reference in a Korean segment. Returns whatever parts are
@@ -102,16 +157,10 @@ export function detectReference(text: string): ScriptureRef | null {
     if (text.includes(kr)) { ref.book = BOOK_MAP[kr]; break; }
   }
 
-  const chap = text.match(CHAP_RE);
-  if (chap) {
-    const n = parseKoreanNumber(chap[1]);
-    if (n && n > 0 && n < 200) ref.chapter = n;
-  }
-  const verse = text.match(VERSE_RE);
-  if (verse) {
-    const n = parseKoreanNumber(verse[1]);
-    if (n && n > 0 && n < 200) ref.verse = n;
-  }
+  const chapter = scanRefNumber(text, CHAP_RE);
+  if (chapter !== null) ref.chapter = chapter;
+  const verse = scanRefNumber(text, VERSE_RE);
+  if (verse !== null) ref.verse = verse;
 
   return ref.book || ref.chapter || ref.verse ? ref : null;
 }

@@ -89,3 +89,34 @@ test('formatReference shapes', () => {
   assert.equal(formatReference({ book: 'Isaiah', chapter: 53 }), 'Isaiah 53');
   assert.equal(formatReference({ book: 'Isaiah', chapter: 53, verse: 2 }), 'Isaiah 53:2');
 });
+
+test('detectReference: ordinary words containing a number syllable are not references', () => {
+  // 구절 is the everyday noun for "passage" and its 구 is also the numeral 9.
+  // This fired live: it rewrote a 2 Peter 1:3 anchor into 1:9, and the
+  // translator then announced a neighbouring verse number.
+  assert.equal(detectReference('이 구절을 보시면'), null);
+  assert.equal(detectReference('그 구절이'), null);
+  assert.equal(detectReference('구절'), null);
+  // 장로님 ("elder") after a word ending in 한 previously parsed as chapter 1.
+  assert.equal(detectReference('한 때는 2000 명이 넘는 교회를 섬기셨던 귀한 장로님입니다'), null);
+  assert.equal(detectReference('장로님이 은퇴를 하고'), null);
+  assert.equal(detectReference('그 뉴저즈에 계신 장로님'), null);
+});
+
+test('detectReference: real spoken references from the recorded service', () => {
+  // Deepgram separates the number from 장/절, or emits digits.
+  assert.deepEqual(detectReference('한 장 3 절부터 사 절입니다'), { chapter: 1, verse: 3 });
+  assert.deepEqual(detectReference('베드로 후서 일 장 3 절'), { chapter: 1, verse: 3 });
+  assert.deepEqual(detectReference('요한 일서 사 장 7 절 말씀에'), { chapter: 4, verse: 7 });
+  assert.deepEqual(detectReference('9절을 같이 읽겠습니다'), { verse: 9 });
+  assert.deepEqual(detectReference('제9절'), { verse: 9 });
+});
+
+test('parseKoreanNumber: bare Sino digit runs are not numbers', () => {
+  // "이 구" is "this" + the 구 of 구절, not 2-then-9. It used to sum to 9.
+  assert.equal(parseKoreanNumber('이 구'), null);
+  assert.equal(parseKoreanNumber('일 이'), null);
+  // Place markers still parse normally.
+  assert.equal(parseKoreanNumber('이 십 육'), 26);
+  assert.equal(parseKoreanNumber('구'), 9);
+});

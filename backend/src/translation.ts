@@ -44,6 +44,8 @@ ABSOLUTE RULES:
 - CHURCH GLOSSARY (use these exact renderings, consistently): 목장 = "Mokjang" (NEVER "cell group", "small group", or "house church" — the congregation knows this word); 목자 = "shepherd" (the person who leads a Mokjang); 목녀 = "shepherdess"; 목장 모임 = "Mokjang meeting"; QT/큐티 = "QT (quiet time)". The STT often garbles these (e.g. 먹자 → 목자) — recognize them from context.
 - CHURCH OFFICES (titles the congregation knows — keep them short and consistent, do NOT over-formalize): 목사(님) = "Pastor"; 전도사(님) = "the evangelist" (an associate/assistant minister); 장로(님) = "elder"; 권사(님) = "Kwonsa" (a senior appointed lay office, usually an older woman — use "Kwonsa", NEVER "deaconess", which is a different office); 집사(님) = "deacon" (a woman may be "deaconess"). 권사 and 집사 are DIFFERENT offices — never merge them.
 - Keep standard Christian terms (grace, salvation, Holy Spirit, faith, repentance) and Bible references exactly (e.g. John 6:9).
+- NUMBER FIDELITY (absolute): reproduce every number the pastor speaks exactly — verse and chapter numbers, quantities, ages, years, amounts — and keep it exact when a later segment refers back to it (a church of "more than 2,000 members" must never become "a thousand"). Never round, never approximate. If a number is unclear in the Korean, leave it out rather than guess.
+- When you speak a verse or chapter number in English, use ONLY a number the pastor actually said. Verse labels in any supplied canonical text are there to identify the wording, NOT to be cited — never announce a neighbouring verse number just because it appears in the reference material. If he quotes a verse without naming its number, quote it without a number.
 - SCRIPTURE: This pastor quotes the Bible constantly, and the transcription of quoted verses is often badly garbled. When a segment is clearly quoting or reading Scripture, do NOT re-translate the garbled Korean and do NOT paraphrase. If the user message supplies the canonical English text of the passage, use that EXACT wording. Otherwise reproduce the passage in its standard modern English wording (NIV-style) as you recall it, kept consistent across the whole sermon. Render ONLY the portion actually being quoted — never add surrounding verses or complete a verse the pastor hasn't reached. Translate the pastor's own commentary (everything that is not the quote) normally.
 - Silently drop Korean filler (음, 어, 그, 아) and false starts.
 - REDUNDANT MARKERS: spoken Korean doubles connective markers ("예를 들어서 이제 이제 예를 몇 개 드리겠는데"). Within one segment, collapse such redundant discourse markers into ONE natural rendering — "Let me give you a few examples", never "For example, let me give you a few examples". This applies ONLY to connective/filler markers (for example, so, now, well / 예를 들어, 이제, 그러니까, 자). NEVER collapse repetition of substantive phrases: when the pastor repeats a full clause for emphasis ("...사랑이 있는지, ...사랑이 있는지"), keep the repetition — that is rhetoric, not redundancy.
@@ -246,10 +248,20 @@ export class ClaudeTranslator {
         refBlock = `The pastor is currently reading from ${refName}${krName ? ` (${krName})` : ''}. If this segment quotes that passage, reproduce the standard 개역개정 Korean wording of the relevant verse(s); otherwise translate the commentary normally.\n\n`;
       }
     } else if (window.length > 0) {
-      const verses = window.map((w) => `${w.ref} — "${w.text}"`).join('\n');
+      // Label the announced verse and quarantine its neighbours. Supplying a
+      // flat list of three numbered verses let the model cite whichever it
+      // liked: live, the pastor announced 2 Peter 1:9, the output read verse
+      // 9's text but announced "verse 10".
+      const [announced, ...rest] = window;
+      const contextVerses = rest.map((w) => `${w.ref} — "${w.text}"`).join('\n');
       refBlock =
-        `Canonical English text of the passage being read (this supplied wording OVERRIDES any other rendering, including NIV recall):\n${verses}\n` +
-        `If this segment quotes any portion of the passage, use this EXACT supplied wording for that portion — but render ONLY the words the pastor actually spoke; never add parts of a verse he hasn't reached. Translate his own commentary normally.\n\n`;
+        `The pastor announced ${announced.ref}. He SPOKE that verse number, so it is authoritative.\n` +
+        `Canonical English text of the announced verse (this wording OVERRIDES any other rendering, including NIV recall):\n${announced.ref} — "${announced.text}"\n` +
+        (contextVerses
+          ? `The verses below are supplied ONLY in case the reading runs past the announced verse. ` +
+            `The pastor has NOT said these numbers — never speak them unless he does:\n${contextVerses}\n`
+          : '') +
+        `If this segment quotes any portion of the passage, use the EXACT supplied wording for that portion — but render ONLY the words the pastor actually spoke; never add parts of a verse he hasn't reached. Translate his own commentary normally.\n\n`;
     } else if (refName) {
       refBlock = `The pastor is currently reading from ${refName}. If this segment quotes that passage, reproduce the standard English wording of the relevant verse(s); otherwise translate the commentary normally.\n\n`;
     }
