@@ -6,6 +6,8 @@ import {
   endsWithKoreanConnective,
   endsWithStrongTerminator,
   splitSentences,
+  endsWithDanglingHead,
+  splitLastKoreanClause,
 } from '../src/text';
 
 test('endsWithStrongTerminator: punctuation only', () => {
@@ -68,4 +70,33 @@ test('splitSentences: empty input', () => {
   const r = splitSentences('');
   assert.deepEqual(r.sentences, []);
   assert.equal(r.remainder, '');
+});
+
+test('endsWithDanglingHead: object/topic particles leave a syntactic hole', () => {
+  // The live failure: the object and its relative clause were cut away from
+  // the head noun, so English attached the modifier to the wrong referent.
+  assert.equal(endsWithDanglingHead('자기 피로 사신 그 교회를'), true);
+  assert.equal(endsWithDanglingHead('예수 그리스도의 교회, 자기 피로 사신 교회를'), true);
+  assert.equal(endsWithDanglingHead('자기 것으로 만들려고 하는'), true);
+  assert.equal(endsWithDanglingHead('하나님의'), true);
+  // Complete sentences and verbal connectives are not dangling.
+  assert.equal(endsWithDanglingHead('기도합니다'), false);
+  assert.equal(endsWithDanglingHead('감사합니다.'), false);
+  assert.equal(endsWithDanglingHead('기도하고'), false);
+  assert.equal(endsWithDanglingHead('사랑하면'), false);
+});
+
+test('splitLastKoreanClause: ships a safe head and keeps the dangling tail', () => {
+  const s = splitLastKoreanClause(
+    '우리는 하나님을 사랑해야 합니다. 예수 그리스도의 교회, 자기 피로 사신 교회를',
+  );
+  assert.ok(s, 'expected a safe cut at the sentence boundary');
+  assert.ok(s!.head.endsWith('합니다.'), `head should end complete, got: ${s!.head}`);
+  assert.equal(endsWithDanglingHead(s!.head), false);
+  assert.ok(s!.rest.includes('교회를'), 'the dangling tail stays buffered for its head');
+});
+
+test('splitLastKoreanClause: no safe cut returns null', () => {
+  assert.equal(splitLastKoreanClause('교회를'), null);
+  assert.equal(splitLastKoreanClause('자기 피로 사신 그 교회를'), null);
 });

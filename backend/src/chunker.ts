@@ -20,7 +20,7 @@
  * seq before emitting text/TTS, so listeners always hear spoken order.
  */
 
-import { looksComplete, splitSentences } from './text';
+import { looksComplete, splitSentences, endsWithDanglingHead, splitLastKoreanClause } from './text';
 import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
 import { Direction } from './direction-config';
 
@@ -78,6 +78,14 @@ interface ModeConfig {
    * pausing where the pastor pauses instead of mid-thought.
    */
   incompleteMaxMs: number;
+  /**
+   * Absolute ceiling on how long one buffer may be held, measured from when it
+   * started filling. The patience below is graded — a dangling clause waits
+   * longer than a merely-abrupt one — and interim results keep re-arming the
+   * timer, so without this a continuously-speaking pastor could hold audio
+   * until maxChars (~35s of speech). Latency is bounded here instead.
+   */
+  maxHoldMs: number;
   /** Hard cap — force a dispatch once the buffer grows past this (run-ons). */
   maxChars: number;
   /** Soft cap: past this, clause relief carves complete clauses off the front. */
@@ -94,12 +102,12 @@ interface ModeConfig {
 // speech than Hangul syllable blocks do.
 const MODE_CONFIG: Record<Direction, Record<'fast' | 'smooth', ModeConfig>> = {
   'ko-en': {
-    fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 260 },
-    smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400 },
+    fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 260, maxHoldMs: 8000 },
+    smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400, maxHoldMs: 14000 },
   },
   'en-ko': {
-    fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340, softChars: 180 },
-    smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520, softChars: 240 },
+    fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340, softChars: 180, maxHoldMs: 9000 },
+    smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520, softChars: 240, maxHoldMs: 16000 },
   },
 };
 
@@ -125,6 +133,9 @@ export class KoreanChunker {
   private timer: NodeJS.Timeout | null = null;
   /** When the most recent STT final arrived (for dispatch wait attribution). */
   private lastFinalAt = 0;
+  /** When the current buffer started filling — bounds total hold time.
+   *  -1 means 'no buffer yet'; 0 is a legitimate timestamp. */
+  private bufferStartedAt = -1;
 
   // Bounded-parallel dispatch queue. 2 = at most one sentence translates ahead
   // of the current one, so context loss during bursts is limited to the
@@ -166,6 +177,7 @@ export class KoreanChunker {
     if (!fresh) return; // pure duplicate of what we already have
     this.lastFinalAt = Date.now();
 
+    if (!this.buffer) this.bufferStartedAt = Date.now();
     this.buffer += (this.buffer ? ' ' : '') + fresh;
     this.cancelTimer();
 
@@ -258,13 +270,44 @@ export class KoreanChunker {
     let delay: number;
     if (this.detector.looksComplete(this.buffer)) {
       delay = this.cfg.completeMs;
+    } else if (this.direction === 'ko-en' && endsWithDanglingHead(this.buffer)) {
+      // The head noun this modifier belongs to has not been spoken yet.
+      // Shipping now is what produced the church/self-centeredness inversion,
+      // so wait harder for it than for a merely abrupt ending.
+      delay = this.cfg.incompleteMaxMs * 2;
     } else {
       delay =
         this.buffer.length < TINY_FRAGMENT_CHARS
           ? this.cfg.incompleteMaxMs * 2 // graded patience: hold tiny shards longer
           : this.cfg.incompleteMaxMs;
     }
-    this.timer = setTimeout(() => this.dispatchBuffer(), delay);
+    // Never hold one buffer past the ceiling, however incomplete it looks.
+    if (this.bufferStartedAt >= 0) {
+      const held = Date.now() - this.bufferStartedAt;
+      delay = Math.max(0, Math.min(delay, this.cfg.maxHoldMs - held));
+    }
+    this.timer = setTimeout(() => this.expirePatience(), delay);
+  }
+
+  /**
+   * Patience ran out. Prefer shipping a safe head and keeping the dangling
+   * tail buffered over shipping a modifier with nothing to modify — a
+   * fragment that merely sounds clipped is far better than one that attaches
+   * to the wrong referent.
+   */
+  private expirePatience(): void {
+    if (this.direction === 'ko-en' && endsWithDanglingHead(this.buffer)) {
+      const split = splitLastKoreanClause(this.buffer);
+      if (split) {
+        this.cancelTimer();
+        this.dispatchText(split.head);
+        this.buffer = split.rest;
+        this.bufferStartedAt = Date.now(); // the tail gets its own budget
+        this.armTimer();
+        return;
+      }
+    }
+    this.dispatchBuffer();
   }
 
   /** Queue one chunk for translation, assigning its spoken-order seq now. */
@@ -280,6 +323,7 @@ export class KoreanChunker {
     this.cancelTimer();
     const text = this.buffer.trim();
     this.buffer = '';
+    this.bufferStartedAt = -1;
     if (text) this.dispatchText(text);
   }
 

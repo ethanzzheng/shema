@@ -325,3 +325,45 @@ test('new speech resets the incomplete timer (no premature fragment)', async () 
     mock.timers.reset();
   }
 });
+
+test('hold cap: endless interims cannot stall audio forever', async () => {
+  // Interims re-arm the incomplete timer so it measures real silence rather
+  // than Deepgram's finalization lag. Without a ceiling, a pastor who never
+  // pauses would hold the buffer until maxChars (~35s of speech), so the cap
+  // is what makes that re-arm safe to rely on.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth'); // maxHoldMs 14000
+  try {
+    await chunker.feed('예수 그리스도의 교회, 자기 피로 사신 교회를', true);
+    // Speech keeps flowing: an interim every second, forever.
+    for (let i = 0; i < 20; i++) {
+      mock.timers.tick(1000);
+      await flush();
+      await chunker.feed('계속 말씀하시는 중', false);
+    }
+    await flush();
+    assert.ok(
+      dispatched.length > 0,
+      'buffer was never dispatched — endless interims held the audio indefinitely',
+    );
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('a dangling clause is held longer than a merely abrupt one', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth'); // incompleteMaxMs 5000
+  try {
+    // Ends on an object particle: the head noun has not been spoken yet.
+    await chunker.feed('예수 그리스도의 교회, 자기 피로 사신 교회를', true);
+    mock.timers.tick(5200); // past the ordinary incomplete timeout
+    await flush();
+    assert.equal(dispatched.length, 0, 'a dangling clause must not ship at the ordinary timeout');
+    mock.timers.tick(5000); // into the doubled patience
+    await flush();
+    assert.ok(dispatched.length > 0, 'it must still ship eventually');
+  } finally {
+    mock.timers.reset();
+  }
+});
