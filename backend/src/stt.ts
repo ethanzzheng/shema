@@ -41,6 +41,25 @@ export interface TranscriptEvent {
   timestamp: number;
 }
 
+/**
+ * Is this final the same speech we already forwarded?
+ *
+ * Exported for testing: a containment-based version of this silently dropped
+ * 76% of a sermon before an end-to-end run caught it, so it is worth pinning.
+ */
+export function isDuplicateUtterance(text: string, recent: readonly string[]): boolean {
+  const norm = (t: string) => t.replace(/[\s.,!?…]+/g, '');
+  const n = norm(text);
+  if (!n) return true;
+  // Normalized EXACT match only. Normalizing already absorbs the realistic
+  // text-level re-send (the same final arriving re-punctuated), and anything
+  // looser is dangerous here: a containment test dropped 76% of a sermon
+  // because ordinary Korean phrases sit inside almost any longer recent line.
+  // Genuine re-sends are caught precisely by the audio-interval check in
+  // handleMessage, which cannot confuse them with real repetition.
+  return recent.some((prev) => norm(prev) === n);
+}
+
 export class ElevenLabsSTT {
   // Keep class name for backward compatibility with broadcaster.ts
   private apiKey: string;
@@ -229,19 +248,9 @@ export class ElevenLabsSTT {
   }
 
   private isDuplicate(text: string): boolean {
-    const norm = (t: string) => t.replace(/[\s.,!?…]+/g, '');
-    const n = norm(text);
-    if (!n) return true;
-    for (const recent of this.recentUtterances) {
-      const r = norm(recent);
-      // Exact repeats, and re-sends that merely re-punctuate or extend a
-      // recent final, are the same speech arriving twice. A genuine
-      // repetition by the pastor carries its own audio interval and is
-      // already allowed through by the check in handleMessage.
-      if (r === n || r.includes(n)) return true;
-    }
-    return false;
+    return isDuplicateUtterance(text, this.recentUtterances);
   }
+
 
   sendAudio(pcm: Buffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) {

@@ -1,3 +1,4 @@
+import { isDuplicateUtterance } from '../src/stt';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -99,4 +100,29 @@ test('splitLastKoreanClause: ships a safe head and keeps the dangling tail', () 
 test('splitLastKoreanClause: no safe cut returns null', () => {
   assert.equal(splitLastKoreanClause('교회를'), null);
   assert.equal(splitLastKoreanClause('자기 피로 사신 그 교회를'), null);
+});
+
+test('isDuplicateUtterance: ordinary repeated phrases are NOT duplicates', () => {
+  // Regression: a containment check here dropped 76% of a sermon. Korean
+  // phrases recur constantly, and once whitespace is stripped almost any short
+  // line is a substring of some recent longer one.
+  const recent = [
+    '우리는 하나님을 사랑해야 합니다',
+    '그런데 우리가 하나님처럼 되지 못하는 이유는 무엇입니까',
+    '교회는 가는데 은혜가 되지 않고 오히려 마음이 강팍해지는 거예요',
+  ];
+  assert.equal(isDuplicateUtterance('하나님을', recent), false);
+  assert.equal(isDuplicateUtterance('그렇죠', recent), false);
+  assert.equal(isDuplicateUtterance('은혜가 되지 않고', recent), false);
+  assert.equal(isDuplicateUtterance('사랑해야 합니다', recent), false);
+});
+
+test('isDuplicateUtterance: exact repeats and truncated re-sends are duplicates', () => {
+  const recent = ['우리는 하나님을 사랑해야 합니다'];
+  assert.equal(isDuplicateUtterance('우리는 하나님을 사랑해야 합니다', recent), true);
+  assert.equal(isDuplicateUtterance('우리는 하나님을 사랑해야 합니다.', recent), true); // re-punctuated
+  // A truncated re-send is deliberately NOT caught here — that is the
+  // audio-interval check's job, and guessing from text risks eating speech.
+  assert.equal(isDuplicateUtterance('우리는 하나님을 사랑해야', recent), false);
+  assert.equal(isDuplicateUtterance('', recent), true);
 });
