@@ -311,10 +311,24 @@ export class ElevenLabsSTT {
       if (!ws || ws.readyState !== WebSocket.OPEN) return;
 
       // Protocol-level liveness: ping, and reconnect when pongs stop.
+      //
+      // Pongs alone are NOT sufficient evidence of death. A run was observed
+      // killing a connection that was actively delivering transcripts, with
+      // the pong clock reporting a gap far longer than the connection had even
+      // existed — pong bookkeeping can go wrong (a starved event loop delays
+      // the ping itself, and a suspended laptop skews the arithmetic), and the
+      // cost of being wrong is dropped speech mid-sermon plus a reconnect that
+      // loses more. Deepgram streams Results continuously while anyone is
+      // talking, so incoming data is direct proof of life: require BOTH
+      // signals to have gone quiet before tearing anything down.
       try { ws.ping(); } catch {}
       const sincePong = Date.now() - this.lastPongAt;
-      if (sincePong > ElevenLabsSTT.PONG_TIMEOUT_MS) {
-        console.warn(`[STT] Watchdog: no pong for ${Math.round(sincePong / 1000)}s — connection is half-dead, forcing reconnect`);
+      const sinceAnyMessage = Date.now() - this.lastMessageAt;
+      if (sincePong > ElevenLabsSTT.PONG_TIMEOUT_MS && sinceAnyMessage > ElevenLabsSTT.PONG_TIMEOUT_MS) {
+        console.warn(
+          `[STT] Watchdog: no pong for ${Math.round(sincePong / 1000)}s and no data for ` +
+            `${Math.round(sinceAnyMessage / 1000)}s — connection is half-dead, forcing reconnect`,
+        );
         ws.terminate(); // emits 'close' → scheduleReconnect
         return;
       }
