@@ -232,9 +232,14 @@ export class ElevenLabsSTT {
     // genuinely ends still dispatches on completeMs as before, so normal
     // latency is unchanged; waiting only happens while speech is still
     // flowing, and maxHoldMs bounds the worst case.
-    // Kill switch: STT_FORWARD_INTERIMS=0 reverts without a deploy.
+    // DEFAULT OFF. Two full verification runs with interims forwarded saw the
+    // Deepgram connection collapse — 1006 closes, transcript volume down by
+    // two thirds, watchdog firing repeatedly — while every run without them
+    // completed cleanly. The fragment benefit is real but nowhere near worth
+    // losing a third of the sermon, so this stays off until the interaction is
+    // understood. Enable with STT_FORWARD_INTERIMS=1.
     if (!isFinal) {
-      if (process.env.STT_FORWARD_INTERIMS !== '0') {
+      if (process.env.STT_FORWARD_INTERIMS === '1') {
         this.onTranscript({ text: transcript, isFinal: false, timestamp: Date.now() });
       }
       return;
