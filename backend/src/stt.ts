@@ -83,7 +83,11 @@ export class ElevenLabsSTT {
   private lastMessageAt = 0;
   private lastAudioSentAt = 0;
   private static readonly PING_INTERVAL_MS = 10_000;
-  private static readonly PONG_TIMEOUT_MS = 25_000;
+  // 25s was too tight during genuine silence in the sermon: Deepgram sends no
+  // Results when nobody is speaking, so the data clock is legitimately quiet,
+  // and a single delayed pong then tore down a working connection. A truly
+  // half-dead socket is still caught, just a few seconds later.
+  private static readonly PONG_TIMEOUT_MS = 45_000;
   /** Audio flowing but zero Deepgram messages for this long → assume hung. */
   private static readonly SILENT_LINK_TIMEOUT_MS = 60_000;
 

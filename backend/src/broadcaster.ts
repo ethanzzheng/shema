@@ -409,12 +409,18 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           console.log(`[Broadcaster] STT transcript (final=true): "${text.slice(0, 60)}…"`);
         }
         // Send live Korean transcript to broadcaster UI
-        send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
-
-        if (!isFinal && text.trim()) {
+        // Finals always go to the desk. Interims are throttled to the same
+        // cadence as the listener feed below: once interims started being
+        // forwarded, this fired several times a second, and the resulting
+        // socket traffic starved the audio sender badly enough to lose a
+        // third of a test run. A live desk on church wi-fi would fare worse.
+        if (isFinal) {
+          send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
+        } else if (text.trim()) {
           const now = Date.now();
           if (now - lastPartialSentAt >= 350) {
             lastPartialSentAt = now;
+            send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
             session.broadcast({ type: 'partial_transcript', text, timestamp });
           }
         }

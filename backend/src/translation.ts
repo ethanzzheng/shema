@@ -217,7 +217,17 @@ export class ClaudeTranslator {
     model = process.env.TRANSLATION_MODEL || 'claude-sonnet-5',
     direction: Direction = 'ko-en',
   ) {
-    this.client = new Anthropic({ apiKey });
+    // A hung request is worse here than a failed one: emission is ordered by
+    // seq, so one stalled call blocks every sentence behind it. A run saw a
+    // single call hang for 115s, which delayed the next sentence by 20s and
+    // would have been two minutes of silence in a live service. Bound it, and
+    // let the SDK retry transport failures rather than dropping the sentence.
+    // maxRetries 0 deliberately: translate() already has its own retry loop
+    // with the JSON-salvage path, and SDK retries would MULTIPLY with it
+    // (2 x 3 x 20s = two minutes of head-of-line blocking, the very thing this
+    // bounds). One 15s timeout, one in-loop retry, ~30s absolute worst case
+    // against a 1.4s median.
+    this.client = new Anthropic({ apiKey, timeout: 15_000, maxRetries: 0 });
     this.model = model;
     this.direction = direction;
     this.systemPrompt = direction === 'en-ko' ? SYSTEM_PROMPT_EN_KO : SYSTEM_PROMPT_KO_EN;
