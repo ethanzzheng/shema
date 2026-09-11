@@ -36,9 +36,13 @@ function envFloat(name: string, fallback: number): number {
 //   TTS_STYLE     (default 0)    — style exaggeration re-adds variance
 const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   stability: envFloat('TTS_STABILITY', 0.5),
-  similarity_boost: 0.75,
+  similarity_boost: envFloat('TTS_SIMILARITY', 0.75),
   style: envFloat('TTS_STYLE', 0),
-  use_speaker_boost: true,
+  // Speaker boost is a known source of clip-to-clip level variance, and one
+  // clip in 231 came back at a whisper (peak -20.4 dB against a typical -0.6
+  // to -5). Every clip is synthesised with identical settings, so that
+  // variance is the vendor's, not ours — default it off and leave it tunable.
+  use_speaker_boost: (process.env.TTS_SPEAKER_BOOST ?? '0') === '1',
 };
 
 export class ElevenLabsTTS {
@@ -57,60 +61,29 @@ export class ElevenLabsTTS {
     };
   }
 
-  /**
-   * Synthesise text and return the raw MP3 Buffer.
-   * Throws on HTTP error.
-   */
-  async synthesise(text: string): Promise<Buffer> {
-    const url = `${TTS_BASE}/${this.voiceId}/stream?output_format=mp3_44100_128`;
+  // The non-streaming synthesise() lived here and had no callers. It was a
+  // byte-identical copy of the request below, which is how a previous_text
+  // edit silently landed in the dead copy — removed rather than kept in sync.
 
-    const body = JSON.stringify({
-      text,
-      model_id: this.modelId,
-      voice_settings: this.voiceSettings,
-    });
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': this.apiKey,
-        'Content-Type': 'application/json',
-        Accept: 'audio/mpeg',
-      },
-      body,
-    });
-
-    if (!response.ok) {
-      const errText = await response.text().catch(() => '');
-      throw new Error(`ElevenLabs TTS HTTP ${response.status}: ${errText}`);
-    }
-
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  }
-
-  /**
-   * Synthesise text and forward MP3 chunks to `onChunk` AS THEY ARRIVE from
-   * ElevenLabs, instead of buffering the whole clip first. This is what lets
-   * the listener start playing audio before synthesis finishes.
-   * Resolves once the full stream has been consumed. Throws on HTTP error.
-   *
-   * An inactivity watchdog aborts the request if no data arrives for
-   * `timeoutMs` — without it, one hung request silently stalled every clip
-   * queued behind it (the listener heard a long gap while translated text
-   * kept appearing).
-   */
   async synthesiseStream(
     text: string,
     onChunk: (chunk: Buffer) => void,
     timeoutMs = 8000,
+    previousText?: string,
   ): Promise<void> {
     const url = `${TTS_BASE}/${this.voiceId}/stream?output_format=mp3_44100_128`;
 
+    // previous_text gives ElevenLabs the preceding sentence so it can match
+    // prosody and level across the clip boundary. Clips were being synthesised
+    // in total prosodic isolation, which is exactly the discontinuity this
+    // parameter exists to smooth, and one clip in 231 came back at a whisper.
+    // Costs a larger request body and no latency — the previous sentence is
+    // already known when we enqueue.
     const body = JSON.stringify({
       text,
       model_id: this.modelId,
       voice_settings: this.voiceSettings,
+      ...(previousText ? { previous_text: previousText.slice(-400) } : {}),
     });
 
     const controller = new AbortController();

@@ -35,6 +35,7 @@ IMPORTANT: The Korean text comes from automatic speech recognition of a live ser
 ABSOLUTE RULES:
 - Output ONLY the English translation. Never add notes, explanations, apologies, or descriptions. NEVER write about "the segment", "the input", the "continuation", or that something is incomplete.
 - Be faithful. Translate ONLY what the pastor actually said. Do NOT add ideas, do NOT invent details, and do NOT guess or finish an unfinished thought. If the segment stops mid-sentence, translate exactly as far as the words go and STOP there — the next segment will continue it.
+- This matters most when the Korean is cut before its head noun or its verb (it ends on a particle like 을/를/는/이/가, or on an adnominal like -하는/-되는). You cannot know how the sentence ends, and completing it can invert the meaning. Observed: "이제 그만 들어도 되는" ("...that you could stop listening to now") was rendered "One where you feel like you could listen to it forever" — the opposite. Render only the words present, even if the English sounds clipped, or return {"translation": ""} if what is present carries no meaning on its own.
 - Never introduce a specific name, place, number, job, or fact that is not clearly present in the Korean. Do NOT invent proper nouns. If a word looks like a garbled name or is unintelligible, translate around it (e.g. "what was said") or omit it — do NOT turn it into a real-sounding name.
 - If a whole segment is too garbled or meaningless to translate faithfully, return {"translation": ""} rather than guessing.
 - Do NOT use em dashes (—), en dashes (–), or a trailing dash. Do NOT use "..." for suspense. End on the last real word with a normal period, comma, or nothing.
@@ -114,6 +115,19 @@ export function sanitizeForSpeech(text: string): string {
     // trailing "I"/"we" — real English sentences essentially never end on those.
     t = t.replace(/[\s,]+(?:that|this)\s*,\s*(?:I|we|you)\s*$/i, '');
     t = t.replace(/[\s,]+(?:I|we)\s*$/i, '');
+    // Never speak a half-finished scripture citation. Observed live: "Let's
+    // read it together in one voice, 2 Peter chapter 1, verse" — the chunk was
+    // cut before the pastor said the number. A reference that names no verse
+    // is worse than no reference at all, and citations are the highest-stakes
+    // text here, so drop the dangling clause back to the last clean boundary.
+    t = t.replace(/[\s,]*\b(?:chapter|verses?)\s*\d*\s*[,:]?\s*(?:through|to|and)?\s*$/i, '');
+    // That can strip back to a bare book name ("...in one voice, 2 Peter") —
+    // a lone book name mid-sentence is also a dangling citation.
+    t = t.replace(/[\s,]+(?:\d\s+)?[A-Z][a-z]+\s*$/, (m) =>
+      /\b(?:Genesis|Exodus|Leviticus|Numbers|Deuteronomy|Joshua|Judges|Ruth|Samuel|Kings|Chronicles|Ezra|Nehemiah|Esther|Job|Psalms?|Proverbs|Ecclesiastes|Isaiah|Jeremiah|Lamentations|Ezekiel|Daniel|Hosea|Joel|Amos|Obadiah|Jonah|Micah|Nahum|Habakkuk|Zephaniah|Haggai|Zechariah|Malachi|Matthew|Mark|Luke|John|Acts|Romans|Corinthians|Galatians|Ephesians|Philippians|Colossians|Thessalonians|Timothy|Titus|Philemon|Hebrews|James|Peter|Jude|Revelation)\b/.test(m)
+        ? ''
+        : m,
+    );
   } while (t !== prev);
   // Tidy doubled punctuation/spacing the above may create.
   t = t.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
@@ -185,7 +199,17 @@ export class ClaudeTranslator {
   private readonly srcLabel: string;
   /** Target-language label for prompt text ("English" for ko-en). */
   private readonly tgtLabel: string;
-  private recentTranslations: { source: string; target: string }[] = [];
+  private recentTranslations: { source: string; target: string; seq?: number }[] = [];
+  /**
+   * Terms pinned for the whole session, kept separately from the rolling
+   * context window. maxContext is 8 segments — roughly two minutes — so a song
+   * title first rendered at segment 17 was long gone by segment 199, where it
+   * came out as "The Scent of Memory" instead of "The Fragrance of Memory".
+   * Quoted titles and proper nouns are pinned the first time they are rendered
+   * and injected into every later prompt.
+   */
+  private glossary = new Map<string, string>();
+  private static readonly MAX_GLOSSARY = 24;
   private readonly maxContext = 8; // keep last 8 segments for discourse continuity
 
   constructor(
@@ -201,7 +225,7 @@ export class ClaudeTranslator {
     this.tgtLabel = direction === 'en-ko' ? 'Korean' : 'English';
   }
 
-  async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1): Promise<TranslationResult> {
+  async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1, seq?: number): Promise<TranslationResult> {
     // Build context from recent translations.
     let contextBlock = '';
     if (this.recentTranslations.length > 0) {
@@ -209,6 +233,13 @@ export class ClaudeTranslator {
         .map((t) => `${this.srcLabel}: ${t.source}\n${this.tgtLabel}: ${t.target}`)
         .join('\n\n');
       contextBlock = `Previous segments already translated (context only — do NOT repeat, do NOT re-translate):\n\n${lines}\n\n---\n\n`;
+    }
+    if (this.glossary.size > 0) {
+      const pinned = [...this.glossary.entries()].map(([k, v]) => `${k} → ${v}`).join('\n');
+      contextBlock =
+        `Terms already established EARLIER IN THIS SERVICE. Reuse these exact renderings ` +
+        `every time they recur, however long ago they were first said:\n${pinned}\n\n---\n\n` +
+        contextBlock;
     }
 
     // Scripture anchoring, strongest available form first:
@@ -318,7 +349,13 @@ export class ClaudeTranslator {
 
         // Only remember real translations, so context stays clean.
         if (translated) {
-          this.recentTranslations.push({ source: sourceText, target: translated });
+          // Insert in SPOKEN order, not completion order. With two
+          // translations in flight, seq N+1 can return before seq N, which
+          // used to leave the context array reversed and the discourse
+          // context subtly wrong for every later segment.
+          this.pinTerms(sourceText, translated);
+          this.recentTranslations.push({ source: sourceText, target: translated, seq });
+          this.recentTranslations.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
           if (this.recentTranslations.length > this.maxContext) {
             this.recentTranslations.shift();
           }
@@ -350,8 +387,30 @@ export class ClaudeTranslator {
   }
 
   /** Clear context (e.g. on new broadcast session) */
+  /**
+   * Pin quoted titles and multi-word proper nouns so they stay consistent for
+   * the whole service. Only quoted strings and Title Case runs are taken —
+   * ordinary prose must not accumulate here.
+   */
+  private pinTerms(source: string, target: string): void {
+    const srcQuoted = [...source.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());
+    const tgtQuoted = [...target.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());
+    // Pair them positionally: a quoted title in the source maps to the quoted
+    // title in the rendering.
+    for (let i = 0; i < Math.min(srcQuoted.length, tgtQuoted.length); i++) {
+      const k = srcQuoted[i];
+      if (!k || this.glossary.has(k)) continue;
+      this.glossary.set(k, tgtQuoted[i]);
+      if (this.glossary.size > ClaudeTranslator.MAX_GLOSSARY) {
+        const oldest = this.glossary.keys().next().value;
+        if (oldest !== undefined) this.glossary.delete(oldest);
+      }
+    }
+  }
+
   resetContext(): void {
     this.recentTranslations = [];
+    this.glossary.clear();
   }
 
   /**

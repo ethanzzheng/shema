@@ -185,6 +185,13 @@ export class Session {
   }
 
   /** The transcript in the shape listeners receive (Korean omitted). */
+  /** English text of the most recently emitted translation, for restart detection. */
+  lastTranslationText(): string {
+    return this.translationHistory.length > 0
+      ? this.translationHistory[this.translationHistory.length - 1].sermon
+      : '';
+  }
+
   transcriptForListeners(): { seq: number; direct: string; sermon: string; timestamp: number }[] {
     return this.translationHistory.map(({ seq, direct, sermon, timestamp }) => ({
       seq,

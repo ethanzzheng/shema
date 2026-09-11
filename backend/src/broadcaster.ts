@@ -20,6 +20,7 @@ import { WebSocket } from 'ws';
 import { Session } from './session';
 import { ElevenLabsSTT } from './stt';
 import { KoreanChunker } from './chunker';
+import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { isStartAuthorized } from './auth';
@@ -75,6 +76,23 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   const emitter = new OrderedEmitter<EmitJob>(emitTranslation);
 
   function emitTranslation(job: EmitJob): void {
+    // Cross-segment restart guard. The pastor sometimes false-starts and
+    // retries a sentence, and each attempt arrives as its own STT final, so
+    // the listener heard "Among church members." three times running. This
+    // cannot be fixed in the prompt: contextBlock is built before the API
+    // call and recentTranslations is appended after it, so two concurrent
+    // translations never see each other — exactly the burst case where
+    // restarts happen. Here in the OrderedEmitter funnel, emission is
+    // strictly sequential and in spoken order, so the comparison is reliable.
+    //
+    // Deliberately conservative: suppress ONLY a segment that adds nothing to
+    // the one before it. Anything carrying new words goes out untouched.
+    const prevSermon = session.lastTranslationText();
+    if (prevSermon && isPureRestart(prevSermon, job.sermon)) {
+      console.log(`[Pipeline] seq ${job.seq} suppressed as a false-start restart: "${job.sermon}"`);
+      return;
+    }
+
     const chunk = session.addTranslation({
       seq: job.seq,
       korean: job.korean,
@@ -174,7 +192,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // emission. Failures park a skip marker so the emitter never stalls.
     let translation;
     try {
-      translation = await translator.translate(sourceText, currentRef);
+      translation = await translator.translate(sourceText, currentRef, 1, seq);
     } catch (err) {
       console.error('[Pipeline] Translation failed:', err);
       emitter.finish(seq, null);
@@ -224,10 +242,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // latency (chunker hold + translation), heard as silence. Log it so live
   // tests show exactly which stage each pause comes from.
   let audioStarvedSince = Date.now();
+  /** Previous sentence sent to TTS, for prosody continuity across clips. */
+  let lastSynthText = '';
 
   const ttsPipeline = new TtsPipeline<TtsJob>({
     prefetch: 2,
-    synth: (text, onChunk) => tts.synthesiseStream(text, onChunk),
+    synth: (text, onChunk) => {
+      const prev = lastSynthText;
+      lastSynthText = text;
+      return tts.synthesiseStream(text, onChunk, 8000, prev);
+    },
     onStart: (job) => session.broadcast({ type: 'audio_start', seq: job.seq }),
     onChunk: (job, chunk) =>
       session.broadcast({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
@@ -378,7 +402,12 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       apiKey: ELEVENLABS_API_KEY,
       language: cfg.sttLanguage,
       onTranscript: async ({ text, isFinal, timestamp }) => {
-        console.log(`[Broadcaster] STT transcript (final=${isFinal}): "${text.slice(0, 60)}…"`);
+        // Interims arrive many times per second and exist only to tell the
+        // chunker that speech is still flowing — logging them would bury the
+        // finals that actually matter.
+        if (isFinal) {
+          console.log(`[Broadcaster] STT transcript (final=true): "${text.slice(0, 60)}…"`);
+        }
         // Send live Korean transcript to broadcaster UI
         send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
 

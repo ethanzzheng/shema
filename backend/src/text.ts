@@ -113,6 +113,43 @@ export function endsWithDanglingHead(text: string): boolean {
 }
 
 /**
+ * A scripture citation whose verse number has not been spoken yet.
+ *
+ * Observed live: a chunk was cut after "베드로 후서 한 장" and the English went
+ * out as "2 Peter chapter 1, verse" and stopped. Citations are the
+ * highest-stakes text in this product, so an unfinished one is worth waiting
+ * for — the number is usually one or two syllables away.
+ */
+export function endsWithIncompleteReference(text: string): boolean {
+  const t = text.trimEnd().replace(/[.,·]$/, '');
+  if (!t) return false;
+  // "...N장" / "...N 장" with no 절 yet, or a trailing bare 절 with no number.
+  // Both numeral systems appear in real transcripts — the recorded service has
+  // "베드로 후서 한 장 3 절" (native 한 for the chapter, Sino 3 for the verse).
+  const NUM = '(?:\\d+|[일이삼사오육륙칠팔구십백]+|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열|스물)';
+  if (new RegExp(`${NUM}\\s*장$`).test(t)) return true;
+  if (/절\s*$/.test(t) && !/(?:\d+|[일이삼사오육륙칠팔구십백]+)\s*절\s*$/.test(t)) return true;
+  // Book name spoken with nothing after it ("베드로 후서", "요한복음").
+  if (/(?:복음|계시록|전서|후서|서|기|송가|애가)$/.test(t) && t.length <= 12) return true;
+  return false;
+}
+
+/**
+ * Does this buffer end mid-thought in a way that reading it aloud would sound
+ * unfinished — a trailing comma, or a bare noun phrase with no predicate?
+ *
+ * Nine segments in the recorded service ended on a comma, including the one
+ * that produced the church/self-centeredness inversion: `…그 지독한 자기
+ * 중심성,`. That is a noun phrase, so the particle test above misses it.
+ */
+export function endsMidThought(text: string): boolean {
+  const t = text.trimEnd();
+  if (!t) return false;
+  if (/[,·]$/.test(t)) return true;
+  return endsWithIncompleteReference(t);
+}
+
+/**
  * Split off the longest leading portion that ends at a SAFE boundary, leaving
  * the dangling tail buffered for its head.
  *
@@ -197,4 +234,25 @@ export function splitSentences(text: string): { sentences: string[]; remainder: 
   }
 
   return { sentences, remainder: s.slice(start).trim() };
+}
+
+/**
+ * Is `next` merely a restart of `prev` that carries no new content?
+ *
+ * The pastor sometimes false-starts and retries a sentence, and each attempt
+ * arrives as its own STT final — the listener heard "Among church members."
+ * three times running. True only when the new segment's words are already
+ * wholly contained at the START of the previous one, i.e. he began again and
+ * added nothing. A retry that adds words is real content and must pass.
+ *
+ * Deliberately capped at short segments: a long segment is never a mere
+ * restart, and mistaking one for a restart would silence real preaching.
+ */
+export function isPureRestart(prev: string, next: string): boolean {
+  const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const p = norm(prev);
+  const n = norm(next);
+  if (!n || !p) return false;
+  if (n.split(' ').length > 12) return false;
+  return p === n || p.startsWith(n + ' ');
 }

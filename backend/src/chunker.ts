@@ -20,7 +20,7 @@
  * seq before emitting text/TTS, so listeners always hear spoken order.
  */
 
-import { looksComplete, splitSentences, endsWithDanglingHead, splitLastKoreanClause } from './text';
+import { looksComplete, splitSentences, endsWithDanglingHead, endsMidThought, splitLastKoreanClause } from './text';
 import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
 import { Direction } from './direction-config';
 
@@ -299,7 +299,7 @@ export class KoreanChunker {
     let delay: number;
     if (this.detector.looksComplete(this.buffer)) {
       delay = this.cfg.completeMs;
-    } else if (this.direction === 'ko-en' && endsWithDanglingHead(this.buffer)) {
+    } else if (this.direction === 'ko-en' && (endsWithDanglingHead(this.buffer) || endsMidThought(this.buffer))) {
       // The head noun this modifier belongs to has not been spoken yet.
       // Shipping now is what produced the church/self-centeredness inversion,
       // so wait harder for it than for a merely abrupt ending.
@@ -325,7 +325,7 @@ export class KoreanChunker {
    * to the wrong referent.
    */
   private expirePatience(): void {
-    if (this.direction === 'ko-en' && endsWithDanglingHead(this.buffer)) {
+    if (this.direction === 'ko-en' && (endsWithDanglingHead(this.buffer) || endsMidThought(this.buffer))) {
       const split = splitLastKoreanClause(this.buffer);
       if (split) {
         this.cancelTimer();

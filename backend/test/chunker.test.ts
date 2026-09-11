@@ -367,3 +367,84 @@ test('a dangling clause is held longer than a merely abrupt one', async () => {
     mock.timers.reset();
   }
 });
+
+test('VALIDATION: the church/self-centeredness sentence is never split before its head noun', async () => {
+  // This is the sentence that produced the theological inversion at the live
+  // pilot. Korean puts the object and its modifiers BEFORE the head noun, so
+  // cutting after 교회를 stranded the modifiers and English attached them to
+  // the previous sentence, reading as though Christ's sacrifice were the
+  // self-centeredness. Taken verbatim from the recorded service.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth');
+  try {
+    // Arrives the way Deepgram delivered it: the object first, then a pause,
+    // then the modifier chain and finally the head noun.
+    await chunker.feed('예수 그리스도의 교회를 예수님께서 핏값을 주고 사신 그 교회를', true);
+    // 6s is PAST the ordinary incomplete timeout (5s in smooth), so unfixed
+    // code would have force-shipped the object phrase here. The dangling-head
+    // patience is the only thing holding it.
+    mock.timers.tick(6000);
+    await flush();
+    assert.equal(
+      dispatched.length,
+      0,
+      `shipped an object phrase with no head noun: ${JSON.stringify(dispatched.map((d) => d.text))}`,
+    );
+
+    await chunker.feed('자기의 것으로 만들어 버리려고 하는 그 지독한 자기 중심성,', true);
+    mock.timers.tick(6000);
+    await flush();
+    assert.equal(dispatched.length, 0, 'a comma-terminated noun phrase is still mid-thought');
+
+    // The predicate finally arrives and the whole thought ships together.
+    await chunker.feed('그것이 교회를 무너뜨립니다.', true);
+    mock.timers.tick(1000);
+    await flush();
+    assert.ok(dispatched.length > 0, 'the completed sentence must ship');
+    const all = dispatched.map((d) => d.text).join(' ');
+    const headIdx = all.indexOf('자기 중심성');
+    const objIdx = all.indexOf('교회를');
+    assert.ok(headIdx > -1 && objIdx > -1, 'both the object and its head noun must be present');
+    // The object and the head noun it belongs to must land in the SAME chunk.
+    const chunkWithObject = dispatched.find((d) => d.text.includes('교회를'))!;
+    assert.ok(
+      chunkWithObject.text.includes('자기 중심성'),
+      `object and head noun were split across chunks — the inversion can recur:\n${JSON.stringify(dispatched.map((d) => d.text), null, 2)}`,
+    );
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('CONTROL: a grammatically complete sentence still ships promptly', async () => {
+  // Guards the tests above from passing for the wrong reason: if the chunker
+  // simply never dispatched, they would both pass while the product was broken.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth');
+  try {
+    await chunker.feed('우리는 하나님을 사랑해야 합니다.', true);
+    mock.timers.tick(600); // just past completeMs (350)
+    await flush();
+    assert.ok(dispatched.length > 0, 'a complete sentence must not be delayed by the dangling rules');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('VALIDATION: a scripture citation is held until its verse number arrives', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth');
+  try {
+    // Long enough to clear TINY_FRAGMENT_CHARS, so the short-shard patience
+    // is not what holds it — only the incomplete-reference rule is.
+    await chunker.feed('같이 한 목소리로 다 함께 큰 소리로 읽으시겠습니다 베드로 후서 한 장', true);
+    mock.timers.tick(7000); // past incompleteMaxMs (5s in smooth)
+    await flush();
+    const shippedIncomplete = dispatched.some(
+      (d) => /한 장\s*$/.test(d.text.trim()),
+    );
+    assert.equal(shippedIncomplete, false, 'shipped "2 Peter chapter 1" with no verse number');
+  } finally {
+    mock.timers.reset();
+  }
+});

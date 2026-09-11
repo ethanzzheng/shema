@@ -163,6 +163,10 @@ const KO_NUM: Record<string, number> = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5,
 
 function koVerses(text: string): number[] {
   const out: number[] = [];
+  for (const m of text.matchAll(/(\d+)\s*절\s*(?:부터|에서)\s*(?:(\d+)|([일이삼사오육칠팔구십]+))\s*절?\s*까지?/g)) {
+    const end = m[2] ? Number(m[2]) : KO_NUM[m[3] ?? ''] ?? 0;
+    for (let v = Number(m[1]); end && v <= end; v++) out.push(v);
+  }
   for (const m of text.matchAll(/(\d+)\s*절/g)) out.push(Number(m[1]));
   for (const m of text.matchAll(/([일이삼사오육칠팔구십]+)\s*절/g)) {
     const s = m[1];
@@ -174,6 +178,11 @@ function koVerses(text: string): number[] {
 
 function enVerses(text: string): number[] {
   const out: number[] = [];
+  // Ranges must expand, or "verses 3 through 4" reports only the 3 and every
+  // reading of a range looks like a mismatch.
+  for (const m of text.matchAll(/\bverses?\s+(\d+)\s*(?:-|–|to|through|and)\s*(\d+)/gi)) {
+    for (let v = Number(m[1]); v <= Number(m[2]); v++) out.push(v);
+  }
   for (const m of text.matchAll(/\bverses?\s+(\d+)/gi)) out.push(Number(m[1]));
   for (const m of text.matchAll(/\b\d+\s*:\s*(\d+)/g)) out.push(Number(m[1]));
   return out;
@@ -204,7 +213,13 @@ function danglingAudit(segs: Seg[]): { seq: number; ko: string; en: string; why:
     if (/,$/.test(en)) why.push('en-ends-on-comma');
     // A whole segment that is just a noun phrase / appositive: opens with a
     // determiner or demonstrative and contains no finite verb.
-    if (/^(that|the|those|these|this|a|an)\b/i.test(en) && !/\b(is|are|was|were|has|have|had|do|does|did|will|would|can|could|should|says?|said|tells?|gives?|makes?|comes?|goes)\b/i.test(en)) {
+    // The earlier version missed contractions ("I'm"), past tense ("met",
+    // "loved") and common verbs ("bring"), so it invented fragments that were
+    // perfectly good sentences — and those false positives drove a whole round
+    // of misdirected review. Be generous about what counts as a verb.
+    const VERBISH = /\b(?:is|are|was|were|am|be|being|been|has|have|had|do|does|did|will|would|can|could|shall|should|must|may|might|let|lets|[a-z]+ed|[a-z]+ing|says?|said|tells?|told|gives?|gave|makes?|made|comes?|came|goes?|went|brings?|brought|meets?|met|needs?|wants?|knows?|knew|sees?|saw|thinks?|loves?|lives?|prays?|reads?|hopes?|feels?|felt)\b/i;
+    const CONTRACTION = /(?:'m|'re|'s|'ve|'ll|'d|n't)\b/i;
+    if (!VERBISH.test(en) && !CONTRACTION.test(en)) {
       why.push('en-bare-noun-phrase');
     }
     if (why.length) out.push({ seq: s.seq, ko: s.ko, en, why });

@@ -8,6 +8,8 @@ import {
   endsWithStrongTerminator,
   splitSentences,
   endsWithDanglingHead,
+  endsWithIncompleteReference,
+  endsMidThought,
   splitLastKoreanClause,
 } from '../src/text';
 
@@ -125,4 +127,24 @@ test('isDuplicateUtterance: exact repeats and truncated re-sends are duplicates'
   // audio-interval check's job, and guessing from text risks eating speech.
   assert.equal(isDuplicateUtterance('우리는 하나님을 사랑해야', recent), false);
   assert.equal(isDuplicateUtterance('', recent), true);
+});
+
+test('endsWithIncompleteReference: hold a citation until its verse number arrives', () => {
+  // Live regression: the chunk was cut after the chapter and the English went
+  // out as "2 Peter chapter 1, verse" and stopped.
+  assert.equal(endsWithIncompleteReference('베드로 후서 한 장'), true);
+  assert.equal(endsWithIncompleteReference('요한복음 3장'), true);
+  assert.equal(endsWithIncompleteReference('베드로 후서'), true);
+  // Complete citations are not held.
+  assert.equal(endsWithIncompleteReference('베드로 후서 한 장 3 절입니다.'), false);
+  assert.equal(endsWithIncompleteReference('요한복음 3장 16절'), false);
+  assert.equal(endsWithIncompleteReference('우리는 기도합니다'), false);
+});
+
+test('endsMidThought: a comma-terminated noun phrase is incomplete', () => {
+  // The exact shape that produced the church/self-centeredness inversion:
+  // a long modifier chain ending on a comma with no predicate.
+  assert.equal(endsMidThought('예수 그리스도의 교회를 자기의 것으로 만들려고 하는 그 지독한 자기 중심성,'), true);
+  assert.equal(endsMidThought('베드로 후서 한 장'), true);
+  assert.equal(endsMidThought('우리는 하나님을 사랑합니다.'), false);
 });

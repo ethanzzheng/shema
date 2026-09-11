@@ -218,7 +218,23 @@ export class ElevenLabsSTT {
     const transcript = msg.channel?.alternatives?.[0]?.transcript || '';
     const isFinal = msg.is_final === true;
 
-    if (!transcript || !isFinal) return;
+    if (!transcript) return;
+
+    // Interims are forwarded as a TIMER RE-ARM SIGNAL ONLY — never as
+    // dispatchable text. The chunker uses them to tell "the pastor is still
+    // speaking" from "Deepgram is still finalizing"; without them its
+    // incomplete-sentence timeout measures finalization lag and force-ships
+    // mid-clause, which is where most fragments came from. A sentence that
+    // genuinely ends still dispatches on completeMs as before, so normal
+    // latency is unchanged; waiting only happens while speech is still
+    // flowing, and maxHoldMs bounds the worst case.
+    // Kill switch: STT_FORWARD_INTERIMS=0 reverts without a deploy.
+    if (!isFinal) {
+      if (process.env.STT_FORWARD_INTERIMS !== '0') {
+        this.onTranscript({ text: transcript, isFinal: false, timestamp: Date.now() });
+      }
+      return;
+    }
 
     // Drop finals whose audio we have already forwarded.
     const startSec = typeof msg.start === 'number' ? msg.start : null;
