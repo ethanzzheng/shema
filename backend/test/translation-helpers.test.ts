@@ -160,3 +160,21 @@ test('salvageTranslation: does not disturb valid JSON path', () => {
   const raw = '{"translation": "Simple sentence."}';
   assert.equal(JSON.parse(extractJsonObject(raw)).translation, salvageTranslation(raw));
 });
+
+test('sanitizeForSpeech: a trailing comma becomes a period, mid-sentence commas survive', () => {
+  // The Korean genuinely stops mid-sentence, so the English is faithful — but a
+  // trailing comma is spoken as unfinished intonation and the sentence never
+  // lands for the listener.
+  assert.equal(
+    sanitizeForSpeech("God's grace cannot flow into a heart that is so proud and rude,"),
+    "God's grace cannot flow into a heart that is so proud and rude.",
+  );
+  assert.equal(
+    sanitizeForSpeech('Father God, through the fragrance of someone who remembers us,'),
+    'Father God, through the fragrance of someone who remembers us.',
+  );
+  // Commas inside a sentence are untouched.
+  assert.equal(sanitizeForSpeech('He said, and then he left.'), 'He said, and then he left.');
+  // A shard too short to be a clause just loses the comma.
+  assert.equal(sanitizeForSpeech('Well, so,'), 'Well');
+});

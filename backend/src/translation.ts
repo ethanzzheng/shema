@@ -43,6 +43,8 @@ ABSOLUTE RULES:
 - CLARITY (important): Translate the MEANING into natural, clear, everyday American English — the way a native English-speaking pastor would say it to an ordinary US congregation. Do NOT translate word-for-word when that produces awkward, stilted, or confusing English; rephrase so it is easy to understand the first time it's heard. Avoid archaic words (say "long for", not "yearn"). Faithfulness to the meaning still comes first — simplify the wording, never the message.
 - Render Korean church idioms by their real meaning, not a literal gloss. Examples: "역사를 이루다 / 역사하다" = "work" or "accomplish (his work)", NOT "make history"; "은혜를 받다" = "be blessed / receive grace"; "말씀" (in context) = "the Word" or "what God says". Don't leave Konglish loanwords literal — use "recruit", not "scout". The listener should never hear a phrase that sounds like translated-ese.
 - CHURCH GLOSSARY (use these exact renderings, consistently): 목장 = "Mokjang" (NEVER "cell group", "small group", or "house church" — the congregation knows this word); 목자 = "shepherd" (the person who leads a Mokjang); 목녀 = "shepherdess"; 목장 모임 = "Mokjang meeting"; QT/큐티 = "QT (quiet time)". The STT often garbles these (e.g. 먹자 → 목자) — recognize them from context.
+- ADDRESSING THE CONGREGATION: 성도님(들)/성도 여러분 = "beloved saints" or "brothers and sisters" — NEVER "Members", which sounds like a mailing list rather than a congregation. 여러분 alone = "friends" or "brothers and sisters". Keep the preacher's first-person-plural hortative when the Korean has it (같이 ~합시다, ~읽으실 텐데요): "Let's read", not "You will read".
+- A title or name the pastor says twice in a row for emphasis ("기억의 향기, 기억의 향기라는 노래") is spoken ONCE in English. Repeating a title verbatim reads as a stutter, not as emphasis.
 - CHURCH OFFICES (titles the congregation knows — keep them short and consistent, do NOT over-formalize): 목사(님) = "Pastor"; 전도사(님) = "the evangelist" (an associate/assistant minister); 장로(님) = "elder"; 권사(님) = "Kwonsa" (a senior appointed lay office, usually an older woman — use "Kwonsa", NEVER "deaconess", which is a different office); 집사(님) = "deacon" (a woman may be "deaconess"). 권사 and 집사 are DIFFERENT offices — never merge them.
 - Keep standard Christian terms (grace, salvation, Holy Spirit, faith, repentance) and Bible references exactly (e.g. John 6:9).
 - NUMBER FIDELITY (absolute): reproduce every number the pastor speaks exactly — verse and chapter numbers, quantities, ages, years, amounts — and keep it exact when a later segment refers back to it (a church of "more than 2,000 members" must never become "a thousand"). Never round, never approximate. If a number is unclear in the Korean, leave it out rather than guess.
@@ -129,6 +131,20 @@ export function sanitizeForSpeech(text: string): string {
         : m,
     );
   } while (t !== prev);
+  // A segment that ends on a comma is usually FAITHFUL — the Korean genuinely
+  // stopped mid-sentence, and the prompt correctly says to stop where the words
+  // stop. But a trailing comma is rendered by TTS as unfinished intonation, so
+  // the listener hears a sentence that never lands. Close it with a period
+  // instead: same words, nothing invented, only the final punctuation changes,
+  // and the next segment continues as its own sentence. Only do this when a
+  // real clause precedes it — a bare fragment is handled by the
+  // dangling-modifier rule, which is a different problem.
+  if (/,\s*$/.test(t)) {
+    const body = t.replace(/,\s*$/, '').trim();
+    // Four words is enough to be a clause worth closing; anything shorter is a
+    // shard and the comma is simply dropped.
+    t = body.split(/\s+/).length >= 4 ? `${body}.` : body;
+  }
   // Tidy doubled punctuation/spacing the above may create.
   t = t.replace(/,\s*,/g, ',').replace(/\s{2,}/g, ' ').replace(/\s+([.,!?])/g, '$1');
   return t.trim();
@@ -210,7 +226,12 @@ export class ClaudeTranslator {
    */
   private glossary = new Map<string, string>();
   private static readonly MAX_GLOSSARY = 24;
-  private readonly maxContext = 8; // keep last 8 segments for discourse continuity
+  // 4, not 8. These pairs ride UNCACHED in the user message on every request
+  // (~800-1200 tokens at 8), and translation is 77% of end-to-end latency, so
+  // input volume is the main lever on time-to-first-token. Four segments still
+  // carries discourse continuity; long-range terms are held by the pinned
+  // glossary instead, which is far cheaper per token.
+  private readonly maxContext = 4;
 
   constructor(
     apiKey: string,
@@ -314,7 +335,10 @@ export class ClaudeTranslator {
       try {
         const response = await this.client.messages.create({
           model: this.model,
-          max_tokens: 512,
+          // 1024, not 512: a long sentence that hits the cap truncates the
+          // JSON mid-string. salvageTranslation recovers partial text, but not
+          // hitting the cap at all is better.
+          max_tokens: 1024,
           // Cache the (large, static) system prompt: every sentence of the
           // sermon reuses it, so cache hits cut time-to-first-token — this is
           // per-sentence latency the listener hears as part of each gap.
@@ -337,7 +361,15 @@ export class ClaudeTranslator {
 
         let translated: string;
         try {
-          const parsed = JSON.parse(extractJsonObject(raw)) as { translation?: unknown };
+          if (!raw) {
+          // An EMPTY response is retryable, not fatal. Three sentences were
+          // lost in a clean run to `JSON.parse('')` — the model returned no
+          // text at all and the sentence vanished silently.
+          throw new Error(
+            `empty response (stop_reason=${response.stop_reason ?? 'unknown'}, blocks=${response.content.length})`,
+          );
+        }
+        const parsed = JSON.parse(extractJsonObject(raw)) as { translation?: unknown };
           if (typeof parsed.translation !== 'string') {
             throw new Error('Unexpected JSON shape from Claude');
           }
@@ -403,20 +435,30 @@ export class ClaudeTranslator {
    * ordinary prose must not accumulate here.
    */
   private pinTerms(source: string, target: string): void {
-    const srcQuoted = [...source.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());
-    const tgtQuoted = [...target.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());
-    // Pair them positionally: a quoted title in the source maps to the quoted
-    // title in the rendering.
-    for (let i = 0; i < Math.min(srcQuoted.length, tgtQuoted.length); i++) {
-      const k = srcQuoted[i];
-      if (!k || this.glossary.has(k)) continue;
-      this.glossary.set(k, tgtQuoted[i]);
+    // Key on the KOREAN phrase, not on quotation marks. Deepgram emits no
+    // quote marks for Korean — 기억의 향기라는 노래 has none — so the previous
+    // quote-pairing version never pinned anything and the song title kept
+    // flipping between "Fragrance of Memory" and "Scent of Memory" mid-service.
+    //
+    // Korean names a title with the ~라는/~이라는 particle ("the song CALLED
+    // X"), which is a reliable hook for exactly the phrases worth pinning.
+    const titles = [...source.matchAll(/([가-힣][가-힣\s]{1,18}?)(?:이)?라는/g)].map((m) => m[1].trim());
+    if (titles.length === 0) return;
+    // The English rendering of a title is normally quoted or Title Case.
+    const quoted = [...target.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());
+    const titleCase = target.match(/\b(?:The\s)?(?:[A-Z][a-z]+\s){1,4}of\s[A-Z][a-z]+\b/);
+    const rendering = (quoted[0] ?? titleCase?.[0])?.replace(/[.,!?;:]+$/, '').trim();
+    if (!rendering) return;
+    for (const k of titles) {
+      if (k.length < 2 || this.glossary.has(k)) continue;
+      this.glossary.set(k, rendering);
       if (this.glossary.size > ClaudeTranslator.MAX_GLOSSARY) {
         const oldest = this.glossary.keys().next().value;
         if (oldest !== undefined) this.glossary.delete(oldest);
       }
     }
   }
+
 
   resetContext(): void {
     this.recentTranslations = [];

@@ -448,3 +448,31 @@ test('VALIDATION: a scripture citation is held until its verse number arrives', 
     mock.timers.reset();
   }
 });
+
+test('REGRESSION: the closing-prayer sentence does not fragment', async () => {
+  // "Father God, through the fragrance of someone who remembers us," came out
+  // as a fragment in two consecutive runs. The Korean ends on 통하여서 — a
+  // connective with the main verb still to come.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeChunker('smooth');
+  try {
+    await chunker.feed('하나님 아버지, 저희를 기억하는 그 누군가가 저희 향기를 통하여서', true);
+    mock.timers.tick(6000); // past the ordinary incomplete timeout
+    await flush();
+    assert.equal(
+      dispatched.length,
+      0,
+      `shipped the prayer opening with no main verb: ${JSON.stringify(dispatched.map((d) => d.text))}`,
+    );
+    await chunker.feed('그 사랑을 기억할 수 있기를 원합니다.', true);
+    mock.timers.tick(1000);
+    await flush();
+    assert.ok(dispatched.length > 0, 'the completed prayer must ship');
+    assert.ok(
+      dispatched[0].text.includes('통하여서') && dispatched[0].text.includes('원합니다'),
+      `the clause and its verb must land together: ${dispatched[0].text}`,
+    );
+  } finally {
+    mock.timers.reset();
+  }
+});

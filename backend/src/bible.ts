@@ -52,7 +52,7 @@ export function getVerseWindow(
   book: string,
   chapter: number,
   verse: number,
-  after = 2,
+  after = 1,
 ): { ref: string; text: string }[] {
   const out: { ref: string; text: string }[] = [];
   for (let v = verse; v <= verse + after; v++) {

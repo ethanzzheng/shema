@@ -95,6 +95,17 @@ const KO_DANGLING_PARTICLES = [
   '에게', '에서', '에', '으로', '로', '도', '만', '까지', '부터', '보다', '처럼', '같이', '이나',
 ];
 
+/**
+ * Subordinating connectives meaning "by / through / so that" — the clause is
+ * an adverbial modifier and the main verb has not arrived. Unlike -고 ("and")
+ * or -며, which render as a standalone English clause, these leave the sentence
+ * without its predicate: the closing prayer "저희 향기를 통하여서" came out as
+ * "Father God, through the fragrance of someone who remembers us" in two
+ * consecutive runs. Verbal connectives that DO stand alone are deliberately
+ * excluded, so this does not slow ordinary speech.
+ */
+const KO_SUBORDINATING = ['통하여서', '통해서', '하여서', '아서', '어서', '여서', '로서', '로써'];
+
 /** Adnominal verb endings: "-는/-은/-ㄴ/-던 <noun>" with the noun still missing. */
 const KO_ADNOMINAL = ['하는', '되는', '있는', '없는', '리는', '지는', '시는', '느는', '했던', '하던', '이던'];
 
@@ -109,6 +120,7 @@ export function endsWithDanglingHead(text: string): boolean {
   if (!t) return false;
   if (KO_FINAL_ENDINGS.some((e) => t.endsWith(e))) return false; // complete wins
   if (KO_ADNOMINAL.some((e) => t.endsWith(e))) return true;
+  if (KO_SUBORDINATING.some((e) => t.endsWith(e))) return true;
   return KO_DANGLING_PARTICLES.some((e) => t.endsWith(e));
 }
 
