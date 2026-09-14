@@ -161,19 +161,74 @@ function findInternalRepeats(segs: Seg[]): { seq: number; phrase: string; n: num
 // ── Verse references ──────────────────────────────────────────────────────
 const KO_NUM: Record<string, number> = { 일: 1, 이: 2, 삼: 3, 사: 4, 오: 5, 육: 6, 칠: 7, 팔: 8, 구: 9, 십: 10 };
 
+/** 십 = 10, 십육 = 16, 이십오 = 25. */
+function sino(s: string): number {
+  if (KO_NUM[s] !== undefined && s.length === 1) return KO_NUM[s];
+  const i = s.indexOf('십');
+  if (i === -1) return KO_NUM[s] ?? 0;
+  const tens = i === 0 ? 1 : KO_NUM[s[i - 1]] ?? 0;
+  const ones = i === s.length - 1 ? 0 : KO_NUM[s[i + 1]] ?? 0;
+  return tens * 10 + ones;
+}
+
+const EN_ONES: Record<string, number> = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9,
+  ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15,
+  sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19,
+};
+const EN_TENS: Record<string, number> = { twenty: 20, thirty: 30, forty: 40, fifty: 50 };
+
+/**
+ * Numbers spoken during a Korean sermon frequently come back from the Korean
+ * STT model as ENGLISH words — "Twenty five 전에는…" — or as bare digits. The
+ * audit read only Korean numerals, so those segments looked like the English
+ * had invented a verse number out of nothing. They are the same number.
+ */
+function loanNumbers(text: string): number[] {
+  const out: number[] = [];
+  for (const m of text.matchAll(/\b(twenty|thirty|forty|fifty)[\s-]+(one|two|three|four|five|six|seven|eight|nine)\b/gi)) {
+    out.push(EN_TENS[m[1].toLowerCase()] + EN_ONES[m[2].toLowerCase()]);
+  }
+  for (const m of text.matchAll(/\b(twenty|thirty|forty|fifty)\b/gi)) out.push(EN_TENS[m[1].toLowerCase()]);
+  for (const m of text.matchAll(/\b([a-z]+)\b/gi)) {
+    const v = EN_ONES[m[1].toLowerCase()];
+    if (v) out.push(v);
+  }
+  // Chapter:verse spoken as a clock time ("02:25") and bare digits.
+  for (const m of text.matchAll(/\b\d{1,3}\s*:\s*(\d{1,3})\b/g)) out.push(Number(m[1]));
+  for (const m of text.matchAll(/\b(\d{1,3})\b/g)) out.push(Number(m[1]));
+  return out;
+}
+
 function koVerses(text: string): number[] {
   const out: number[] = [];
-  for (const m of text.matchAll(/(\d+)\s*절\s*(?:부터|에서)\s*(?:(\d+)|([일이삼사오육칠팔구십]+))\s*절?\s*까지?/g)) {
-    const end = m[2] ? Number(m[2]) : KO_NUM[m[3] ?? ''] ?? 0;
+
+  // Ranges: "21절부터 25절까지", and just as often "21절부터 25절입니다".
+  // `까지?` only made the 지 optional — the 까 was still required — so the
+  // spoken form without 까지 never matched here while the English side DID
+  // expand its range. Every range reading therefore reported as a mismatch.
+  for (const m of text.matchAll(/(\d+)\s*절\s*(?:부터|에서)\s*(?:(\d+)|([일이삼사오육칠팔구십]+))\s*절?\s*(?:까지)?/g)) {
+    const end = m[2] ? Number(m[2]) : sino(m[3] ?? '');
     for (let v = Number(m[1]); end && v <= end; v++) out.push(v);
   }
+
   for (const m of text.matchAll(/(\d+)\s*절/g)) out.push(Number(m[1]));
+
+  // Sino-numeral verses. One case is genuinely not a number: 구절, written
+  // solid, is the ordinary word for "phrase" — "한 구절 한 구절" is "every
+  // single phrase", and reading it as verse 9 twice was the single largest
+  // source of false mismatches. Spaced 구 절 is a real citation and still
+  // counts, as does every other numeral; requiring a nearby 장 instead was
+  // tried and threw out legitimate readings like "사 절 초반부에".
   for (const m of text.matchAll(/([일이삼사오육칠팔구십]+)\s*절/g)) {
-    const s = m[1];
-    if (s.length === 1 && KO_NUM[s]) out.push(KO_NUM[s]);
-    else if (s === '십') out.push(10);
+    const numeral = m[1];
+    const solid = m[0].indexOf(' ') === -1 && m[0].indexOf('\u00a0') === -1;
+    if (numeral === '구' && solid) continue;
+    const v = sino(numeral);
+    if (v) out.push(v);
   }
-  return out;
+
+  return [...new Set(out)];
 }
 
 function enVerses(text: string): number[] {
@@ -191,11 +246,32 @@ function enVerses(text: string): number[] {
 function verseAudit(segs: Seg[]): { seq: number; ko: number[]; en: number[]; koText: string; enText: string }[] {
   const rows: { seq: number; ko: number[]; en: number[]; koText: string; enText: string }[] = [];
   for (const s of segs) {
-    const k = koVerses(s.ko);
+    // Two readings of the Korean, used in opposite directions.
+    //   strict     — verse citations proper. A citation here that is MISSING
+    //                from the English is a dropped reference.
+    //   permissive — plus any number spoken loosely (English loan words, bare
+    //                digits, clock-style "02:25"). These can only EXCUSE an
+    //                English number, never demand one: the pastor says plenty
+    //                of numbers that are not citations, and requiring each to
+    //                reappear in the English was most of this metric's noise.
+    const strict = koVerses(s.ko);
+    const permissive = new Set([...strict, ...loanNumbers(s.ko)]);
     const e = enVerses(s.en);
-    if (k.length === 0 && e.length === 0) continue;
-    const mismatch = e.some((v) => !k.includes(v)) || k.some((v) => !e.includes(v));
-    if (mismatch) rows.push({ seq: s.seq, ko: k, en: e, koText: s.ko, enText: s.en });
+    if (strict.length === 0 && e.length === 0) continue;
+    // An English range reading ("verses 21 through 25") expands to every verse
+    // between the endpoints, but the Korean only ever states the two ends. If
+    // both ends are accounted for and the English run is contiguous, the
+    // interior is the reading, not an invention.
+    const sorted = [...new Set(e)].sort((a, b) => a - b);
+    const contiguous =
+      sorted.length > 1 && sorted.every((v, i) => i === 0 || v === sorted[i - 1] + 1);
+    const spannedByRange =
+      contiguous && permissive.has(sorted[0]) && permissive.has(sorted[sorted.length - 1]);
+    const invented = !spannedByRange && e.some((v) => !permissive.has(v));
+    const dropped = strict.some((v) => !e.includes(v));
+    if (invented || dropped) {
+      rows.push({ seq: s.seq, ko: strict, en: e, koText: s.ko, enText: s.en });
+    }
   }
   return rows;
 }
