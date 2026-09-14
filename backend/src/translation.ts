@@ -41,6 +41,7 @@ ABSOLUTE RULES:
 - It must read as a smooth continuation of the previous segments. Do NOT repeat anything already translated.
 - CLARITY (important): Translate the MEANING into natural, clear, everyday American English — the way a native English-speaking pastor would say it to an ordinary US congregation. Do NOT translate word-for-word when that produces awkward, stilted, or confusing English; rephrase so it is easy to understand the first time it's heard. Avoid archaic words (say "long for", not "yearn"). Faithfulness to the meaning still comes first — simplify the wording, never the message.
 - Render Korean church idioms by their real meaning, not a literal gloss. Examples: "역사를 이루다 / 역사하다" = "work" or "accomplish (his work)", NOT "make history"; "은혜를 받다" = "be blessed / receive grace"; "말씀" (in context) = "the Word" or "what God says". Don't leave Konglish loanwords literal — use "recruit", not "scout". The listener should never hear a phrase that sounds like translated-ese.
+- PROPER NOUNS — ROMANIZE CONSISTENTLY. Korean names have no single correct spelling in English, so left alone the same name comes out differently every time it is said. This congregation heard its own church called "Han Ma Eum" in one service and "Hanmaeum" in another. Use EXACTLY these: 한마음교회 = "Hanmaum Church"; 한마음 = "Hanmaum" (one word, never spaced or hyphenated). Never split a Korean name into separate syllables ("Han Ma Eum"), and never re-spell a name you have already used earlier in the service — check the previous segments and match.
 - CHURCH GLOSSARY (use these exact renderings, consistently): 목장 = "Mokjang" (NEVER "cell group", "small group", or "house church" — the congregation knows this word); 목자 = "shepherd" (the person who leads a Mokjang); 목녀 = "shepherdess"; 목장 모임 = "Mokjang meeting"; QT/큐티 = "QT (quiet time)". The STT often garbles these (e.g. 먹자 → 목자) — recognize them from context.
 - ADDRESSING THE CONGREGATION: 성도님(들)/성도 여러분 = "beloved saints" or "brothers and sisters" — NEVER "Members", which sounds like a mailing list rather than a congregation. 여러분 alone = "friends" or "brothers and sisters". Keep the preacher's first-person-plural hortative when the Korean has it (같이 ~합시다, ~읽으실 텐데요): "Let's read", not "You will read".
 - A title or name the pastor says twice in a row for emphasis ("기억의 향기, 기억의 향기라는 노래") is spoken ONCE in English. Repeating a title verbatim reads as a stutter, not as emphasis.
@@ -251,6 +252,13 @@ export class ClaudeTranslator {
     this.model = model;
     this.direction = direction;
     this.systemPrompt = direction === 'en-ko' ? SYSTEM_PROMPT_EN_KO : SYSTEM_PROMPT_KO_EN;
+    // Per-church terms: member names, ministry names, the church's own name.
+    // These vary by deployment and must not require a code change, so they come
+    // from CHURCH_GLOSSARY as "한국어=English" pairs, comma-separated. Appended
+    // to the SYSTEM prompt so they ride the prompt cache rather than costing
+    // uncached tokens on every segment.
+    const extra = churchGlossaryFromEnv();
+    if (extra) this.systemPrompt += `\n\nCHURCH-SPECIFIC NAMES (use these exact renderings every time):\n${extra}`;
     this.srcLabel = direction === 'en-ko' ? 'English' : 'Korean';
     this.tgtLabel = direction === 'en-ko' ? 'Korean' : 'English';
   }
@@ -474,4 +482,24 @@ export class ClaudeTranslator {
       .slice(-this.maxContext)
       .map((p) => ({ source: p.korean, target: p.english }));
   }
+}
+
+/**
+ * Per-church proper nouns, from `CHURCH_GLOSSARY` as comma-separated
+ * `한국어=English` pairs — e.g. `한마음=Hanmaum,권희=Kwon-hee`.
+ *
+ * Member names during a welcome are socially high-stakes: a garbled name is
+ * heard by exactly the person being welcomed. Recognition also needs biasing,
+ * which is what DEEPGRAM_KEYTERMS does — the two work together, one so the
+ * name is HEARD and one so it is SPELLED the same way every time.
+ */
+export function churchGlossaryFromEnv(env: NodeJS.ProcessEnv = process.env): string {
+  const raw = env.CHURCH_GLOSSARY;
+  if (!raw) return '';
+  return raw
+    .split(',')
+    .map((pair) => pair.split('='))
+    .filter((kv) => kv.length === 2 && kv[0].trim() && kv[1].trim())
+    .map(([ko, en]) => `${ko.trim()} = "${en.trim()}"`)
+    .join('\n');
 }

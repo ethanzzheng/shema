@@ -5,6 +5,7 @@ import {
   looksLikeMetaCommentary,
   extractJsonObject,
   salvageTranslation,
+  churchGlossaryFromEnv,
   SYSTEM_PROMPT_KO_EN,
   SYSTEM_PROMPT_EN_KO,
 } from '../src/translation';
@@ -182,4 +183,25 @@ test('sanitizeForSpeech: a trailing comma becomes a period, mid-sentence commas 
   assert.equal(sanitizeForSpeech('He said, and then he left.'), 'He said, and then he left.');
   // A shard too short to be a clause just loses the comma.
   assert.equal(sanitizeForSpeech('Well, so,'), 'Well');
+});
+
+test('churchGlossaryFromEnv: per-church proper nouns', () => {
+  // Member names during a welcome are socially high-stakes — a garbled name is
+  // heard by exactly the person being welcomed.
+  assert.equal(
+    churchGlossaryFromEnv({ CHURCH_GLOSSARY: '한마음=Hanmaum,권희=Kwon-hee' } as NodeJS.ProcessEnv),
+    '한마음 = "Hanmaum"\n권희 = "Kwon-hee"',
+  );
+  assert.equal(churchGlossaryFromEnv({} as NodeJS.ProcessEnv), '');
+  // Malformed entries are skipped rather than corrupting the prompt.
+  assert.equal(
+    churchGlossaryFromEnv({ CHURCH_GLOSSARY: 'broken,한마음=Hanmaum,=,x=' } as NodeJS.ProcessEnv),
+    '한마음 = "Hanmaum"',
+  );
+});
+
+test('the church name is pinned so it cannot be re-romanized mid-service', () => {
+  // Live: "Han Ma Eum" in one service, "Hanmaeum" in another, for the same church.
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('한마음교회 = "Hanmaum Church"'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('never spaced or hyphenated'));
 });
