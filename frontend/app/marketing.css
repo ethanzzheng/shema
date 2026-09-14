@@ -328,10 +328,33 @@
   transition: opacity 0.3s var(--ease);
 }
 
-/* The scrolling Korean/English ticker and the line-art sanctuary band were
-   both removed: the ticker was decoration, and the drawing existed to supply
-   the image of a church on a page that had no photograph — the hero now does
-   that with a real one. */
+/* The scrolling Korean/English ticker was removed — it was decoration. */
+
+/* ── Closing plate ──
+   The drawing is not line art: 429 of its fills are the cream paper it was
+   drawn on, so on the night ground it lands as a pale slab. invert() flips
+   that paper to near-black and lifts the linework to white — but inverting
+   also swings the hue cold, visibly bluer than the page. The hue-rotate puts
+   the warmth back (and returns the cross to gold). */
+.mk-sanctuary {
+  max-width: 1240px;
+  margin: 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: var(--mk-r-panel);
+  overflow: hidden;
+  height: clamp(300px, 40vw, 540px);
+  position: relative;
+  background: #14120F;
+}
+.mk-sanctuary img {
+  position: absolute;
+  inset: -16% 0;
+  width: 100%;
+  height: 132%;
+  object-fit: cover;
+  object-position: center 40%;
+  filter: invert(1) hue-rotate(180deg);
+}
 
 /* ── Dark bands ── */
 .mk-night {

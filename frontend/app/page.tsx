@@ -870,6 +870,17 @@ export default function MarketingPage() {
       </section>
 
       {/* ── Footer ── */}
+      {/* ── Closing plate ──
+          The sanctuary drawing reads as a last image before the footer. It sat
+          under the hero before, where it competed with the photograph — two
+          sanctuaries within one scroll. Here it closes the page instead. */}
+      <section className="mk-section">
+        <div className="mk-sanctuary rv">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/sanctuary.svg" alt="Line drawing of a sanctuary: nave, arches, altar rail, and a gold cross" />
+        </div>
+      </section>
+
       <footer className="mk-footer">
         <div className="mk-footer-grid">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
