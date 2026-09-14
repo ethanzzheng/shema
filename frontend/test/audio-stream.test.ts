@@ -122,3 +122,31 @@ test('a mid-sentence stall does not rewind into the current sentence', async () 
   const replays = sim.el.seeks.filter((s) => s.intoPlayed);
   assert.equal(replays.length, 0, `mid-sentence stall replayed audio: ${JSON.stringify(replays)}`);
 });
+
+test('silence is never spliced into the middle of a sentence', async () => {
+  // Reported from the second live service: audio cut out mid-word ("au--io"),
+  // 10-15 times across the sermon. A sentence arrives as many chunks, so
+  // between two of them `pending` is momentarily empty — and if the buffered
+  // lead is thin at that instant, the fill used to append ~290ms of silence
+  // inside a word. Silence is only ever safe BETWEEN sentences.
+  const sim = await makePlayer();
+  const p = sim.player as unknown as {
+    noteClipStart(): void;
+    noteClipEnd(): void;
+    padsAppended: number;
+  };
+
+  // A clip opens and its chunks trickle in with a long jitter gap in between,
+  // while the buffer is deliberately kept thin.
+  p.noteClipStart();
+  sim.player.appendChunk(new Uint8Array(300), 1); // 0.3s, under the 0.4s fill target
+  sim.clock.advance(3000, 20, () => sim.el.tick(0.02)); // stall mid-sentence
+  const padsMidClip = p.padsAppended;
+  assert.equal(padsMidClip, 0, `padded ${padsMidClip} time(s) mid-sentence — this is the mid-word dropout`);
+
+  // Once the sentence finishes, padding the gap before the next one is fine.
+  sim.player.appendChunk(new Uint8Array(300), 1);
+  p.noteClipEnd();
+  sim.clock.advance(3000, 20, () => sim.el.tick(0.02));
+  assert.ok(p.padsAppended > 0, 'the fill must still bridge the gap BETWEEN sentences');
+});

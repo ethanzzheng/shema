@@ -6,6 +6,8 @@ import {
   mergeReference,
   formatReference,
   ScriptureRef,
+  detectVerseRange,
+  correctVerseAgainstRange,
 } from '../src/scripture';
 
 test('parseKoreanNumber: Sino-Korean', () => {
@@ -119,4 +121,24 @@ test('parseKoreanNumber: bare Sino digit runs are not numbers', () => {
   // Place markers still parse normally.
   assert.equal(parseKoreanNumber('이 십 육'), 26);
   assert.equal(parseKoreanNumber('구'), 9);
+});
+
+test('detectVerseRange: an announced reading range', () => {
+  assert.deepEqual(detectVerseRange('베드로전서 2장 21절부터 25절까지입니다'), { start: 21, end: 25 });
+  assert.deepEqual(detectVerseRange('3 절에서 5 절'), { start: 3, end: 5 });
+  assert.equal(detectVerseRange('요한복음 3장 16절'), null);
+});
+
+test('correctVerseAgainstRange: fixes the dropped-tens mishearing only', () => {
+  // Live: the pastor said "verse 24 and 25"; it came out "verse 24 and 15".
+  // 이십오 (25) losing its 이 is 십오 (15).
+  const range = { start: 21, end: 25 };
+  assert.deepEqual(correctVerseAgainstRange(15, range), { verse: 25, corrected: true });
+  assert.deepEqual(correctVerseAgainstRange(14, range), { verse: 24, corrected: true });
+  // In range, or not a plausible single-syllable drop: leave it alone. Silently
+  // rewriting a number the pastor really said would be worse than the bug.
+  assert.deepEqual(correctVerseAgainstRange(24, range), { verse: 24, corrected: false });
+  assert.deepEqual(correctVerseAgainstRange(5, range), { verse: 5, corrected: false });
+  assert.deepEqual(correctVerseAgainstRange(99, range), { verse: 99, corrected: false });
+  assert.deepEqual(correctVerseAgainstRange(15, null), { verse: 15, corrected: false });
 });

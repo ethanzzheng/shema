@@ -11,6 +11,7 @@ import {
   endsWithIncompleteReference,
   endsMidThought,
   splitLastKoreanClause,
+  isPureRestart,
 } from '../src/text';
 
 test('endsWithStrongTerminator: punctuation only', () => {
@@ -147,4 +148,23 @@ test('endsMidThought: a comma-terminated noun phrase is incomplete', () => {
   assert.equal(endsMidThought('예수 그리스도의 교회를 자기의 것으로 만들려고 하는 그 지독한 자기 중심성,'), true);
   assert.equal(endsMidThought('베드로 후서 한 장'), true);
   assert.equal(endsMidThought('우리는 하나님을 사랑합니다.'), false);
+});
+
+test('isPureRestart: catches near-identical re-emission, keeps real content', () => {
+  // Live: the same announcement went out four times running, re-recognised
+  // with small wording differences a prefix test cannot see.
+  assert.equal(
+    isPureRestart('1 Peter chapter 2, verses 21 through 25.', '1 Peter chapter 2, verses 21 to 25.'),
+    true,
+  );
+  assert.equal(isPureRestart('Among church members.', 'Among church members.'), true);
+  // Genuinely new content must pass, including deliberate parallelism.
+  assert.equal(
+    isPureRestart('There is a fight for truth.', 'There is a fight for God.'),
+    false,
+  );
+  assert.equal(
+    isPureRestart('Who are we in Jesus?', 'That is the summary of 1 Peter up through chapter 2.'),
+    false,
+  );
 });

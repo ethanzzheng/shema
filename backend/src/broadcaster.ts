@@ -24,7 +24,7 @@ import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { isStartAuthorized } from './auth';
-import { detectReference, mergeReference, formatReference, ScriptureRef } from './scripture';
+import { detectReference, mergeReference, formatReference, detectVerseRange, correctVerseAgainstRange, ScriptureRef } from './scripture';
 import { detectReferenceEn } from './scripture-en';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
@@ -178,12 +178,29 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     // Track the Bible reference the pastor announced; expire it after a while
     // so old references don't wrongly anchor later commentary.
+    // An announced range ("21절부터 25절까지") scopes the reading; a later verse
+    // outside it is checked for the dropped-tens mishearing before use.
+    if (session.direction === 'ko-en') {
+      const range = detectVerseRange(sourceText);
+      if (range) activeRange = range;
+    }
     const detected = detectRef(sourceText);
     if (detected) {
+      if (detected.verse !== undefined && activeRange) {
+        const { verse, corrected } = correctVerseAgainstRange(detected.verse, activeRange);
+        if (corrected) {
+          console.log(
+            `[Scripture] verse ${detected.verse} is outside the announced range ` +
+              `${activeRange.start}-${activeRange.end}; corrected to ${verse} (dropped-tens mishearing)`,
+          );
+          detected.verse = verse;
+        }
+      }
       currentRef = mergeReference(currentRef, detected);
       refAgeChunks = 0;
     } else if (currentRef && ++refAgeChunks > 12) {
       currentRef = null;
+      activeRange = null;
     }
     const refName = formatReference(currentRef);
     console.log(`[Pipeline] Translating seq ${seq} (${sourceText.length} chars${refName ? `, ref: ${refName}` : ''})...`);
@@ -242,6 +259,12 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // latency (chunker hold + translation), heard as silence. Log it so live
   // tests show exactly which stage each pause comes from.
   let audioStarvedSince = Date.now();
+  /**
+   * The passage range announced for the current reading. A verse heard outside
+   * it is usually a mishearing — 이십오 (25) losing its 이 becomes 십오 (15),
+   * which reached a live congregation as "verse 24 and 15".
+   */
+  let activeRange: { start: number; end: number } | null = null;
   /** Previous sentence sent to TTS, for prosody continuity across clips. */
   let lastSynthText = '';
 

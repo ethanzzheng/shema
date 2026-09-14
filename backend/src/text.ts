@@ -260,11 +260,47 @@ export function splitSentences(text: string): { sentences: string[]; remainder: 
  * Deliberately capped at short segments: a long segment is never a mere
  * restart, and mistaking one for a restart would silence real preaching.
  */
+/** Words whose substitution does not change what was said. */
+const FUNCTION_WORDS = new Set([
+  'a', 'an', 'the', 'to', 'through', 'thru', 'and', 'of', 'in', 'on', 'at', 'for',
+  'is', 'are', 'was', 'were', 'it', 'this', 'that', 'these', 'those', 'up', 'until',
+  'till', 'from', 'with', 's', 'verse', 'verses', 'chapter',
+]);
+
 export function isPureRestart(prev: string, next: string): boolean {
   const norm = (t: string) => t.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
   const p = norm(prev);
   const n = norm(next);
   if (!n || !p) return false;
   if (n.split(' ').length > 12) return false;
-  return p === n || p.startsWith(n + ' ');
+  if (p === n || p.startsWith(n + ' ')) return true;
+  // Near-identical re-emission. A live service rendered "1 Peter chapter 2,
+  // verses 21 through 25" four times running — the same announcement
+  // re-recognised with small wording differences ("through" vs "to"), which a
+  // prefix test cannot see.
+  //
+  // A bare similarity threshold cannot separate that from real preaching: the
+  // re-emission scores 0.88 while "a fight for truth" vs "a fight for God"
+  // scores 0.83, and silencing the latter would be far worse than leaving a
+  // duplicate in. So the test is not HOW MUCH differs but WHAT differs — if
+  // every differing word is a function word, it is the same sentence
+  // re-recognised; if any content word differs, the pastor said something new.
+  const diff = (a: string[], b: string[]): string[] => {
+    const pool = new Map<string, number>();
+    for (const w of b) pool.set(w, (pool.get(w) ?? 0) + 1);
+    const out: string[] = [];
+    for (const w of a) {
+      const c = pool.get(w) ?? 0;
+      if (c > 0) pool.set(w, c - 1);
+      else out.push(w);
+    }
+    return out;
+  };
+  const ta = p.split(' ');
+  const tb = n.split(' ');
+  if (Math.abs(ta.length - tb.length) > 2) return false;
+  const changed = [...diff(ta, tb), ...diff(tb, ta)];
+  if (changed.length === 0) return true;
+  if (changed.length > 3) return false;
+  return changed.every((w) => FUNCTION_WORDS.has(w));
 }

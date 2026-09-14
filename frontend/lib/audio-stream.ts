@@ -71,6 +71,17 @@ export class AudioStreamPlayer {
   /** Disabled for the session if the device rejects a pad append. */
   private padSupported = true;
   private padsAppended = 0;
+  /**
+   * How many clips have been announced but not yet finished.
+   *
+   * The fill must NEVER run mid-clip. A sentence arrives as many chunks, so
+   * between two chunks of the SAME sentence `pending` is momentarily empty —
+   * and if the buffered lead is thin at that instant, the old guard happily
+   * spliced ~290ms of silence into the middle of a word. Reported from the
+   * second live service as audio cutting out mid-word ("au--io"), 10-15 times
+   * across the sermon. Silence is only ever safe BETWEEN sentences.
+   */
+  private clipsOpen = 0;
   private starved = true; // diagnostics only now: nothing seeks on it
 
   // ── Stall watchdog ────────────────────────────────────────────────────────
@@ -319,6 +330,16 @@ export class AudioStreamPlayer {
     }
   };
 
+  /** A sentence's audio has begun streaming — suppress the fill until it ends. */
+  noteClipStart(): void {
+    this.clipsOpen++;
+  }
+
+  /** A sentence's audio is complete; the gap after it is safe to pad. */
+  noteClipEnd(): void {
+    if (this.clipsOpen > 0) this.clipsOpen--;
+  }
+
   /** Enqueue a decoded MP3 chunk for playback, tagged with its sentence seq. */
   appendChunk(bytes: Uint8Array, seq?: number): void {
     if (!this.active || bytes.length === 0) return;
@@ -388,6 +409,9 @@ export class AudioStreamPlayer {
     const sb = this.sourceBuffer;
     if (!el || !sb || !this.active || !this.padSupported || sb.updating) return;
     if (this.pending.length > 0) return; // real audio wins, always
+    // A clip is still streaming: its remaining chunks are in flight, and
+    // padding here would land inside a word.
+    if (this.clipsOpen > 0) return;
     const end = this.bufferedEnd();
     if (end === null) return; // nothing buffered yet; the first clip anchors the timeline
 
@@ -439,6 +463,7 @@ export class AudioStreamPlayer {
   reset(): void {
     this.pending = [];
     this.starved = true;
+    this.clipsOpen = 0;
     // Seq numbering restarts with the new broadcast; old ranges would
     // mis-attribute the new timeline.
     this.seqRanges.clear();

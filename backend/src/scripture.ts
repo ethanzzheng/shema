@@ -190,3 +190,51 @@ export function formatReference(ref: ScriptureRef | null): string | null {
   }
   return s;
 }
+
+/**
+ * A verse number heard outside the passage currently being read is usually a
+ * mishearing, and Korean sino-numerals make one specific confusion common:
+ * 이십오 (25) differs from 십오 (15) by a single leading syllable, so a dropped
+ * 이 turns 25 into 15. That exact error reached a live congregation — the
+ * pastor said "verse 24 and 25", the output said "verse 24 and 15" — and verse
+ * numbers are precisely what people follow along with in a pew Bible.
+ *
+ * Given the active reading range, correct a number that (a) falls outside it,
+ * and (b) becomes an in-range number by restoring a dropped tens digit. Only
+ * that narrow family is corrected; anything else is left alone, because
+ * silently rewriting a number the pastor really said would be worse than the
+ * bug.
+ */
+export function correctVerseAgainstRange(
+  verse: number,
+  range: { start: number; end: number } | null,
+): { verse: number; corrected: boolean } {
+  if (!range || (verse >= range.start && verse <= range.end)) return { verse, corrected: false };
+  // Only the SINGLE-dropped-tens family: 십오 (15) losing its 이 gives 이십오
+  // (25). Requiring verse >= 10 excludes 오 (5) -> 25, which would mean losing
+  // two whole syllables and is far likelier to be a verse the pastor actually
+  // said. One correction step only, for the same reason.
+  if (verse < 10) return { verse, corrected: false };
+  for (const tens of [10, 20]) {
+    const candidate = verse + tens;
+    if (candidate >= range.start && candidate <= range.end) {
+      return { verse: candidate, corrected: true };
+    }
+  }
+  return { verse, corrected: false };
+}
+
+/**
+ * The passage range announced for a reading, e.g. "21절부터 25절까지" or
+ * "21절에서 25절". Used to sanity-check later single-verse references.
+ */
+export function detectVerseRange(text: string): { start: number; end: number } | null {
+  const NUM = `(${NUM_RUN})`;
+  const re = new RegExp(`${NUM}\\s*절?\\s*(?:부터|에서|~|-)\\s*${NUM}\\s*절`, 'g');
+  for (const m of text.matchAll(re)) {
+    const a = parseKoreanNumber(m[1]);
+    const b = parseKoreanNumber(m[2]);
+    if (a && b && b > a && b - a < 60) return { start: a, end: b };
+  }
+  return null;
+}

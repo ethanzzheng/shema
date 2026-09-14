@@ -429,6 +429,10 @@ export default function ListenerView({ church }: { church: string }) {
           if (ttsMode === 'elevenlabs') {
             // Fallback path accumulates chunks per clip; MSE path streams directly.
             if (!streamRef.current) fallbackAccumRef.current = { seq: a.seq, parts: [] };
+            // The MSE path ignored clip boundaries, which let the silence fill
+            // splice a pad into the middle of a word between two chunks of the
+            // same sentence.
+            else streamRef.current.noteClipStart();
           }
           break;
         }
@@ -448,6 +452,7 @@ export default function ListenerView({ church }: { church: string }) {
         case 'audio_end': {
           if (ttsMode !== 'elevenlabs') break;
           const a = msg as { seq: number };
+          streamRef.current?.noteClipEnd();
           // Fallback: reassemble the whole clip and hand it to the per-clip queue.
           const accum = fallbackAccumRef.current;
           if (!streamRef.current && playbackRef.current && accum && accum.seq === a.seq) {
