@@ -30,6 +30,13 @@
   --mk-r-panel: 10px;
   --mk-r-control: 6px;
 
+  /* The page gutter. The floor is what phones actually get: 5vw never
+     clears its own 20px minimum below ~1280px, so every handset was
+     pinned to 20px and the type ran right up to the edge. 6vw with a
+     26px floor gives a real margin on a phone and leaves desktop at the
+     same 64px cap it already had. */
+  --mk-gutter: clamp(26px, 6vw, 64px);
+
   background: #121210;
   color: var(--ink);
   font-family: var(--font);
@@ -43,7 +50,7 @@
 
 /* ── Shared section scaffolding ── */
 .mk-section {
-  padding: clamp(56px, 9vh, 120px) clamp(20px, 5vw, 64px);
+  padding: clamp(56px, 9vh, 120px) var(--mk-gutter);
 }
 .mk-wrap { max-width: 1240px; margin: 0 auto; }
 .mk-wrap-narrow { max-width: 1080px; margin: 0 auto; }
@@ -108,7 +115,7 @@
 .mk-nav-inner {
   max-width: 1240px;
   margin: 0 auto;
-  padding: 14px clamp(20px, 5vw, 64px);
+  padding: 14px var(--mk-gutter);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -193,7 +200,7 @@
     url('/congregation.jpg');
   background-size: cover;
   background-position: 64% 66%;
-  padding: clamp(44px, 6.5vh, 84px) clamp(20px, 5vw, 64px);
+  padding: clamp(44px, 6.5vh, 84px) var(--mk-gutter);
 }
 .mk-hero-grid {
   max-width: 1320px;
@@ -207,16 +214,21 @@
   position: relative;
   z-index: 1;
 }
-/* The two halves of the hero, split by a single hairline. */
-.mk-hero-grid > *:first-child { padding-right: clamp(24px, 4vw, 66px); }
-.mk-hero-grid > *:last-child {
-  padding-left: clamp(24px, 4vw, 66px);
-  border-left: 1px solid rgba(255, 255, 255, 0.16);
+/* The two halves of the hero, split by a single hairline.
+   Scoped to the split layout ONLY. The last child here is the demo card,
+   which carries its own symmetric padding — zeroing padding-left for the
+   stacked layout beat that rule and left the card's contents flush against
+   its left edge while the right stayed inset. Never applying it below the
+   breakpoint keeps the card's own padding intact. */
+@media (min-width: 881px) {
+  .mk-hero-grid > *:first-child { padding-right: clamp(24px, 4vw, 66px); }
+  .mk-hero-grid > *:last-child {
+    padding-left: clamp(24px, 4vw, 66px);
+    border-left: 1px solid rgba(255, 255, 255, 0.16);
+  }
 }
 @media (max-width: 880px) {
   .mk-hero-grid { grid-template-columns: 1fr; gap: 36px; }
-  .mk-hero-grid > *:first-child { padding-right: 0; }
-  .mk-hero-grid > *:last-child { border-left: 0; padding-left: 0; }
 }
 
 .mk-hero h1 {
@@ -672,7 +684,7 @@
 /* ── Footer ── */
 .mk-footer {
   border-top: 1px solid var(--rule);
-  padding: clamp(40px, 6vh, 72px) clamp(20px, 5vw, 64px);
+  padding: clamp(40px, 6vh, 72px) var(--mk-gutter);
 }
 .mk-footer-grid {
   max-width: 1240px;
