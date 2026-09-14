@@ -54,7 +54,7 @@ export class ElevenLabsTTS {
   constructor(opts: TTSOptions) {
     this.apiKey = opts.apiKey;
     this.voiceId = opts.voiceId;
-    this.modelId = opts.modelId ?? process.env.TTS_MODEL ?? 'eleven_turbo_v2_5';
+    this.modelId = opts.modelId ?? process.env.TTS_MODEL ?? 'eleven_flash_v2_5';
     this.voiceSettings = {
       ...DEFAULT_VOICE_SETTINGS,
       ...(opts.speed && opts.speed !== 1 ? { speed: opts.speed } : {}),

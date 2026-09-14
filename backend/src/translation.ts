@@ -226,12 +226,12 @@ export class ClaudeTranslator {
    */
   private glossary = new Map<string, string>();
   private static readonly MAX_GLOSSARY = 24;
-  // 4, not 8. These pairs ride UNCACHED in the user message on every request
-  // (~800-1200 tokens at 8), and translation is 77% of end-to-end latency, so
-  // input volume is the main lever on time-to-first-token. Four segments still
-  // carries discourse continuity; long-range terms are held by the pinned
-  // glossary instead, which is far cheaper per token.
-  private readonly maxContext = 4;
+  // 8 pairs. A measured A/B put 4 vs 8 at ~80ms of time-to-first-token, inside
+  // the noise floor — input volume is NOT the lever it looked like, and the
+  // earlier cut to 4 bought nothing. Korean is pro-drop and omits mandatory
+  // arguments, so with too little context the translator has to guess the
+  // subject and oscillates between "he/we/you/God" across segments.
+  private readonly maxContext = 8;
 
   constructor(
     apiKey: string,

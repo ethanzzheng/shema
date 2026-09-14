@@ -42,7 +42,7 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     sttLanguage: 'ko',
     ttsVoiceIdEnvVars: ['ELEVENLABS_VOICE_ID_EN', 'ELEVENLABS_VOICE_ID'],
     ttsModelEnvVars: ['TTS_MODEL'],
-    ttsModelId: 'eleven_turbo_v2_5',
+    ttsModelId: 'eleven_flash_v2_5',
     translator: 'ko-en',
     chunker: 'korean',
     implemented: true,
@@ -55,7 +55,7 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     // TTS_MODEL_KO only — deliberately independent of the English TTS_MODEL
     // so eleven_multilingual_v2 can be A/B tested without touching ko-en.
     ttsModelEnvVars: ['TTS_MODEL_KO'],
-    ttsModelId: 'eleven_turbo_v2_5',
+    ttsModelId: 'eleven_flash_v2_5',
     translator: 'en-ko',
     chunker: 'english',
     implemented: true,

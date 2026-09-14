@@ -138,7 +138,16 @@ export class ElevenLabsSTT {
     const params = new URLSearchParams({
       model: 'nova-3',
       language: this.language,
+      // punctuate is redundant with smart_format, but harmless.
       punctuate: 'true',
+      // smart_format deliberately WITHHOLDS finalization while a number
+      // sequence is still being spoken — Deepgram staff confirm this is by
+      // design, and it can block speech_final indefinitely. This pastor cites
+      // scripture constantly ("요한복음 3장 16절"), which is a number sequence
+      // followed by a dramatic pause, so the stall lands exactly on the text
+      // we most need promptly. no_delay releases it; the cost is occasionally
+      // less tidy number formatting, which the translator already handles.
+      no_delay: 'true',
       interim_results: 'true',
       endpointing: '400',        // finalize utterances promptly; the chunker reassembles sentences
       utterance_end_ms: '1000',  // also emit if utterance exceeds 1.0s of trailing silence
