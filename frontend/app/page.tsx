@@ -516,7 +516,7 @@ function PilotForm() {
   return (
     <form onSubmit={onSubmit} noValidate style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <label className="mk-micro" style={{ color: 'rgba(244,241,234,0.5)' }} htmlFor="pilot-church">Church name</label>
-      <input id="pilot-church" ref={churchRef} name="church" className={`mk-input${invalid === 'church' ? ' invalid' : ''}`} placeholder="Hanmaum Church" />
+      <input id="pilot-church" ref={churchRef} name="church" className={`mk-input${invalid === 'church' ? ' invalid' : ''}`} placeholder="Your church name" />
       <label className="mk-micro" style={{ color: 'rgba(244,241,234,0.5)' }} htmlFor="pilot-size">Congregation size</label>
       <select id="pilot-size" ref={sizeRef} name="size" className={`mk-input${invalid === 'size' ? ' invalid' : ''}`} defaultValue="Under 100">
         <option>Under 100</option>
