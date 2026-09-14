@@ -21,15 +21,6 @@ const TYPE_PAIRS = [
   { ko: '여호와는 나의 목자시니 내게 부족함이 없으리로다.', en: 'The Lord is my shepherd; I shall not want.', ref: 'PSALM 23:1 · MATCHED' },
 ];
 
-const MARQUEE_ITEMS = [
-  ['은혜', 'grace'],
-  ['역사하다', 'God is at work'],
-  ['찬송가 405장', 'Hymn no. 405'],
-  ['삼장 오절', 'chapter 3, verse 5'],
-  ['성령', 'the Holy Spirit'],
-  ['아멘', 'Amen'],
-];
-
 const PROBLEM_CARDS = [
   {
     mono: '요한복음 3:16 → a guess',
@@ -580,7 +571,6 @@ export default function MarketingPage() {
   const rootRef = useRef<HTMLDivElement>(null);
   const progressRef = useRef<HTMLDivElement>(null);
   const watermarkRef = useRef<HTMLDivElement>(null);
-  const sanctuaryRef = useRef<HTMLImageElement>(null);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => setMounted(true), []);
@@ -600,8 +590,7 @@ export default function MarketingPage() {
     return () => obs.disconnect();
   }, [mounted, reduced]);
 
-  // Scroll progress + the two parallax layers (each tracks its own progress
-  // through the viewport; travel stays inside the sanctuary's overscan).
+  // Scroll progress + the hero watermark's parallax layer.
   useEffect(() => {
     if (reduced) return;
     let raf = 0;
@@ -621,7 +610,6 @@ export default function MarketingPage() {
           el.style.transform = `translateY(${p * Math.abs(amount) * 220 * Math.sign(amount)}px)`;
         };
         layer(watermarkRef.current, 0.16);
-        layer(sanctuaryRef.current, -0.09);
       });
     };
     onScroll();
@@ -677,40 +665,10 @@ export default function MarketingPage() {
               <a href="#demo" className="mk-btn mk-btn-ink">Request a demo</a>
               <a href="#how" className="mk-btn mk-btn-outline">See how it works</a>
             </div>
-            <div className="rv" style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <span className="dot" style={{ color: 'var(--sage-ink)', width: 7, height: 7 }} />
-              <span className="mk-micro" style={{ color: 'var(--text-4)' }}>
-                Serving Korean-American congregations in the Northeast
-              </span>
-            </div>
           </div>
           <HeroDemo reduced={reduced} />
         </div>
       </header>
-
-      {/* ── Marquee ── */}
-      <div className="mk-marquee" aria-hidden>
-        <div className="mk-marquee-track">
-          {[false, true].map((hidden) => (
-            <div key={String(hidden)} style={{ display: 'flex' }} aria-hidden={hidden}>
-              {MARQUEE_ITEMS.map(([kr, en]) => (
-                <span key={`${kr}-${String(hidden)}`} className="mk-marquee-item">
-                  <span lang="ko" className="mk-marquee-kr">{kr}</span>
-                  <span className="mk-marquee-en">{en}</span>
-                </span>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* ── Sanctuary art band ── */}
-      <section className="mk-section">
-        <div className="mk-sanctuary rv">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img ref={sanctuaryRef} src="/sanctuary.svg" alt="Line drawing of a sanctuary: nave, arches, altar rail, and a gold cross" />
-        </div>
-      </section>
 
       {/* ── Problem (dark) ── */}
       <section id="why" className="mk-night mk-section">
@@ -738,7 +696,6 @@ export default function MarketingPage() {
       {/* ── Full-bleed statement ── */}
       <section className="mk-section" style={{ borderBottom: '1px solid var(--rule)', textAlign: 'center' }}>
         <div className="mk-wrap" style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center' }}>
-          <div className="mk-eyebrow rv">Why Shema</div>
           <h2 className="mk-statement-h2 rv" style={{ textWrap: 'balance' }}>
             Built for the sermon, <em>not the sentence.</em>
           </h2>
@@ -918,10 +875,6 @@ export default function MarketingPage() {
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             <span className="mk-brand"><CrossGlyph />Shema</span>
             <span className="serif-en" style={{ fontSize: 22, color: 'var(--gold-ink)' }} lang="he">שְׁמַע</span>
-            <p className="mk-body-sm" style={{ maxWidth: '38ch' }}>
-              &ldquo;Hear, O Israel&rdquo; (Deuteronomy 6:4). The name is our prayer that
-              everyone gets to hear.
-            </p>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <div className="mk-eyebrow" style={{ marginBottom: 4 }}>Product</div>

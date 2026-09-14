@@ -1,12 +1,36 @@
 /*
- * Marketing homepage styles (design_handoff_shema_redesign).
- * Parchment ground, night demo panes, Instrument Serif display.
+ * Marketing homepage styles.
+ * Night ground with one lit section, a photographic hero, and a sans display.
  * Fluid layout: auto-fit grids + clamp() type — no breakpoints, except
  * un-sticking the two sticky columns on narrow screens.
  */
 
 .mk {
-  background: var(--paper);
+  /* The page reads as one dark room with a single lit section in it.
+     Inverting via the TOKENS rather than by recolouring elements matters:
+     the markup sets colours inline in a dozen places (style={{ color:
+     'var(--ink)' }}), and inline styles beat any selector — redefining the
+     token is the only way those follow the ground. */
+  --ink: #E9E5DB;
+  --ink-soft: #CFCABE;
+  --text-2: #A9A497;
+  --text-3: #9A9589;
+  --text-4: #8A8578;
+  --text-5: #7C776B;
+  --gold-ink: var(--gold-hover);
+  --paper: #121210;
+  --paper-2: #1A1A17;
+  --paper-3: #1A1A17;
+  --rule: rgba(255, 255, 255, 0.12);
+  --rule-2: rgba(255, 255, 255, 0.14);
+  --rule-3: rgba(255, 255, 255, 0.24);
+
+  /* One radius scale, two steps: panels are softer than the controls that
+     sit inside them. Nothing on the page uses any other value. */
+  --mk-r-panel: 10px;
+  --mk-r-control: 6px;
+
+  background: #121210;
   color: var(--ink);
   font-family: var(--font);
   overflow-x: hidden;
@@ -76,10 +100,10 @@
   position: sticky;
   top: 0;
   z-index: 50;
-  background: rgba(244, 241, 234, 0.86);
+  background: rgba(14, 14, 12, 0.92);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--rule);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.09);
 }
 .mk-nav-inner {
   max-width: 1240px;
@@ -153,37 +177,72 @@
 .mk-hero {
   position: relative;
   overflow: hidden;
-  padding: clamp(56px, 10vh, 110px) clamp(20px, 5vw, 64px) clamp(48px, 8vh, 96px);
+  /* A congregation actually wearing the product. The scrim is heaviest on the
+     left so the headline has contrast, and thins to the right so the listeners
+     and their earbuds stay readable rather than being crushed to silhouette.
+     Keep the hero SHORT: `cover` maps the photo's full height onto the hero's,
+     so a tall hero pushes the earbuds below the fold instead of cropping. */
+  background-image:
+    linear-gradient(
+      to right,
+      rgba(10, 10, 9, 0.95) 0%,
+      rgba(10, 10, 9, 0.88) 38%,
+      rgba(10, 10, 9, 0.72) 66%,
+      rgba(10, 10, 9, 0.62) 100%
+    ),
+    url('/congregation.jpg');
+  background-size: cover;
+  background-position: 64% 66%;
+  padding: clamp(44px, 6.5vh, 84px) clamp(20px, 5vw, 64px);
 }
 .mk-hero-grid {
-  max-width: 1240px;
+  max-width: 1320px;
   margin: 0 auto;
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
-  gap: clamp(28px, 5vw, 80px);
+  /* A hard 50/50 divide, not an auto-fit split: the copy and the live panel
+     are two halves of one statement, so the seam between them is the point. */
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
   align-items: center;
   position: relative;
   z-index: 1;
 }
+/* The two halves of the hero, split by a single hairline. */
+.mk-hero-grid > *:first-child { padding-right: clamp(24px, 4vw, 66px); }
+.mk-hero-grid > *:last-child {
+  padding-left: clamp(24px, 4vw, 66px);
+  border-left: 1px solid rgba(255, 255, 255, 0.16);
+}
+@media (max-width: 880px) {
+  .mk-hero-grid { grid-template-columns: 1fr; gap: 36px; }
+  .mk-hero-grid > *:first-child { padding-right: 0; }
+  .mk-hero-grid > *:last-child { border-left: 0; padding-left: 0; }
+}
+
 .mk-hero h1 {
-  font-size: clamp(46px, 6.6vw, 92px);
-  line-height: 1.0;
-  letter-spacing: -0.02em;
+  font-size: clamp(40px, 5vw, 70px);
+  line-height: 1.02;
+  letter-spacing: -0.03em;
+  font-weight: 500;
   max-width: 13ch;
   text-wrap: balance;
-  color: var(--ink);
+  color: #F4F1E9;
 }
+/* Emphasis by weight and colour in the SAME family. The display face has no
+   italic cut, so `font-style: italic` here would be a synthesised slant. */
 .mk-hero h1 em {
-  font-style: italic;
-  color: var(--gold-ink);
+  font-style: normal;
+  font-weight: 500;
+  color: var(--gold-hover);
 }
 .mk-hero-lead {
-  color: var(--text-2);
+  color: rgba(244, 241, 233, 0.84);
   font-size: clamp(16px, 1.5vw, 19px);
   line-height: 1.6;
   max-width: 48ch;
   text-wrap: pretty;
 }
+.mk-hero .mk-eyebrow { color: rgba(244, 241, 233, 0.66); }
 .mk-hero-watermark {
   position: absolute;
   left: clamp(-60px, 1vw, 20px);
@@ -269,56 +328,10 @@
   transition: opacity 0.3s var(--ease);
 }
 
-/* ── Marquee ── */
-.mk-marquee {
-  background: var(--paper-3);
-  border-top: 1px solid var(--rule);
-  border-bottom: 1px solid var(--rule);
-  overflow: hidden;
-  padding: 18px 0;
-}
-.mk-marquee-track {
-  display: flex;
-  width: max-content;
-  animation: mk-marquee 46s linear infinite;
-}
-@keyframes mk-marquee {
-  from { transform: translateX(0); }
-  to   { transform: translateX(-50%); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .mk-marquee-track { animation: none; }
-}
-.mk-marquee-item {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 0 34px;
-  white-space: nowrap;
-  border-right: 1px solid var(--rule);
-}
-.mk-marquee-kr { font-family: var(--font-serif, serif); font-size: 16px; color: var(--gold-ink); }
-.mk-marquee-en { font-family: var(--font-display, serif); font-size: 19px; color: var(--ink); }
-
-/* ── Sanctuary band ── */
-.mk-sanctuary {
-  max-width: 1240px;
-  margin: 0 auto;
-  border: 1px solid var(--rule-2);
-  border-radius: 12px;
-  overflow: hidden;
-  height: clamp(300px, 40vw, 540px);
-  position: relative;
-  background: var(--paper);
-}
-.mk-sanctuary img {
-  position: absolute;
-  inset: -16% 0;
-  width: 100%;
-  height: 132%;
-  object-fit: cover;
-  object-position: center 40%;
-}
+/* The scrolling Korean/English ticker and the line-art sanctuary band were
+   both removed: the ticker was decoration, and the drawing existed to supply
+   the image of a church on a page that had no photograph — the hero now does
+   that with a real one. */
 
 /* ── Dark bands ── */
 .mk-night {
@@ -526,8 +539,23 @@
 }
 
 /* ── How it works ── */
+/* The one lit room in the building: "How it works" stays on paper so the
+   night either side of it has something to be dark against. Tokens are
+   restored to their daylight values for the whole subtree. */
 .mk-how {
-  background: var(--paper-2);
+  --ink: #1B1B18;
+  --ink-soft: #33322C;
+  --text-2: #5E5A50;
+  --text-3: #6E6A60;
+  --text-4: #8A857A;
+  --text-5: #9C978B;
+  --gold-ink: #8A6A2C;
+  --rule: rgba(27, 27, 24, 0.10);
+  --rule-2: rgba(27, 27, 24, 0.14);
+  --rule-3: rgba(27, 27, 24, 0.18);
+
+  background: #F4F1EA;
+  color: var(--ink);
 }
 .mk-how-grid {
   display: grid;
@@ -632,3 +660,89 @@
 }
 .mk-footer a { color: var(--text-2); font-size: 14px; transition: color 0.3s var(--ease); }
 .mk-footer a:hover { color: var(--ink); }
+
+/* ════════════════════════════════════════════════════════════════════
+   NIGHT REDESIGN — display type, shape scale, and controls
+   ════════════════════════════════════════════════════════════════════ */
+
+/* Display type is sans at 500. The old 400-weight serif was the loudest
+   "generated" tell on the page; 600 read as a slab at these sizes. */
+.mk-h2,
+.mk-statement-h2 {
+  font-weight: 500;
+  letter-spacing: -0.03em;
+}
+.mk-h2 { font-size: clamp(28px, 3.4vw, 46px); line-height: 1.04; }
+.mk-statement-h2 { font-size: clamp(34px, 5.2vw, 76px); line-height: 1.02; }
+
+/* Same family, no synthesised italic — the display cut has no true italic. */
+.mk-statement-h2 em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--gold-hover);
+}
+
+/* The line-art watermark competes with a photograph behind it. */
+.mk-hero-watermark,
+.mk-hero-rule { opacity: 0.1; }
+
+/* ── One shape scale ── */
+.mk-card-dark,
+.mk-setup-card,
+.mk-context-card,
+.mk-step,
+.mk-verse-demo,
+.mk-wave-demo,
+.mk-demo { border-radius: var(--mk-r-panel); }
+
+.mk-btn,
+.mk-chip,
+.mk-tag,
+.mk-input,
+.mk-input-light,
+.mk-lang-chip { border-radius: var(--mk-r-control); }
+
+/* ── Controls on a night ground ──
+   Gold carries the primary action; --ink now resolves to a LIGHT value, so
+   the old `background: var(--ink)` would have rendered light-on-light. */
+.mk .mk-btn-ink,
+.mk a.mk-btn-ink {
+  background: var(--gold-hover);
+  color: #0E0E0C;
+}
+.mk .mk-btn-ink:hover,
+.mk a.mk-btn-ink:hover {
+  background: var(--gold);
+  color: #0E0E0C;
+}
+.mk .mk-btn-outline,
+.mk a.mk-btn-outline {
+  background: rgba(10, 10, 9, 0.3);
+  color: #E9E5DB;
+  border: 1px solid rgba(233, 229, 219, 0.4);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+}
+.mk .mk-btn-outline:hover,
+.mk a.mk-btn-outline:hover {
+  border-color: var(--gold-hover);
+  background: rgba(220, 187, 121, 0.10);
+}
+
+/* Hardcoded `background: #fff` with `color: var(--ink)`: light-on-light now. */
+.mk .mk-input-light {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #E9E5DB;
+}
+.mk .mk-input-light::placeholder { color: rgba(233, 229, 219, 0.42); }
+
+/* The footer is a <footer>, not a .mk-section — it needs the ground set
+   explicitly or it lands as a paper slab under a night page. */
+.mk-footer { background: #121210; }
+
+/* ── Rhythm ──
+   Identical padding on every section is the metronome that reads as
+   templated; the lit section is deliberately tighter than the night ones. */
+.mk-section { padding-block: clamp(58px, 9.5vh, 130px); }
+.mk-how { padding-block: clamp(40px, 6vh, 84px); }
