@@ -108,7 +108,12 @@ test('system prompts: ko-en is the original; en-ko carries register/honorific/�
   assert.ok(SYSTEM_PROMPT_EN_KO.includes('예수님께서'));
   assert.ok(SYSTEM_PROMPT_EN_KO.includes('개역개정'));
   assert.ok(SYSTEM_PROMPT_EN_KO.includes('요한복음 3장 16절'));
-  assert.ok(SYSTEM_PROMPT_EN_KO.includes('{"translation"')); // same JSON contract
+  // Both directions share the same output contract — plain text, no JSON.
+  // The JSON wrapper cost ~8 scaffolding tokens per segment and broke on
+  // unescaped quotes in sermon dialogue, dropping whole sentences.
+  assert.ok(SYSTEM_PROMPT_EN_KO.includes('as plain text'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('as plain text'));
+  assert.ok(!SYSTEM_PROMPT_KO_EN.includes('valid JSON'));
 });
 
 test('extractJsonObject: plain JSON passes through', () => {
