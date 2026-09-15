@@ -53,7 +53,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   let chunker: KoreanChunker | null = null;
   // Translator and scripture detector are per-direction; rebuilt on each
   // start (a fresh translator also resets the discourse context).
-  let translator = new ClaudeTranslator(ANTHROPIC_API_KEY);
+  let translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, 'ko-en', session.roomId);
   let detectRef: (text: string) => ScriptureRef | null = detectReference;
 
   // Running Bible reference the pastor is reading from (anchors scripture to NIV).
@@ -411,7 +411,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     session.mode = mode;
     session.direction = direction;
     tts = createTts(direction);
-    translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction);
+    translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId);
     detectRef = direction === 'en-ko' ? detectReferenceEn : detectReference;
     currentRef = null;
     refAgeChunks = 0;

@@ -6,6 +6,7 @@ import {
   extractJsonObject,
   salvageTranslation,
   churchGlossaryFromEnv,
+  glossaryEnvKey,
   SYSTEM_PROMPT_KO_EN,
   SYSTEM_PROMPT_EN_KO,
 } from '../src/translation';
@@ -217,4 +218,48 @@ test('a bare verse number survives into the English, but 구절 stays a phrase',
   assert.ok(SYSTEM_PROMPT_KO_EN.includes('never flatten it to "that verse"'));
   // …and the exception that keeps 구절 a noun.
   assert.ok(SYSTEM_PROMPT_KO_EN.includes('한 구절 한 구절'));
+});
+
+test('each church gets its own glossary, not everyone else’s', () => {
+  // One deployment serves every church: a Session per room, but a single
+  // process and therefore a single environment. A flat CHURCH_GLOSSARY would
+  // put every congregation's names into every other congregation's prompt.
+  const env = {
+    CHURCH_GLOSSARY: '목장=Mokjang',
+    CHURCH_GLOSSARY_HANMAUM: '한마음교회=Hanmaum Church,권희=Kwon-hee',
+    CHURCH_GLOSSARY_GRACE_CHURCH: '은혜교회=Grace Church',
+  } as unknown as NodeJS.ProcessEnv;
+
+  const hanmaum = churchGlossaryFromEnv(env, 'hanmaum');
+  assert.ok(hanmaum.includes('한마음교회 = "Hanmaum Church"'));
+  assert.ok(hanmaum.includes('목장 = "Mokjang"'), 'shared terms still apply');
+  // The load-bearing assertion: another church's names must NOT leak in.
+  assert.ok(!hanmaum.includes('Grace Church'));
+
+  const grace = churchGlossaryFromEnv(env, 'grace-church');
+  assert.ok(grace.includes('은혜교회 = "Grace Church"'));
+  assert.ok(grace.includes('목장 = "Mokjang"'));
+  assert.ok(!grace.includes('Kwon-hee'), 'member names must not cross churches');
+
+  // An unconfigured room still gets the shared terms and nothing private.
+  const unknown = churchGlossaryFromEnv(env, 'some-new-church');
+  assert.equal(unknown, '목장 = "Mokjang"');
+});
+
+test('a church can override a shared rendering', () => {
+  // The case that makes a flat list actively wrong rather than merely noisy:
+  // two churches legitimately disagreeing about the same Korean word.
+  const env = {
+    CHURCH_GLOSSARY: '목자=shepherd',
+    CHURCH_GLOSSARY_HANMAUM: '목자=Mokja',
+  } as unknown as NodeJS.ProcessEnv;
+  assert.equal(churchGlossaryFromEnv(env, 'hanmaum'), '목자 = "Mokja"');
+  assert.equal(churchGlossaryFromEnv(env, 'other'), '목자 = "shepherd"');
+});
+
+test('glossaryEnvKey maps a slug to a legal env var name', () => {
+  assert.equal(glossaryEnvKey('hanmaum'), 'CHURCH_GLOSSARY_HANMAUM');
+  // Slugs are [a-z0-9-]; hyphens are not legal in env var names.
+  assert.equal(glossaryEnvKey('grace-church'), 'CHURCH_GLOSSARY_GRACE_CHURCH');
+  assert.equal(glossaryEnvKey('default'), 'CHURCH_GLOSSARY_DEFAULT');
 });

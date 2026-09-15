@@ -238,6 +238,8 @@ export class ClaudeTranslator {
     apiKey: string,
     model = process.env.TRANSLATION_MODEL || 'claude-sonnet-5',
     direction: Direction = 'ko-en',
+    /** Church slug (the room). Selects that church's glossary; see below. */
+    roomId?: string,
   ) {
     // A hung request is worse here than a failed one: emission is ordered by
     // seq, so one stalled call blocks every sentence behind it. A run saw a
@@ -258,7 +260,7 @@ export class ClaudeTranslator {
     // from CHURCH_GLOSSARY as "한국어=English" pairs, comma-separated. Appended
     // to the SYSTEM prompt so they ride the prompt cache rather than costing
     // uncached tokens on every segment.
-    const extra = churchGlossaryFromEnv();
+    const extra = churchGlossaryFromEnv(process.env, roomId);
     if (extra) this.systemPrompt += `\n\nCHURCH-SPECIFIC NAMES (use these exact renderings every time):\n${extra}`;
     this.srcLabel = direction === 'en-ko' ? 'English' : 'Korean';
     this.tgtLabel = direction === 'en-ko' ? 'Korean' : 'English';
@@ -494,13 +496,40 @@ export class ClaudeTranslator {
  * which is what DEEPGRAM_KEYTERMS does — the two work together, one so the
  * name is HEARD and one so it is SPELLED the same way every time.
  */
-export function churchGlossaryFromEnv(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = env.CHURCH_GLOSSARY;
-  if (!raw) return '';
-  return raw
-    .split(',')
-    .map((pair) => pair.split('='))
-    .filter((kv) => kv.length === 2 && kv[0].trim() && kv[1].trim())
-    .map(([ko, en]) => `${ko.trim()} = "${en.trim()}"`)
-    .join('\n');
+/** "grace-church" → CHURCH_GLOSSARY_GRACE_CHURCH. Slugs are already [a-z0-9-]. */
+export function glossaryEnvKey(roomId: string): string {
+  return `CHURCH_GLOSSARY_${roomId.toUpperCase().replace(/-/g, '_')}`;
+}
+
+function parsePairs(raw: string | undefined, into: Map<string, string>): void {
+  if (!raw) return;
+  for (const pair of raw.split(',')) {
+    const [ko, en] = pair.split('=');
+    if (ko?.trim() && en?.trim()) into.set(ko.trim(), en.trim());
+  }
+}
+
+/**
+ * Proper nouns pinned for one church, as prompt lines.
+ *
+ * One deployment serves every church — a Session per room, but a single
+ * process and therefore a single environment. A flat CHURCH_GLOSSARY would
+ * put every congregation's names into every other congregation's prompt:
+ * harmless for a name that never comes up, actively wrong the moment two
+ * churches disagree (one wants 목자 as "shepherd", another as "Mokja"), and
+ * needless prompt weight for all of them.
+ *
+ * So CHURCH_GLOSSARY holds only what is TRUE EVERYWHERE, and each church adds
+ * its own CHURCH_GLOSSARY_<SLUG> on top, which wins on conflict. Member names
+ * belong in the per-church one — a garbled name during a welcome is heard by
+ * exactly the person being welcomed, and no other church should be carrying it.
+ */
+export function churchGlossaryFromEnv(
+  env: NodeJS.ProcessEnv = process.env,
+  roomId?: string,
+): string {
+  const merged = new Map<string, string>();
+  parsePairs(env.CHURCH_GLOSSARY, merged);
+  if (roomId) parsePairs(env[glossaryEnvKey(roomId)], merged);
+  return [...merged].map(([ko, en]) => `${ko} = "${en}"`).join('\n');
 }
