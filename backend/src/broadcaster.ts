@@ -136,9 +136,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     );
     // Worth seeing per service: a rising count means the voice is drifting
     // quiet on short lines, which is otherwise only audible in the pews.
-    if (quietClipRetries > 0) {
+    if (quietClipsRaised > 0) {
       console.log(
-        `[Audio] ${quietClipRetries} of ${n} clips came back under-driven and were re-synthesised`,
+        `[Audio] ${quietClipsRaised} of ${n} clips came back under-driven and were raised`,
       );
     }
   }
@@ -274,8 +274,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   let activeRange: { start: number; end: number } | null = null;
   /** Previous sentence sent to TTS, for prosody continuity across clips. */
   let lastSynthText = '';
-  /** Short clips that came back under-driven and were synthesised again. */
-  let quietClipRetries = 0;
+  /** Clips that came back under-driven and were raised to the normal level. */
+  let quietClipsRaised = 0;
 
   const ttsPipeline = new TtsPipeline<TtsJob>({
     prefetch: 2,
@@ -284,10 +284,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       lastSynthText = text;
       // Short lines are held and level-checked before release; long ones
       // stream straight through. See synthesiseStreamLevelled.
-      return tts.synthesiseStreamLevelled(text, onChunk, 8000, prev, ({ meanGain }) => {
-        quietClipRetries++;
+      return tts.synthesiseStreamLevelled(text, onChunk, 8000, prev, ({ meanGain, steps }) => {
+        quietClipsRaised++;
         console.log(
-          `[tts] clip came back under-driven (mean gain ${meanGain.toFixed(1)}), re-synthesising: "${text.slice(0, 40)}"`,
+          `[tts] clip came back under-driven (mean gain ${meanGain.toFixed(1)}), raised ${steps} steps: "${text.slice(0, 40)}"`,
         );
       });
     },

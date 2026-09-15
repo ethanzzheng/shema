@@ -96,6 +96,12 @@ function parseFrame(buf: Buffer, off: number): FrameInfo | null {
 export interface Mp3Level {
   /** Mean global_gain across every granule in the clip. */
   meanGain: number;
+  /**
+   * Loudest granule in the clip. Stands in for peak amplitude: raising a clip
+   * by its mean alone clips dynamic speech, because a quiet average can still
+   * carry a loud syllable.
+   */
+  maxGain: number;
   frames: number;
   granules: number;
 }
@@ -118,6 +124,7 @@ export function mp3Level(buf: Buffer): Mp3Level | null {
   let total = 0;
   let granules = 0;
   let misses = 0;
+  let maxGain = 0;
   while (off < buf.length - 4) {
     const f = parseFrame(buf, off);
     if (!f) {
@@ -130,14 +137,80 @@ export function mp3Level(buf: Buffer): Mp3Level | null {
       if (g >= 0) {
         total += g;
         granules++;
+        if (g > maxGain) maxGain = g;
       }
     }
     frames++;
     off += f.length;
   }
   if (!frames || !granules) return null;
-  return { meanGain: total / granules, frames, granules };
+  return { meanGain: total / granules, maxGain, frames, granules };
 }
 
 /** One global_gain step is about 1.5 dB. */
 export const DB_PER_GAIN_STEP = 1.5;
+
+/** Write `n` bits of `value` at absolute bit position `pos`. */
+function setBits(buf: Buffer, pos: number, n: number, value: number): void {
+  for (let i = 0; i < n; i++) {
+    const p = pos + i;
+    const byteIdx = p >> 3;
+    if (byteIdx >= buf.length) return;
+    const bit = (value >> (n - 1 - i)) & 1;
+    const mask = 1 << (7 - (p & 7));
+    if (bit) buf[byteIdx] |= mask;
+    else buf[byteIdx] &= ~mask;
+  }
+}
+
+/**
+ * Raise (or lower) a whole clip by `steps` quantiser steps, losslessly.
+ *
+ * This is what mp3gain does: global_gain is the exponent the decoder applies
+ * when it requantises a granule, so adding to it scales the output without
+ * touching the Huffman-coded spectrum. No decode, no re-encode, no ffmpeg —
+ * which matters because the deploy has none — and no generational loss.
+ *
+ * Returns a NEW buffer; the input is never mutated. Returns null if the clip
+ * does not parse or if any granule would clip past the 8-bit field, so a
+ * partial rewrite can never be emitted.
+ */
+export function mp3ApplyGain(buf: Buffer, steps: number): Buffer | null {
+  if (!Number.isFinite(steps) || steps === 0) return null;
+  const out: Buffer = Buffer.alloc(buf.length);
+  buf.copy(out);
+
+  let off = 0;
+  if (out.length > 10 && out.toString('latin1', 0, 3) === 'ID3') {
+    const size =
+      ((out[6] & 0x7f) << 21) | ((out[7] & 0x7f) << 14) | ((out[8] & 0x7f) << 7) | (out[9] & 0x7f);
+    off = 10 + size;
+  }
+
+  // Collect every granule first: if even one would saturate, change nothing.
+  // A clip that came back half-raised is worse than one left alone.
+  const edits: { pos: number; value: number }[] = [];
+  let frames = 0;
+  let misses = 0;
+  while (off < out.length - 4) {
+    const f = parseFrame(out, off);
+    if (!f) {
+      off++;
+      if (++misses > 4096 && frames === 0) return null;
+      continue;
+    }
+    for (const bitPos of f.gainOffsets) {
+      const g = bits(out, bitPos, 8);
+      if (g < 0) return null;
+      const next = g + steps;
+      if (next < 0 || next > 255) return null;
+      edits.push({ pos: bitPos, value: next });
+    }
+    frames++;
+    off += f.length;
+  }
+  if (!frames || !edits.length) return null;
+
+  for (const e of edits) setBits(out, e.pos, 8, e.value);
+  return out;
+}

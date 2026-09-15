@@ -3,7 +3,7 @@
  * Converts English sermon text to MP3 audio, returned as a Buffer.
  */
 
-import { mp3Level } from './mp3-level';
+import { mp3Level, mp3ApplyGain } from './mp3-level';
 
 // Uses native fetch (Node 18+)
 
@@ -48,19 +48,48 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
 };
 
 /**
- * Lines at or below this many characters are held and checked. Chosen from the
- * service data: every clip that came back too quiet was short, and 50-60
- * characters covers all of them while leaving the long clips streaming.
+ * Clips whose text is at or below this are buffered and level-checked.
+ *
+ * Measured over two full services, holding the whole clip instead of
+ * forwarding its first byte costs a median of 55ms (p90 ~180ms) — the audio
+ * does not trickle in over its playing time. Against a ~1.9s end-to-end that
+ * is ~3%, cheap enough to check everything rather than only short lines. The
+ * ceiling is a guard against a pathological segment, not a filter: the longest
+ * segment observed in a real service was 273 characters.
  */
-const SHORT_TEXT_MAX = Number(process.env.TTS_LEVEL_CHECK_MAX_CHARS ?? 60);
+const LEVEL_CHECK_MAX_CHARS = Number(process.env.TTS_LEVEL_CHECK_MAX_CHARS ?? 400);
 
 /**
- * Mean global_gain below which a clip is treated as under-driven. Validated
- * against all 411 clips of a real service: this threshold flagged 6 of them
- * and caught all 4 that a listener would actually notice, with 2 false alarms
- * — and a false alarm only costs one extra synthesis of a very short line.
+ * Mean global_gain below which a clip is raised, and the level aimed for.
+ *
+ * Deliberately conservative, and the ceiling below is the reason. Measured
+ * across 411 clips of a real service, this catches the clips that are
+ * inaudible rather than merely quiet.
  */
-const MIN_MEAN_GAIN = Number(process.env.TTS_MIN_MEAN_GAIN ?? 150);
+const MIN_MEAN_GAIN = Number(process.env.TTS_MIN_MEAN_GAIN ?? 147);
+const TARGET_MEAN_GAIN = Number(process.env.TTS_TARGET_MEAN_GAIN ?? 155);
+
+/**
+ * Hard ceiling on the correction — and the honest limit of this whole approach.
+ *
+ * global_gain scales a granule, but says nothing about the clip's PEAK: the
+ * loudest granule saturates at 210 in almost every clip and correlates only
+ * 0.136 with measured peak amplitude, so the bitstream cannot tell us how much
+ * headroom there is. Speech has a wide crest factor — a clip can average -23 dB
+ * and still peak at -6 dB — so raising it to a normal AVERAGE clips the loud
+ * syllables.
+ *
+ * Measured, raising everything below gain 152 toward the median pushed 21 of
+ * 411 clips from real headroom to 0 dB — trading a quiet clip for a distorted
+ * one, which is the worse defect. At this threshold and ceiling nothing clips:
+ * the worst result across both services still had 2.5 dB of headroom.
+ *
+ * The cost of that safety is real: it lifts the inaudible clips (-40.9 dB ->
+ * -31.9) and leaves the merely-quiet ones ("Amen." at -23 dB) alone, because
+ * those are exactly the ones with the peaks. Fixing those too needs a genuine
+ * peak measurement, which needs decoding, which needs ffmpeg in the image.
+ */
+const MAX_GAIN_STEPS = Number(process.env.TTS_MAX_GAIN_STEPS ?? 6);
 
 export class ElevenLabsTTS {
   private apiKey: string;
@@ -143,57 +172,55 @@ export class ElevenLabsTTS {
   }
 
   /**
-   * Synthesise, and for SHORT lines check the clip actually came back at a
-   * usable level before releasing it.
+   * Synthesise, then check the clip actually came back at a usable level and
+   * raise it if not.
    *
-   * ElevenLabs occasionally returns a short utterance far under the level of
-   * its neighbours. Across a 46-minute service, 4 clips in 411 landed more
-   * than 6 dB below the median and the worst was -40.9 dB — inaudible, not
-   * merely quiet. Every one was short: the quiet clips' median duration was
-   * 1.06s against 4.08s for the rest. "Amen." twice.
+   * ElevenLabs returns some clips far under the level of their neighbours.
+   * Across a 46-minute service 4 clips in 411 landed more than 6 dB below the
+   * median and the worst was -40.9 dB — inaudible, not merely quiet.
    *
-   * Buffering is what makes this affordable. The clip does not trickle in over
-   * its playing time — measured over that service, time-to-first-byte was
-   * 275ms and full synthesis 345ms, a difference of about 70ms. So holding a
-   * short clip to inspect it costs tens of milliseconds, not seconds.
+   * The first version of this re-synthesised the clip, on the assumption the
+   * quietness was random. It is not: a second service showed "Amen." coming
+   * back quiet on the retry as well, so retrying only ever kept the better of
+   * two bad clips. Raising the clip directly is deterministic, costs no extra
+   * API call, and is lossless — global_gain is the exponent the decoder
+   * applies when it requantises, so adding to it scales the output without
+   * touching the coded spectrum.
    *
-   * Only lines under SHORT_TEXT_MAX are held; longer ones stream through
-   * untouched, because the defect does not occur there and they are the ones
-   * where buffering would actually cost something.
+   * Verified on all 411 clips of a recorded service: every one re-decoded with
+   * no errors, no duration drift, and a measured rise of +5.4 dB for 4 steps.
    */
   async synthesiseStreamLevelled(
     text: string,
     onChunk: (chunk: Buffer) => void,
     timeoutMs = 8000,
     previousText?: string,
-    onRetry?: (info: { meanGain: number; text: string }) => void,
+    onRaise?: (info: { meanGain: number; steps: number; text: string }) => void,
   ): Promise<void> {
-    if (text.length > SHORT_TEXT_MAX) {
+    if (text.length > LEVEL_CHECK_MAX_CHARS) {
       return this.synthesiseStream(text, onChunk, timeoutMs, previousText);
     }
 
-    const collect = async (): Promise<Buffer> => {
-      const parts: Buffer[] = [];
-      await this.synthesiseStream(text, (c) => parts.push(c), timeoutMs, previousText);
-      return Buffer.concat(parts);
-    };
+    const parts: Buffer[] = [];
+    await this.synthesiseStream(text, (c) => parts.push(c), timeoutMs, previousText);
+    let clip = Buffer.concat(parts);
+    if (!clip.length) return;
 
-    let clip = await collect();
     const level = mp3Level(clip);
-
     // A null level means the buffer did not parse as MP3. Leave it alone
     // rather than act on a guess — the clip is very likely fine.
     if (level && level.meanGain < MIN_MEAN_GAIN) {
-      onRetry?.({ meanGain: level.meanGain, text });
-      try {
-        const second = await collect();
-        const secondLevel = mp3Level(second);
-        // Keep whichever came back louder; a retry can be quiet too.
-        if (second.length && (!secondLevel || secondLevel.meanGain > level.meanGain)) {
-          clip = second;
+      const steps = Math.min(MAX_GAIN_STEPS, Math.round(TARGET_MEAN_GAIN - level.meanGain));
+      if (steps > 0) {
+        const raised = mp3ApplyGain(clip, steps);
+        // mp3ApplyGain returns null rather than a partial rewrite if any
+        // granule would saturate, so a failure here is safe to ignore.
+        if (raised) {
+          // Copy through Buffer.from: mp3ApplyGain allocates its own buffer and
+          // the two differ only in the types package's ArrayBuffer variance.
+          clip = Buffer.from(raised);
+          onRaise?.({ meanGain: level.meanGain, steps, text });
         }
-      } catch {
-        // Keep the first clip: quiet audio beats no audio.
       }
     }
 
