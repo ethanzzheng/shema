@@ -135,7 +135,16 @@ function findRepeats(segs: Seg[]): Repeat[] {
   return out;
 }
 
-/** Repetition *inside* one segment: the same substantive phrase twice. */
+/**
+ * Repetition *inside* one segment: the same substantive phrase twice.
+ *
+ * Classified against the Korean, exactly as adjacent repetition already is.
+ * Preachers repeat themselves on purpose — "There is a fight for the truth,
+ * and there is a fight for God", "when it's beyond our own strength, when
+ * it's beyond our own will" — and counting that as pipeline duplication makes
+ * the metric rise whenever the preaching is at its most rhetorical. Only a
+ * phrase the English doubled and the KOREAN did not is a defect.
+ */
 function findInternalRepeats(segs: Seg[]): { seq: number; phrase: string; n: number; en: string; koHas: boolean }[] {
   const out: { seq: number; phrase: string; n: number; en: string; koHas: boolean }[] = [];
   for (const s of segs) {
@@ -153,7 +162,20 @@ function findInternalRepeats(segs: Seg[]): { seq: number; phrase: string; n: num
       if (c < 2) continue;
       if (!best || g.length > best.phrase.length) best = { phrase: g, n: c };
     }
-    if (best) out.push({ seq: s.seq, phrase: best.phrase, n: best.n, en: s.en, koHas: false });
+    if (!best) continue;
+    // Did the pastor repeat himself? Korean has no spaces to tokenise on, so
+    // look for any repeated run of characters long enough to be a phrase.
+    const ko = s.ko.replace(/\s+/g, '');
+    let koHas = false;
+    for (let n = 6; n <= Math.min(20, Math.floor(ko.length / 2)) && !koHas; n++) {
+      const seenKo = new Set<string>();
+      for (let i = 0; i + n <= ko.length; i++) {
+        const g = ko.slice(i, i + n);
+        if (seenKo.has(g)) { koHas = true; break; }
+        seenKo.add(g);
+      }
+    }
+    out.push({ seq: s.seq, phrase: best.phrase, n: best.n, en: s.en, koHas });
   }
   return out;
 }
@@ -279,23 +301,56 @@ function verseAudit(segs: Seg[]): { seq: number; ko: number[]; en: number[]; koT
 // ── Dangling / ambiguous fragments ────────────────────────────────────────
 const KO_DANGLING_TAIL = /(을|를|은|는|이|가|의|와|과|에|에게|에서|으로|로|도|만|까지|부터|처럼|같이)$/;
 
+/**
+ * Sentence-final endings that merely LOOK like a stranded particle.
+ *
+ * Korean interrogatives close on 가 — 무엇인가, 어떻게 이럴 수가 있는가 — and 가
+ * is also the subject particle, so the tail test read finished questions as
+ * sentences cut off mid-phrase. "So what is the purpose of all these things?"
+ * is not a fragment. Likewise 는데/ㄴ데 and the 요/죠 endings.
+ */
+const KO_SENTENCE_FINAL = /(는가|은가|인가|ㄴ가|던가|나요|가요|까요|는데요|은데요|군요|네요|지요|죠|습니까|ㅂ니까|입니까)$/;
+
 function danglingAudit(segs: Seg[]): { seq: number; ko: string; en: string; why: string[] }[] {
   const out: { seq: number; ko: string; en: string; why: string[] }[] = [];
   for (const s of segs) {
     const why: string[] = [];
     const koTail = s.ko.replace(/[\s.,!?…]+$/, '');
-    if (KO_DANGLING_TAIL.test(koTail)) why.push('ko-ends-on-particle');
+    if (KO_DANGLING_TAIL.test(koTail) && !KO_SENTENCE_FINAL.test(koTail)) {
+      why.push('ko-ends-on-particle');
+    }
     const en = s.en.trim();
     if (/,$/.test(en)) why.push('en-ends-on-comma');
-    // A whole segment that is just a noun phrase / appositive: opens with a
-    // determiner or demonstrative and contains no finite verb.
-    // The earlier version missed contractions ("I'm"), past tense ("met",
-    // "loved") and common verbs ("bring"), so it invented fragments that were
-    // perfectly good sentences — and those false positives drove a whole round
-    // of misdirected review. Be generous about what counts as a verb.
-    const VERBISH = /\b(?:is|are|was|were|am|be|being|been|has|have|had|do|does|did|will|would|can|could|shall|should|must|may|might|let|lets|[a-z]+ed|[a-z]+ing|says?|said|tells?|told|gives?|gave|makes?|made|comes?|came|goes?|went|brings?|brought|meets?|met|needs?|wants?|knows?|knew|sees?|saw|thinks?|loves?|lives?|prays?|reads?|hopes?|feels?|felt)\b/i;
+    // A whole segment that is just a noun phrase / appositive — the shape the
+    // English takes when the Korean was cut before its verb.
+    //
+    // This has now produced false positives twice, and each time they cost a
+    // round of review chasing a defect that was not there. The allow-list of
+    // verbs can never be complete: it was missing every irregular past
+    // ("forgot", "knew", "spoke") and every bare imperative ("Listen", "Add",
+    // "Go") a preacher actually uses, so "They forgot the grace of the cross."
+    // and "Now go in peace." were both reported as fragments.
+    //
+    // Two structural guards do more than lengthening the list ever will:
+    //   · a pronoun subject means it is a sentence, whatever the verb is;
+    //   · a real noun phrase has to START like one.
+    // Under-flagging is the right failure here — a missed fragment costs one
+    // awkward line, a false one costs a review cycle.
+    const VERBISH =
+      /\b(?:is|are|was|were|am|be|being|been|has|have|had|do|does|did|will|would|can|could|shall|should|must|may|might|let|lets|[a-z]+ed|[a-z]+ing|says?|said|tells?|told|gives?|gave|makes?|made|comes?|came|go|goes|went|brings?|brought|meets?|met|needs?|wants?|knows?|knew|sees?|saw|thinks?|thought|loves?|lives?|prays?|reads?|hopes?|feels?|felt|forgets?|forgot|senses?|recalls?|remembers?|listens?|listen|adds?|add|takes?|took|hears?|heard|finds?|found|keeps?|kept|holds?|held|stands?|stood|sings?|sang|asks?|speaks?|spoke|writes?|wrote|becomes?|became|begins?|began|leaves?|left|loses?|lost|means?|meant|sends?|sent|spends?|spent|teaches?|taught|wins?|won|understands?|understood)\b/i;
     const CONTRACTION = /(?:'m|'re|'s|'ve|'ll|'d|n't)\b/i;
-    if (!VERBISH.test(en) && !CONTRACTION.test(en)) {
+    // "They forgot." / "I still sense…" — a subject pronoun makes it a clause.
+    const PRONOUN_SUBJECT = /^(?:i|you|he|she|it|we|they|there|here)\b/i;
+    // A bare noun phrase opens like one: determiner, demonstrative, possessive,
+    // or a preposition heading a stranded adjunct ("Among church members.").
+    const NOUN_PHRASE_OPENER =
+      /^(?:the|a|an|this|that|these|those|my|our|your|his|her|its|their|among|about|for|with|in|on|at|to|from|of|by)\b/i;
+    if (
+      !VERBISH.test(en) &&
+      !CONTRACTION.test(en) &&
+      !PRONOUN_SUBJECT.test(en) &&
+      NOUN_PHRASE_OPENER.test(en)
+    ) {
       why.push('en-bare-noun-phrase');
     }
     if (why.length) out.push({ seq: s.seq, ko: s.ko, en, why });
@@ -371,8 +426,14 @@ function report(label: string, stutter: string): Record<string, unknown> {
     console.log(`      B: ${r.b.slice(0, 100)}`);
   }
   console.log(`\n── REPETITION (within one segment) ──────────────────────────────`);
-  console.log(`count ${internal.length}`);
-  for (const r of internal.slice(0, 20)) console.log(`  seq ${r.seq} ×${r.n} "${r.phrase}"\n      ${r.en.slice(0, 110)}`);
+  // Only the English-only doublings are defects; the rest is the preaching.
+  const internalDup = internal.filter((r) => !r.koHas);
+  const internalEmphasis = internal.length - internalDup.length;
+  console.log(
+    `count ${internalDup.length} pipeline` +
+      (internalEmphasis ? `  ·  ${internalEmphasis} speaker emphasis (Korean repeats it too)` : ''),
+  );
+  for (const r of internalDup.slice(0, 20)) console.log(`  seq ${r.seq} ×${r.n} "${r.phrase}"\n      ${r.en.slice(0, 110)}`);
 
   console.log(`\n── VERSE REFERENCES (ko source vs en output) ────────────────────`);
   console.log(`mismatches: ${verses.length}`);
@@ -408,7 +469,7 @@ function report(label: string, stutter: string): Record<string, unknown> {
     repeats: repeats.length,
     classA: clsA.length,
     classB: clsB.length,
-    internalRepeats: internal.length,
+    internalRepeats: internal.filter((r) => !r.koHas).length,
     verseMismatches: verses.length,
     dangling: dangling.length,
     clips: loud.length,
