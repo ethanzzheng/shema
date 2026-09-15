@@ -3,6 +3,8 @@
  * Converts English sermon text to MP3 audio, returned as a Buffer.
  */
 
+import { mp3Level } from './mp3-level';
+
 // Uses native fetch (Node 18+)
 
 const TTS_BASE = 'https://api.elevenlabs.io/v1/text-to-speech';
@@ -44,6 +46,21 @@ const DEFAULT_VOICE_SETTINGS: VoiceSettings = {
   // variance is the vendor's, not ours — default it off and leave it tunable.
   use_speaker_boost: (process.env.TTS_SPEAKER_BOOST ?? '0') === '1',
 };
+
+/**
+ * Lines at or below this many characters are held and checked. Chosen from the
+ * service data: every clip that came back too quiet was short, and 50-60
+ * characters covers all of them while leaving the long clips streaming.
+ */
+const SHORT_TEXT_MAX = Number(process.env.TTS_LEVEL_CHECK_MAX_CHARS ?? 60);
+
+/**
+ * Mean global_gain below which a clip is treated as under-driven. Validated
+ * against all 411 clips of a real service: this threshold flagged 6 of them
+ * and caught all 4 that a listener would actually notice, with 2 false alarms
+ * — and a false alarm only costs one extra synthesis of a very short line.
+ */
+const MIN_MEAN_GAIN = Number(process.env.TTS_MIN_MEAN_GAIN ?? 150);
 
 export class ElevenLabsTTS {
   private apiKey: string;
@@ -123,5 +140,63 @@ export class ElevenLabsTTS {
     } finally {
       if (watchdog) clearTimeout(watchdog);
     }
+  }
+
+  /**
+   * Synthesise, and for SHORT lines check the clip actually came back at a
+   * usable level before releasing it.
+   *
+   * ElevenLabs occasionally returns a short utterance far under the level of
+   * its neighbours. Across a 46-minute service, 4 clips in 411 landed more
+   * than 6 dB below the median and the worst was -40.9 dB — inaudible, not
+   * merely quiet. Every one was short: the quiet clips' median duration was
+   * 1.06s against 4.08s for the rest. "Amen." twice.
+   *
+   * Buffering is what makes this affordable. The clip does not trickle in over
+   * its playing time — measured over that service, time-to-first-byte was
+   * 275ms and full synthesis 345ms, a difference of about 70ms. So holding a
+   * short clip to inspect it costs tens of milliseconds, not seconds.
+   *
+   * Only lines under SHORT_TEXT_MAX are held; longer ones stream through
+   * untouched, because the defect does not occur there and they are the ones
+   * where buffering would actually cost something.
+   */
+  async synthesiseStreamLevelled(
+    text: string,
+    onChunk: (chunk: Buffer) => void,
+    timeoutMs = 8000,
+    previousText?: string,
+    onRetry?: (info: { meanGain: number; text: string }) => void,
+  ): Promise<void> {
+    if (text.length > SHORT_TEXT_MAX) {
+      return this.synthesiseStream(text, onChunk, timeoutMs, previousText);
+    }
+
+    const collect = async (): Promise<Buffer> => {
+      const parts: Buffer[] = [];
+      await this.synthesiseStream(text, (c) => parts.push(c), timeoutMs, previousText);
+      return Buffer.concat(parts);
+    };
+
+    let clip = await collect();
+    const level = mp3Level(clip);
+
+    // A null level means the buffer did not parse as MP3. Leave it alone
+    // rather than act on a guess — the clip is very likely fine.
+    if (level && level.meanGain < MIN_MEAN_GAIN) {
+      onRetry?.({ meanGain: level.meanGain, text });
+      try {
+        const second = await collect();
+        const secondLevel = mp3Level(second);
+        // Keep whichever came back louder; a retry can be quiet too.
+        if (second.length && (!secondLevel || secondLevel.meanGain > level.meanGain)) {
+          clip = second;
+        }
+      } catch {
+        // Keep the first clip: quiet audio beats no audio.
+      }
+    }
+
+    if (clip.length) onChunk(clip);
   }
 }

@@ -205,3 +205,16 @@ test('the church name is pinned so it cannot be re-romanized mid-service', () =>
   assert.ok(SYSTEM_PROMPT_KO_EN.includes('한마음교회 = "Hanmaum Church"'));
   assert.ok(SYSTEM_PROMPT_KO_EN.includes('never spaced or hyphenated'));
 });
+
+test('a bare verse number survives into the English, but 구절 stays a phrase', () => {
+  // Live (round3 seq 154/155): "구 절 같이 읽겠습니다" came back as "Let's read
+  // that verse together" — the number dropped. The model had made the same
+  // mistake the eval's scanner did, reading 구 절 as the noun 구절 ("phrase").
+  // Both halves of the disambiguation have to be stated or fixing one breaks
+  // the other.
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('BARE VERSE NUMBERS'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('구 절 = "verse 9"'));
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('never flatten it to "that verse"'));
+  // …and the exception that keeps 구절 a noun.
+  assert.ok(SYSTEM_PROMPT_KO_EN.includes('한 구절 한 구절'));
+});

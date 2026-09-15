@@ -150,3 +150,28 @@ test('silence is never spliced into the middle of a sentence', async () => {
   sim.clock.advance(3000, 20, () => sim.el.tick(0.02));
   assert.ok(p.padsAppended > 0, 'the fill must still bridge the gap BETWEEN sentences');
 });
+
+test('stats() counts a replay, so a regression is visible in a real service', async () => {
+  // Instrumentation that can only ever report zero is worse than none: it
+  // reads as proof things are fine. Force the exact fault it exists to catch
+  // — the playhead moving back into audio already heard — and require the
+  // counter to move.
+  const sim = await makePlayer();
+  playSermon(sim, 3);
+
+  const player = sim.player as unknown as {
+    stats(): { replays: number; underruns: number; secondsPlayed: number };
+  };
+  const before = player.stats();
+  assert.equal(before.replays, 0, 'a healthy run must report no replays');
+  assert.ok(before.secondsPlayed > 0, 'expected some audio to have played');
+
+  // Drag the playhead back a full second and let timeupdate observe it.
+  sim.el.currentTime = Math.max(0, sim.el.currentTime - 1);
+  sim.clock.advance(400, 20, () => sim.el.tick(0.02));
+
+  assert.ok(
+    player.stats().replays > 0,
+    'a backward jump into played audio must be counted, or the metric is blind',
+  );
+});

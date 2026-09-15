@@ -40,6 +40,22 @@ export function handleListenerConnection(ws: WebSocket, session: Session): void 
         session.recordListenerProgress(ws, msg.seq);
         const pews = session.pewsSeq;
         if (pews !== null) session.sendToBroadcasters({ type: 'pews', seq: pews });
+        return;
+      }
+      // Playback health from a listener's own player. `replays` is the
+      // stutter the pilot reported — the playhead moving back into audio
+      // already heard. Nothing counted it in a live service before this, so a
+      // regression could only surface as someone in the pews mentioning it.
+      // Logged only when something actually went wrong; a clean listener is
+      // silent.
+      if (msg.type === 'playback_stats' && typeof msg.secondsPlayed === 'number') {
+        const { replays = 0, underruns = 0, padsAppended = 0, secondsPlayed } = msg;
+        if (replays > 0 || underruns > 2) {
+          console.log(
+            `[Playback] room "${session.roomId}": ${replays} replay(s), ${underruns} underrun(s), ` +
+              `${padsAppended} pad(s) over ${secondsPlayed}s of audio`,
+          );
+        }
       }
     } catch {
       /* listeners send nothing else; ignore malformed frames */

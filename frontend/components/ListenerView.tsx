@@ -103,6 +103,29 @@ export default function ListenerView({ church }: { church: string }) {
       wsRef.current?.sendJSON({ type: 'playing', seq });
     }
   }, []);
+  // Playback health, reported upstream a few times an hour.
+  //
+  // Stuttering was the loudest complaint from the live pilot and the hardest
+  // thing to confirm fixed: it is provable headlessly, but in a real service
+  // nothing counted it, so the only evidence was whether anyone in the pews
+  // happened to mention it. These few bytes per minute turn that into a number
+  // the desk can read while the service is still running.
+  useEffect(() => {
+    const report = () => {
+      const s = streamRef.current?.stats();
+      if (!s || !s.secondsPlayed) return;
+      wsRef.current?.sendJSON({ type: 'playback_stats', ...s });
+    };
+    const t = setInterval(report, 60_000);
+    // Also on the way out, so a listener who leaves early still counts.
+    const onHide = () => { if (document.visibilityState === 'hidden') report(); };
+    document.addEventListener('visibilitychange', onHide);
+    return () => {
+      clearInterval(t);
+      document.removeEventListener('visibilitychange', onHide);
+    };
+  }, []);
+
   // How far the audio runs behind live (drives the Jump-to-live pill).
   const [behindSec, setBehindSec] = useState(0);
   // Auto catch-up speed (on by default; opt-out for anyone who finds the

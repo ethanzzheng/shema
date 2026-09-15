@@ -106,6 +106,23 @@ export class AudioStreamPlayer {
   private hadOpened = false;
   private startedAtMs = 0;
 
+  // ── Stutter instrumentation ──
+  // The bug the pilot reported ("Go- God says…") is the playhead moving BACK
+  // into audio the listener already heard. It is provable headlessly, and the
+  // regression tests do that, but in a real service nothing counted it — so a
+  // regression could only be caught by someone noticing it in the pews.
+  //
+  // Both numbers come from state the player already had; only the counting is
+  // new. A tolerance keeps float jitter and ordinary seek noise out: a stutter
+  // anyone can hear is far longer than this.
+  private static readonly REPLAY_TOLERANCE_SEC = 0.25;
+  /** Highest currentTime reached — audio at or below this has been heard. */
+  private maxPlayed = 0;
+  /** Times the playhead jumped back into already-played audio. */
+  private replays = 0;
+  /** Times the buffer ran dry under the playhead ('waiting'). */
+  private underruns = 0;
+
   private checkHealth(): void {
     const el = this.audioEl;
     const ms = this.mediaSource;
@@ -264,6 +281,7 @@ export class AudioStreamPlayer {
     // as a prompt to top up immediately rather than wait for the next tick.
     this.audioEl.addEventListener('waiting', () => {
       this.starved = true;
+      this.underruns++;
       this.topUpSilence();
     });
     this.audioEl.addEventListener('playing', () => {
@@ -274,6 +292,11 @@ export class AudioStreamPlayer {
     // firing at full rate while the tab is hidden and audio is playing.
     this.audioEl.addEventListener('timeupdate', () => {
       this.topUpSilence();
+      if (this.audioEl) {
+        const now = this.audioEl.currentTime;
+        if (now + AudioStreamPlayer.REPLAY_TOLERANCE_SEC < this.maxPlayed) this.replays++;
+        else if (now > this.maxPlayed) this.maxPlayed = now;
+      }
       if (!this.onSeqPlaying || !this.audioEl) return;
       const t = this.audioEl.currentTime;
       for (const [seq, r] of this.seqRanges) {
@@ -562,6 +585,23 @@ export class AudioStreamPlayer {
     this.wantPlaying = true;
     this.jumpToLive();
     this.audioEl?.play().catch(() => {});
+  }
+
+  /**
+   * Playback health for this listener, for reporting at the end of a service.
+   *
+   * `replays` is the one that matters: it counts the playhead moving back into
+   * audio already heard, which is what the congregation reports as stuttering.
+   * Pair it with `secondsPlayed` — two replays across an hour is nothing, two
+   * across five minutes is a regression.
+   */
+  stats(): { replays: number; underruns: number; padsAppended: number; secondsPlayed: number } {
+    return {
+      replays: this.replays,
+      underruns: this.underruns,
+      padsAppended: this.padsAppended,
+      secondsPlayed: Math.round(this.maxPlayed),
+    };
   }
 
   /**

@@ -134,6 +134,13 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         `stt→dispatch ${avg('wait')}ms · translate ${avg('translate')}ms · ` +
         `→first-audio-byte ${avg('firstByte')}ms · audio-stream ${avg('stream')}ms · e2e ${avg('e2e')}ms`,
     );
+    // Worth seeing per service: a rising count means the voice is drifting
+    // quiet on short lines, which is otherwise only audible in the pews.
+    if (quietClipRetries > 0) {
+      console.log(
+        `[Audio] ${quietClipRetries} of ${n} clips came back under-driven and were re-synthesised`,
+      );
+    }
   }
 
   // Speaking rate (drift control): Korean renderings often run longer than
@@ -267,13 +274,22 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   let activeRange: { start: number; end: number } | null = null;
   /** Previous sentence sent to TTS, for prosody continuity across clips. */
   let lastSynthText = '';
+  /** Short clips that came back under-driven and were synthesised again. */
+  let quietClipRetries = 0;
 
   const ttsPipeline = new TtsPipeline<TtsJob>({
     prefetch: 2,
     synth: (text, onChunk) => {
       const prev = lastSynthText;
       lastSynthText = text;
-      return tts.synthesiseStream(text, onChunk, 8000, prev);
+      // Short lines are held and level-checked before release; long ones
+      // stream straight through. See synthesiseStreamLevelled.
+      return tts.synthesiseStreamLevelled(text, onChunk, 8000, prev, ({ meanGain }) => {
+        quietClipRetries++;
+        console.log(
+          `[tts] clip came back under-driven (mean gain ${meanGain.toFixed(1)}), re-synthesising: "${text.slice(0, 40)}"`,
+        );
+      });
     },
     onStart: (job) => session.broadcast({ type: 'audio_start', seq: job.seq }),
     onChunk: (job, chunk) =>
