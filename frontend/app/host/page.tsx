@@ -1,15 +1,14 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { clearSession, getUsername } from '@/lib/auth';
+import { getUsername } from '@/lib/auth';
+import AccountMenu from '@/components/AccountMenu';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { normalizeChurchSlug } from '@/lib/slug';
 
 export default function HostDashboard() {
   const gate = useRequireAuth();
-  const router = useRouter();
   const [username, setUsername] = useState<string | null>(null);
   const [church, setChurch] = useState('default');
 
@@ -22,11 +21,6 @@ export default function HostDashboard() {
 
   if (gate !== 'ok') return null;
 
-  const logout = () => {
-    clearSession();
-    router.replace('/login');
-  };
-
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '4rem 1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
@@ -38,9 +32,7 @@ export default function HostDashboard() {
             Everything you need to run a live translated service.
           </p>
         </div>
-        <button className="btn btn-ghost" onClick={logout} style={{ fontSize: '0.85rem', padding: '0.5rem 1rem' }}>
-          Log out
-        </button>
+        <AccountMenu />
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>

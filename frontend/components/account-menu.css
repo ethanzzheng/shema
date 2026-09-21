@@ -1,0 +1,130 @@
+/*
+ * Account menu / settings panel.
+ * One radius scale (8px controls, 12px panels), one accent (the brand gold),
+ * matching the rest of the signed-in surfaces.
+ */
+
+.am-root { position: relative; display: inline-flex; }
+
+.am-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 5px 9px 5px 5px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 160ms var(--ease), color 160ms var(--ease), background-color 160ms var(--ease);
+}
+.am-trigger:hover { border-color: rgba(244, 241, 234, 0.28); color: var(--text); }
+.am-trigger:active { transform: translateY(1px); }
+.am-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.am-avatar {
+  display: grid;
+  place-items: center;
+  width: var(--am-icon-col, 26px);
+  height: var(--am-icon-col, 26px);
+  flex: 0 0 var(--am-icon-col, 26px);
+  border-radius: 8px;
+  background: rgba(200, 162, 94, 0.16);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.am-caret { transition: transform 180ms var(--ease); }
+.am-caret-open { transform: rotate(180deg); }
+
+/* ── Shared panel body ── */
+.am-panel {
+  /* Solid, and deliberately not --surface/--surface2: those are translucent,
+     and a floating panel that lets the page read through it is unreadable.
+     Sits one step above --night (#131318) so the panel lifts off the page. */
+  background: #17171A;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  padding: 8px;
+  color: var(--text);
+}
+
+.am-panel-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 292px;
+  z-index: 80;
+  animation: amPop 160ms var(--ease) both;
+}
+@keyframes amPop {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Every row in the panel — identity, glossary, logout — reserves the same
+   icon column, so the three glyphs share a centreline and the three labels
+   start at the same x. Before this the avatar (26px) and the item glyphs
+   (17px) sat in differently-sized slots and nothing lined up. */
+.am-panel { --am-icon-col: 26px; }
+
+.am-identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 10px 11px;
+}
+.am-identity-name { display: block; font-size: 0.88rem; font-weight: 500; }
+.am-identity-sub { display: block; font-size: 0.74rem; color: var(--text-muted); margin-top: 1px; }
+
+.am-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-radius: 8px;
+  padding: 10px;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease);
+}
+.am-item:hover:not(:disabled) { background: rgba(244, 241, 234, 0.05); }
+.am-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.am-item:disabled { cursor: default; color: var(--text-muted); }
+.am-item svg { flex: 0 0 var(--am-icon-col); }
+.am-item > span { flex: 1; min-width: 0; }
+/* Label and its badge share a row; the sub-line owns the row beneath. Letting
+   the badge compete with the whole text block squeezed the sub-line into a
+   three-line column. */
+.am-item-body { display: flex; flex-direction: column; gap: 2px; }
+.am-item-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.am-item-sub { display: block; font-size: 0.74rem; color: var(--text-muted); }
+.am-item-quiet { color: var(--text-muted); }
+.am-item-quiet:hover { color: var(--text); }
+
+.am-soon {
+  flex: 0 0 auto;
+  font-size: 0.66rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--accent);
+  background: rgba(200, 162, 94, 0.12);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
+/* Logout is the one destructive-ish action here, so it sits below a rule
+   rather than in the run of ordinary items. */
+.am-rule { height: 1px; background: var(--border); margin: 6px 4px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .am-panel-menu { animation: none; }
+  .am-caret { transition: none; }
+}

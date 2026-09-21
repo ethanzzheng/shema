@@ -15,6 +15,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import AccountMenu from '@/components/AccountMenu';
 import QRCode from 'qrcode';
 import { WsClient, ServerMessage, DebugMsg, TranslationMsg, AudioChunkMsg } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
@@ -768,6 +769,10 @@ export default function SpeakPage() {
             <span className={`dot${onAir ? ' dot-pulse' : ''}`} />
             {onAir ? 'On air' : connState === 'connected' ? 'Ready' : connState === 'connecting' ? 'Connecting…' : 'Disconnected'}
           </span>
+          {/* Settings sits last, after the status pill: the operator's eye
+              goes to on-air state first, and the one control they must never
+              hit by accident is furthest from it. */}
+          <AccountMenu />
         </span>
       </div>
 

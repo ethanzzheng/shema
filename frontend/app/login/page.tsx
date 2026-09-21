@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { Eye, EyeSlash } from '@phosphor-icons/react';
 import { loginRequest, saveSession, hasValidSession } from '@/lib/auth';
+import './login.css';
 
 export default function LoginPage() {
   const router = useRouter();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
@@ -31,65 +34,84 @@ export default function LoginPage() {
     }
   };
 
+  const disabled = busy || !username.trim() || !password;
+
   return (
-    <div style={{ maxWidth: 420, margin: '0 auto', padding: '5rem 1rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.75rem' }}>
-        <Link href="/" style={{ color: 'var(--text-muted)', fontSize: '1.3rem' }}>←</Link>
-        <h1 style={{ fontSize: '1.8rem', fontWeight: 600 }}>Staff login</h1>
-      </div>
+    <div className="lg-split">
+      <section className="lg-form-side">
+        <div className="lg-form-inner">
+          <Link href="/" className="lg-back lg-in lg-d1">← Back to Shema homepage</Link>
 
-      <form
-        className="card"
-        style={{ display: 'flex', flexDirection: 'column', gap: '1rem', padding: '1.75rem' }}
-        onSubmit={(e) => { e.preventDefault(); submit(); }}
-      >
-        <div>
-          <div className="label">Username</div>
-          <input
-            className="field"
-            autoFocus
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            style={{ width: '100%', padding: '0.7rem 0.9rem', fontSize: '1rem' }}
-          />
+          <h1 className="lg-title lg-in lg-d2">Login</h1>
+          <p className="lg-sub lg-in lg-d2">
+            Sign in to run a broadcast. Congregants don&apos;t need an account —
+            just the listen link or the QR code at the welcome desk.
+          </p>
+
+          <form
+            onSubmit={(e) => { e.preventDefault(); submit(); }}
+            style={{ display: 'flex', flexDirection: 'column', gap: 18 }}
+          >
+            <div className="lg-in lg-d3">
+              <label className="lg-field-label" htmlFor="lg-username">Username</label>
+              <div className="lg-well">
+                <input
+                  id="lg-username"
+                  autoFocus
+                  autoComplete="username"
+                  placeholder="Your church's username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <div className="lg-in lg-d4">
+              <label className="lg-field-label" htmlFor="lg-password">Password</label>
+              <div className="lg-well lg-pw">
+                <input
+                  id="lg-password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="lg-pw-toggle"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? <EyeSlash size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+
+            {error && <p className="lg-error" role="alert">{error}</p>}
+
+            {/* The animation lives on the wrapper, not the button. A CSS
+                animation with fill-mode:both wins over inline styles, so
+                animating the button itself pinned it to opacity 1 and the
+                disabled state became invisible. */}
+            <div className="lg-in lg-d5">
+              <button type="submit" className="btn btn-primary lg-submit" disabled={disabled}>
+                {busy ? 'Signing in…' : 'Sign in'}
+              </button>
+            </div>
+          </form>
+
+          <p className="lg-note lg-in lg-d6" style={{ marginTop: 22 }}>
+            Interested in Shema for your church?{' '}
+            <a href="mailto:shematranslate@gmail.com">Get in touch</a> — we&apos;ll
+            set up a live demo service.
+          </p>
         </div>
-        <div>
-          <div className="label">Password</div>
-          <input
-            className="field"
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            style={{ width: '100%', padding: '0.7rem 0.9rem', fontSize: '1rem' }}
-          />
-        </div>
+      </section>
 
-        {error && (
-          <p style={{ color: 'var(--red)', fontSize: '0.88rem' }}>{error}</p>
-        )}
-
-        <button
-          type="submit"
-          className="btn btn-primary btn-lg"
-          disabled={busy || !username.trim() || !password}
-          style={{ opacity: busy || !username.trim() || !password ? 0.5 : 1 }}
-        >
-          {busy ? 'Signing in…' : 'Sign in'}
-        </button>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-          For church staff. Congregants don&apos;t need an account — just the
-          listen link or QR code.
-        </p>
-      </form>
-
-      <p style={{ color: 'var(--text-muted)', fontSize: '0.82rem', textAlign: 'center' }}>
-        Don&apos;t have an account? Interested in Shema for your church?{' '}
-        <a href="mailto:shematranslate@gmail.com" style={{ whiteSpace: 'nowrap' }}>
-          Contact us
-        </a>
-      </p>
+      <section className="lg-plate-side" aria-hidden>
+        <div className="lg-plate" />
+      </section>
     </div>
   );
 }

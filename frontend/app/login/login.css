@@ -1,0 +1,164 @@
+/*
+ * Staff login — split layout with the sanctuary plate.
+ *
+ * Adapted from a Tailwind/shadcn sign-in component. This project has neither,
+ * so the design is rebuilt on the existing tokens: the reference's violet
+ * accent becomes the brand gold, and `bg-background`/`text-muted-foreground`
+ * become --bg/--text-muted. Nothing new was added to the build.
+ */
+
+.lg-split {
+  min-height: 100dvh;           /* not 100vh: iOS Safari's bar makes vh jump */
+  display: grid;
+  grid-template-columns: 1fr;
+  background: var(--bg);
+  color: var(--text);
+}
+@media (min-width: 900px) {
+  .lg-split { grid-template-columns: 1fr 1fr; }
+}
+
+/* ── Form side ── */
+.lg-form-side {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(28px, 6vw, 64px);
+}
+.lg-form-inner { width: 100%; max-width: 27rem; }
+
+.lg-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-decoration: none;
+  transition: color 160ms var(--ease);
+}
+.lg-back:hover { color: var(--text); }
+
+.lg-title {
+  font-size: clamp(2rem, 4vw, 2.6rem);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+  margin: 18px 0 10px;
+}
+.lg-sub { color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-bottom: 28px; }
+
+.lg-field-label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 7px;
+}
+
+/* The reference's "glass" input: a translucent well that lights up on focus.
+   Gold rather than violet — this page sits inside a gold-accented product. */
+.lg-well {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: rgba(244, 241, 234, 0.04);
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease);
+}
+.lg-well:focus-within {
+  border-color: var(--accent);
+  background: rgba(200, 162, 94, 0.08);
+}
+.lg-well input {
+  width: 100%;
+  background: transparent;
+  border: 0;
+  outline: none;
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 0.95rem;
+  padding: 14px 16px;
+  border-radius: var(--radius-md);
+}
+.lg-well input::placeholder { color: rgba(244, 241, 234, 0.35); }
+
+.lg-pw { position: relative; }
+.lg-pw input { padding-right: 46px; }
+.lg-pw-toggle {
+  position: absolute;
+  inset-block: 0;
+  right: 10px;
+  display: flex;
+  align-items: center;
+  background: none;
+  border: 0;
+  padding: 4px;
+  cursor: pointer;
+  color: var(--text-muted);
+  transition: color 160ms var(--ease);
+}
+.lg-pw-toggle:hover { color: var(--text); }
+
+.lg-error {
+  color: var(--red);
+  font-size: 0.85rem;
+  background: rgba(255, 138, 128, 0.08);
+  border: 1px solid rgba(255, 138, 128, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+
+.lg-submit { width: 100%; justify-content: center; padding: 14px; font-size: 0.95rem; }
+.lg-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+.lg-note { color: var(--text-muted); font-size: 0.8rem; line-height: 1.6; }
+.lg-note a { color: var(--accent); }
+
+/* ── Plate side ── */
+.lg-plate-side { display: none; position: relative; padding: 16px; }
+@media (min-width: 900px) { .lg-plate-side { display: block; } }
+
+.lg-plate {
+  position: absolute;
+  inset: 16px;
+  /* Square by request — the photograph reads as a framed plate, not a card. */
+  border-radius: 0;
+  /* No scrim: the caption that needed one is gone, and the photograph is
+     already dark enough to sit against the page without being dimmed. */
+  background-image: url('/cross-light.jpg');
+  background-size: cover;
+  background-position: center 45%;
+}
+
+/* ── Entrance ──
+   The reference animates each element in on a stagger. Honoured here, but
+   behind prefers-reduced-motion, and with the resting state visible so a
+   failed animation can never leave the form invisible. */
+@keyframes lgFadeUp {
+  from { opacity: 0; transform: translateY(14px); filter: blur(4px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+@keyframes lgSlideIn {
+  from { opacity: 0; transform: translateX(20px); filter: blur(6px); }
+  to   { opacity: 1; transform: none; filter: blur(0); }
+}
+.lg-in { animation: lgFadeUp 0.6s var(--ease) both; }
+.lg-plate { animation: lgSlideIn 0.8s var(--ease) both; }
+.lg-d1 { animation-delay: 0.05s; }
+.lg-d2 { animation-delay: 0.12s; }
+.lg-d3 { animation-delay: 0.19s; }
+.lg-d4 { animation-delay: 0.26s; }
+.lg-d5 { animation-delay: 0.33s; }
+.lg-d6 { animation-delay: 0.40s; }
+@media (prefers-reduced-motion: reduce) {
+  .lg-in, .lg-plate { animation: none; }
+}
+
+/* globals.css sets `button { outline: none }` for every button in the app, so
+   a keyboard user tabbing this form would otherwise see nothing at all. These
+   restore a visible ring for keyboard focus only — pointer focus stays clean.
+   The inputs are exempt: `.lg-well:focus-within` already lights the whole well. */
+.lg-submit:focus-visible,
+.lg-pw-toggle:focus-visible,
+.lg-back:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm);
+}
