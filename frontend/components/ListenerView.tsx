@@ -573,7 +573,7 @@ export default function ListenerView({ church }: { church: string }) {
             🔊 Tap to listen
           </button>
           <p style={{ marginTop: '0.9rem', color: 'rgba(244,241,234,0.5)', fontSize: '0.85rem' }}>
-            One tap starts the {outputLang} audio — your browser blocks sound until you do.
+            One tap starts the {outputLang} audio — get your headphones in first.
           </p>
         </div>
       )}

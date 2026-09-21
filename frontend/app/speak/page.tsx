@@ -80,6 +80,14 @@ function formatElapsed(ms: number): string {
   return `${hh}:${mm}:${ss}`;
 }
 
+/** Cheap RMS over every 8th sample — enough for a meter, not worth more. */
+function pcmLevel(pcm: ArrayBuffer): number {
+  const view = new Int16Array(pcm);
+  let sum = 0;
+  for (let i = 0; i < view.length; i += 8) sum += view[i] * view[i];
+  return Math.sqrt(sum / Math.max(1, view.length / 8)) / 32768;
+}
+
 /** 15-bar live input meter fed by the capture's PCM RMS (via a ref). */
 function InputMeter({ levelRef, active }: { levelRef: React.MutableRefObject<number>; active: boolean }) {
   const [level, setLevel] = useState(0);
@@ -183,6 +191,12 @@ export default function SpeakPage() {
   const missedBeatsRef = useRef(0);
   // Live input level (RMS of the last PCM chunk), fed by the capture callback.
   const levelRef = useRef(0);
+  // A second, listen-only capture that runs while NOT broadcasting, purely to
+  // drive the meter. Nothing it hears leaves the machine — it never touches
+  // the socket. A meter that only lights up once you are on air cannot tell
+  // you the soundboard is dead, which is exactly when you need to know.
+  const monitorRef = useRef<AudioCapture | null>(null);
+  const [monitoring, setMonitoring] = useState(false);
   const startedAtRef = useRef(0);
 
   // Restore the last-used direction (persists across services).
@@ -263,6 +277,45 @@ export default function SpeakPage() {
     navigator.mediaDevices?.addEventListener?.('devicechange', onChange);
     return () => navigator.mediaDevices?.removeEventListener?.('devicechange', onChange);
   }, [refreshDevices]);
+
+  // Runs the meter while off air. Deliberately gated on labels already being
+  // populated: that only happens once mic permission has been granted, so
+  // landing on this page never triggers a permission prompt just to draw a
+  // meter. Granting via "List devices" starts it immediately after.
+  useEffect(() => {
+    if (gate !== 'ok' || broadcasting) return;
+    if (needsPermission || devices.length === 0) return;
+
+    let cancelled = false;
+    let cap: AudioCapture | null = null;
+
+    (async () => {
+      try {
+        const c = new AudioCapture({
+          chunkIntervalMs: 200,
+          deviceId: deviceId || undefined,
+          onChunk: (pcm) => { levelRef.current = pcmLevel(pcm); },
+          onDeviceEnded: () => { setMonitoring(false); refreshDevices(); },
+        });
+        await c.start();
+        if (cancelled) { c.stop(); return; }
+        cap = c;
+        monitorRef.current = c;
+        setMonitoring(true);
+      } catch {
+        /* Monitoring is a convenience. A failure here must never block or
+           alarm the operator — Start broadcast still reports for real. */
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      cap?.stop();
+      if (monitorRef.current === cap) monitorRef.current = null;
+      setMonitoring(false);
+      levelRef.current = 0;
+    };
+  }, [gate, broadcasting, deviceId, needsPermission, devices.length, refreshDevices]);
 
   const selectDevice = (id: string) => {
     setDeviceId(id);
@@ -609,17 +662,19 @@ export default function SpeakPage() {
   const startBroadcast = async () => {
     if (broadcasting || !wsRef.current?.isConnected) return;
 
+    // Release the monitor first: some inputs refuse a second simultaneous
+    // open, and `broadcasting` does not flip until after capture.start().
+    monitorRef.current?.stop();
+    monitorRef.current = null;
+    setMonitoring(false);
+
     try {
       const capture = new AudioCapture({
         chunkIntervalMs: 200,
         deviceId: deviceId || undefined,
         onChunk: (pcm) => {
           wsRef.current?.sendBinary(pcm);
-          // Cheap RMS for the rail's input meter.
-          const view = new Int16Array(pcm);
-          let sum = 0;
-          for (let i = 0; i < view.length; i += 8) sum += view[i] * view[i];
-          levelRef.current = Math.sqrt(sum / Math.max(1, view.length / 8)) / 32768;
+          levelRef.current = pcmLevel(pcm);
         },
         onDeviceEnded: () => {
           setErrors((prev) => [
@@ -866,7 +921,7 @@ export default function SpeakPage() {
                 List devices
               </button>
             )}
-            <InputMeter levelRef={levelRef} active={broadcasting} />
+            <InputMeter levelRef={levelRef} active={broadcasting || monitoring} />
           </div>
 
           {/* 4. Pacing */}

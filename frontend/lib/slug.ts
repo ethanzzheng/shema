@@ -11,3 +11,19 @@ export function normalizeChurchSlug(raw: string | null | undefined): string {
     .slice(0, 64);
   return slug || 'default';
 }
+
+/**
+ * Slug → human church name for page titles and link previews:
+ * "grace-church" → "Grace Church". "default" has no church behind it (the
+ * generic /listen entry), so it yields '' and callers fall back to the plain
+ * product title rather than announcing a church named "Default".
+ */
+export function churchDisplayName(slug: string | null | undefined): string {
+  const s = (slug ?? '').trim();
+  if (!s || s === 'default') return '';
+  return s
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ');
+}
