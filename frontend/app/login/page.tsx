@@ -95,7 +95,7 @@ export default function LoginPage() {
                 animating the button itself pinned it to opacity 1 and the
                 disabled state became invisible. */}
             <div className="lg-in lg-d5">
-              <button type="submit" className="btn btn-primary lg-submit" disabled={disabled}>
+              <button type="submit" className="btn btn-primary lg-submit" data-busy={busy || undefined} disabled={disabled}>
                 {busy ? 'Signing in…' : 'Sign in'}
               </button>
             </div>

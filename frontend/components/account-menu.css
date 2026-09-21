@@ -55,7 +55,9 @@
   position: absolute;
   top: calc(100% + 8px);
   right: 0;
-  width: 292px;
+  /* Never wider than the screen. 292px is the design width, but on a 320px
+     phone the panel would outgrow the viewport and clip off the left edge. */
+  width: min(292px, calc(100vw - 24px));
   z-index: 80;
   animation: amPop 160ms var(--ease) both;
 }

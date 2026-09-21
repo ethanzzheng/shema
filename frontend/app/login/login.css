@@ -14,7 +14,12 @@
   background: var(--bg);
   color: var(--text);
 }
-@media (min-width: 900px) {
+/* The photograph needs real estate in BOTH axes. min-width alone let a
+   landscape phone (~932px wide, ~430px tall) through, which split the screen
+   and cropped the image down to a sliver. These two queries must stay
+   identical: if the grid splits while the plate is hidden, the form is left
+   sitting beside a dead column. */
+@media (min-width: 900px) and (min-height: 600px) {
   .lg-split { grid-template-columns: 1fr 1fr; }
 }
 
@@ -108,12 +113,17 @@
 
 .lg-submit { width: 100%; justify-content: center; padding: 14px; font-size: 0.95rem; }
 .lg-submit:disabled { opacity: 0.45; cursor: not-allowed; }
+/* `disabled` covers two different states: an incomplete form (genuinely
+   unavailable, so fade it) and an in-flight submit (working, not unavailable).
+   Fading the latter made the button look blurred at the exact moment the user
+   wanted feedback that it had taken the tap. */
+.lg-submit[data-busy]:disabled { opacity: 1; cursor: progress; }
 .lg-note { color: var(--text-muted); font-size: 0.8rem; line-height: 1.6; }
 .lg-note a { color: var(--accent); }
 
 /* ── Plate side ── */
 .lg-plate-side { display: none; position: relative; padding: 16px; }
-@media (min-width: 900px) { .lg-plate-side { display: block; } }
+@media (min-width: 900px) and (min-height: 600px) { .lg-plate-side { display: block; } }
 
 .lg-plate {
   position: absolute;

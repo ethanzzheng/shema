@@ -32,7 +32,13 @@ export default function HostDashboard() {
             Everything you need to run a live translated service.
           </p>
         </div>
-        <AccountMenu />
+        {/* marginLeft:auto, not just space-between: this header wraps, and a
+            lone item on the wrapped line would sit hard LEFT. The panel hangs
+            from the trigger's right edge, so a left-docked trigger threw it
+            off-screen on phones. */}
+        <div style={{ marginLeft: 'auto' }}>
+          <AccountMenu />
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: '1.25rem' }}>
