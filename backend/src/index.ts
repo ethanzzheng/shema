@@ -59,7 +59,9 @@ const app = express();
 app.use(
   cors({
     origin: IS_PROD && ALLOWED_ORIGINS.length > 0 ? ALLOWED_ORIGINS : '*',
-    methods: ['GET', 'POST', 'OPTIONS'],
+    // PATCH/DELETE are needed by the glossary routes; without them the
+    // browser's preflight fails and edits surface only as "Failed to fetch".
+    methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   }),
 );
 

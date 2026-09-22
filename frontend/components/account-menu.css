@@ -97,6 +97,8 @@
   cursor: pointer;
   transition: background-color 140ms var(--ease);
 }
+/* The Glossary row is an anchor, the rest are buttons — same box either way. */
+.am-item { text-decoration: none; }
 .am-item:hover:not(:disabled) { background: rgba(244, 241, 234, 0.05); }
 .am-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .am-item:disabled { cursor: default; color: var(--text-muted); }

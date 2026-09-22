@@ -1,0 +1,79 @@
+/*
+ * Glossary management. Product-screen palette (night/cream), same tokens and
+ * radius scale as the rest of the signed-in surfaces.
+ */
+
+.gl-page { max-width: 940px; margin: 0 auto; padding: clamp(28px, 5vw, 64px) clamp(16px, 4vw, 24px); }
+
+.gl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gl-title { font-size: 2rem; font-weight: 600; }
+.gl-sub { color: var(--text-muted); margin-top: 0.35rem; font-size: 0.95rem; }
+.gl-church { font-family: var(--font-mono, monospace); color: var(--accent); }
+
+.gl-section { margin-top: 34px; }
+.gl-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.gl-section-title { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+
+.gl-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.gl-add .field { flex: 1 1 190px; min-width: 0; padding: 9px 12px; font-size: 0.9rem; }
+
+/* One row shape for header and body, so columns line up without a table. */
+.gl-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 11px 4px;
+  border-top: 1px solid var(--border);
+}
+.gl-row-head {
+  border-top: 0;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(244, 241, 234, 0.4);
+  padding-bottom: 6px;
+}
+.gl-term { font-size: 0.98rem; overflow-wrap: anywhere; }
+.gl-target { color: var(--text-muted); font-size: 0.9rem; overflow-wrap: anywhere; }
+.gl-notes { color: rgba(244, 241, 234, 0.4); font-size: 0.82rem; overflow-wrap: anywhere; }
+.gl-keep { font-family: var(--font-mono, monospace); font-size: 0.66rem; color: var(--accent); opacity: 0.8; }
+
+.gl-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.gl-btn {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.64rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  background: none;
+  cursor: pointer;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease);
+  white-space: nowrap;
+}
+.gl-btn:hover:not(:disabled) { color: var(--text); border-color: rgba(244, 241, 234, 0.3); }
+.gl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.gl-btn-danger:hover:not(:disabled) { color: var(--alert); border-color: var(--alert); }
+.gl-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.gl-empty { color: var(--text-muted); font-size: 0.9rem; padding: 18px 4px; }
+.gl-error { color: var(--alert); font-size: 0.86rem; margin-top: 10px; }
+.gl-banner {
+  border: 1px solid rgba(200, 162, 94, 0.4);
+  background: rgba(200, 162, 94, 0.06);
+  border-radius: var(--radius-sm, 8px);
+  padding: 12px 14px;
+  font-size: 0.88rem;
+  color: var(--text-muted);
+  margin-top: 18px;
+}
+
+/* The row collapses to stacked blocks rather than squeezing four columns. */
+@media (max-width: 720px) {
+  .gl-row { grid-template-columns: 1fr; gap: 4px; padding: 14px 4px; }
+  .gl-row-head { display: none; }
+  .gl-actions { justify-content: flex-start; margin-top: 8px; }
+}
