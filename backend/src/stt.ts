@@ -26,7 +26,7 @@ import WebSocket from 'ws';
  *
  * DEEPGRAM_KEYTERMS replaces this list wholesale rather than adding to it.
  */
-const DEFAULT_KEYTERMS = [
+export const DEFAULT_KEYTERMS = [
   // Names of God / titles
   '예수', '예수님', '하나님', '성령', '그리스도', '예수 그리스도', '주님',
   // Bible figures

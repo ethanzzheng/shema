@@ -18,7 +18,10 @@
 
 import { WebSocket } from 'ws';
 import { Session } from './session';
-import { DeepgramSTT } from './stt';
+import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS } from './stt';
+import { randomUUID } from 'crypto';
+import { loadChurchGlossary } from './glossary/load';
+import { budgetKeyterms } from './glossary/merge';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
@@ -373,7 +376,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   }
 
   // ── Start broadcast session ────────────────────────────────────────────────
-  function startSession(mode: 'fast' | 'smooth', direction: Direction): void {
+  async function startSession(mode: 'fast' | 'smooth', direction: Direction): Promise<void> {
     const cfg = getDirectionConfig(direction);
     if (!cfg.implemented) {
       throw new Error(`Translation direction "${direction}" is not implemented yet.`);
@@ -412,7 +415,26 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     session.mode = mode;
     session.direction = direction;
     tts = createTts(direction);
-    translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId);
+
+    // Load this church's glossary once, here. Nothing downstream reads the
+    // database again: the translator renders the church tier into its cached
+    // system prompt, and the live tier is served from memory per sentence.
+    // A failure falls back to the env vars rather than delaying going on air.
+    session.broadcastId = randomUUID();
+    const targetLang = direction === 'en-ko' ? 'ko' : 'en';
+    const loaded = await loadChurchGlossary(session.roomId, targetLang);
+    session.setGlossary(loaded.terms, [], loaded.source);
+    console.log(
+      `[Glossary] room "${session.roomId}": ${loaded.terms.length} church term(s) from ${loaded.source}` +
+        (loaded.source === 'env' ? ' (DATABASE FALLBACK)' : ''),
+    );
+
+    translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId, {
+      churchTerms: loaded.terms,
+      // Read per translation, so a term added at the desk mid-sermon is in
+      // force for the very next sentence.
+      getLiveTerms: () => session.glossaryLive,
+    });
     detectRef = direction === 'en-ko' ? detectReferenceEn : detectReference;
     currentRef = null;
     refAgeChunks = 0;
@@ -438,9 +460,26 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     let lastPartialSentAt = 0;
 
     // Set up streaming STT in the direction's input language
+    // Recognition bias for this connection. Deepgram bakes keyterms into the
+    // connection URL, so this is the one chance to set them: a term added
+    // later cannot reach STT without reconnecting, and reconnecting mid-sermon
+    // would drop whatever the preacher was part-way through saying. Such a
+    // term still improves translation immediately; it biases recognition from
+    // the next broadcast.
+    const { keyterms, dropped } = budgetKeyterms(
+      session.glossaryAll.map((t) => t.sourceTerm),
+      DEFAULT_STT_KEYTERMS,
+    );
+    if (dropped.length > 0) {
+      console.warn(
+        `[Glossary] ${dropped.length} keyterm(s) over Deepgram's limit, not sent: ${dropped.join(', ')}`,
+      );
+    }
+
     stt = new DeepgramSTT({
       apiKey: DEEPGRAM_API_KEY,
       language: cfg.sttLanguage,
+      keyterms,
       onTranscript: async ({ text, isFinal, timestamp }) => {
         // Interims arrive many times per second and exist only to tell the
         // chunker that speech is still flowing — logging them would bury the
@@ -502,7 +541,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
   // ── WebSocket message handlers ─────────────────────────────────────────────
   let audioChunkCount = 0;
-  ws.on('message', (data, isBinary) => {
+  ws.on('message', async (data, isBinary) => {
     if (isBinary) {
       // Raw PCM audio from broadcaster
       audioChunkCount++;
@@ -535,7 +574,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           }
           const direction = normalizeDirection(msg.direction);
           try {
-            startSession(msg.mode === 'smooth' ? 'smooth' : 'fast', direction);
+            // Awaited: the glossary must be loaded before the translator and
+            // the STT connection are built, since both bake it in at construction.
+            await startSession(msg.mode === 'smooth' ? 'smooth' : 'fast', direction);
           } catch (err) {
             const message = (err as Error).message;
             console.warn(`[Broadcaster] Start refused for room "${session.roomId}": ${message}`);

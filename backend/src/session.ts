@@ -9,6 +9,7 @@
 
 import { WebSocket } from 'ws';
 import { Direction } from './direction-config';
+import { GlossaryTerm } from './glossary/types';
 
 export interface TranslationChunk {
   seq: number;
@@ -45,8 +46,61 @@ export class Session {
   private listeners = new Set<WebSocket>();
   private broadcasters = new Set<WebSocket>();
 
+  /**
+   * Identifies the current broadcast, so service-scope glossary terms can be
+   * tied to it. Minted at start; null while off air. Sessions are otherwise
+   * purely in-memory — this id exists only to key rows in the database.
+   */
+  broadcastId: string | null = null;
+
+  /**
+   * The church glossary as loaded when this broadcast started. Snapshotted
+   * because it is rendered into the translator's CACHED system prompt, which
+   * must not change mid-broadcast.
+   */
+  glossaryChurch: GlossaryTerm[] = [];
+
+  /**
+   * Service-scope terms, plus anything an operator adds while on air. Read per
+   * translation and injected into the uncached user message, so edits take
+   * effect on the next sentence without costing a prompt-cache miss.
+   */
+  glossaryLive: GlossaryTerm[] = [];
+
+  /** Where glossaryChurch came from — 'env' means the database was unreachable. */
+  glossarySource: 'db' | 'env' | null = null;
+
   constructor(roomId = 'default') {
     this.roomId = roomId;
+  }
+
+  /** Called once at broadcast start, after the glossary has been loaded. */
+  setGlossary(church: GlossaryTerm[], live: GlossaryTerm[], source: 'db' | 'env'): void {
+    this.glossaryChurch = church;
+    this.glossaryLive = live;
+    this.glossarySource = source;
+  }
+
+  /**
+   * A term added during the broadcast always lands in the live tier, whatever
+   * its scope. A church-scope term added now is stored permanently but must
+   * not be folded into the cached system prompt until the next broadcast.
+   */
+  addLiveTerm(term: GlossaryTerm): void {
+    this.glossaryLive = [...this.glossaryLive.filter((t) => t.id !== term.id), term];
+  }
+
+  /** Remove by id from both tiers; the church tier only takes effect next start. */
+  removeGlossaryTerm(id: string): void {
+    this.glossaryLive = this.glossaryLive.filter((t) => t.id !== id);
+    this.glossaryChurch = this.glossaryChurch.filter((t) => t.id !== id);
+  }
+
+  /** Every term currently in force, for display at the desk. */
+  get glossaryAll(): GlossaryTerm[] {
+    const byId = new Map<string, GlossaryTerm>();
+    for (const t of [...this.glossaryChurch, ...this.glossaryLive]) byId.set(t.id, t);
+    return [...byId.values()];
   }
 
   metrics: DebugMetrics = {
