@@ -13,7 +13,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AccountMenu from '@/components/AccountMenu';
-import StaffNav from '@/components/StaffNav';
 import ShemaMark from '@/components/ShemaMark';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { getUsername } from '@/lib/auth';
@@ -160,13 +159,14 @@ export default function GlossaryPage() {
     <div className="gl-root">
       {/* Mirrors the desk's top bar so the tabs never move between pages. */}
       <header className="gl-bar">
-        <Link href="/" className="gl-brand" title="Home">
+        {/* Back to the dashboard, not the marketing site: this is a staff
+            page, and "/" stranded anyone who wanted to get back to /host. */}
+        <Link href="/host" className="gl-brand" title="Dashboard">
           <ShemaMark />
           <span className="gl-brand-name">Shema</span>
         </Link>
         <span className="gl-bar-rule" aria-hidden />
         <span className="serif-en gl-bar-title">Glossary</span>
-        <StaffNav />
         <span className="gl-bar-church">{church}</span>
         <span className="gl-bar-end">
           <AccountMenu />

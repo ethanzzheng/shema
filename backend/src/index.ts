@@ -18,7 +18,7 @@ import { handleBroadcasterConnection } from './broadcaster';
 import { handleListenerConnection } from './listener';
 import { login, authEnabled } from './auth';
 import { createGlossaryRouter } from './routes/glossary';
-import { isDbConfigured } from './db';
+import { isDbConfigured, dbReachable } from './db';
 import { runMigrations } from './db/migrate';
 
 // ── Validate required env vars at startup ─────────────────────────────────
@@ -70,12 +70,32 @@ app.use(express.json());
 const sessions = new SessionManager();
 
 // Health / status endpoint (polled by frontend connection check)
-app.get('/health', (_req, res) => {
+/**
+ * Cached so /health stays cheap — the frontend polls it to decide whether
+ * login is required, and that must not open a database connection each time.
+ */
+let dbProbe: { at: number; reachable: boolean } | null = null;
+const DB_PROBE_TTL_MS = 10_000;
+
+async function databaseStatus(): Promise<string> {
+  if (!isDbConfigured()) return 'not configured';
+  const now = Date.now();
+  if (!dbProbe || now - dbProbe.at > DB_PROBE_TTL_MS) {
+    dbProbe = { at: now, reachable: await dbReachable() };
+  }
+  return dbProbe.reachable ? 'connected' : 'unreachable';
+}
+
+app.get('/health', async (_req, res) => {
   res.json({
     status: 'ok',
     // Lets the frontend know whether to gate staff pages behind /login
     // (false in open dev mode, true when AUTH_USERS/AUTH_SECRET are set).
     authRequired: authEnabled(),
+    // Distinguishes "DATABASE_URL was never set on this service" from "it is
+    // set but the database is down". The glossary silently falls back to the
+    // env vars in both cases, which otherwise look identical from outside.
+    database: await databaseStatus(),
     rooms: sessions.roomCount,
     listenerCount: sessions.totalListeners,
     roomDetails: sessions.stats(),
