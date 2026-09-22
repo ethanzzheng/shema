@@ -5,13 +5,16 @@
  * terms past services left behind.
  *
  * The broadcast desk's Terms card is for the heat of a service; this is where
- * the glossary gets tidied afterwards: correct a rendering, drop something
- * that was a mistake, or promote a song title that turned out to recur.
+ * the glossary gets tidied afterwards: correct a rendering, drop a mistake, or
+ * promote a song title that turned out to recur. Shares the desk's top bar and
+ * section tabs so the two read as one app.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import AccountMenu from '@/components/AccountMenu';
+import StaffNav from '@/components/StaffNav';
+import ShemaMark from '@/components/ShemaMark';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { getUsername } from '@/lib/auth';
 import { normalizeChurchSlug, churchDisplayName } from '@/lib/slug';
@@ -31,6 +34,17 @@ function targetOf(term: GlossaryTerm): string {
   return Object.values(term.targets)[0] ?? '';
 }
 
+/** Term → rendering, or the badge that says it is carried across untouched. */
+function Rendering({ term }: { term: GlossaryTerm }) {
+  if (term.behavior === 'keep') return <span className="gl-tag gl-tag-keep">kept as-is</span>;
+  return (
+    <>
+      <span className="gl-arrow" aria-hidden>→</span>
+      <span>{targetOf(term)}</span>
+    </>
+  );
+}
+
 export default function GlossaryPage() {
   const gate = useRequireAuth();
   const [church, setChurch] = useState('');
@@ -39,11 +53,9 @@ export default function GlossaryPage() {
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState('');
 
-  // Add form
   const [newTerm, setNewTerm] = useState('');
   const [newTarget, setNewTarget] = useState('');
 
-  // Inline edit
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editTerm, setEditTerm] = useState('');
   const [editTarget, setEditTarget] = useState('');
@@ -145,115 +157,171 @@ export default function GlossaryPage() {
   if (gate !== 'ok') return null;
 
   return (
-    <div className="gl-page">
-      <div className="gl-head">
-        <div>
-          <h1 className="gl-title">Glossary</h1>
-          <p className="gl-sub">
-            Names and terms {churchDisplayName(church) || 'this church'} needs rendered the same way
-            every week. <span className="gl-church">{church}</span>
-          </p>
-        </div>
-        <AccountMenu />
-      </div>
+    <div className="gl-root">
+      {/* Mirrors the desk's top bar so the tabs never move between pages. */}
+      <header className="gl-bar">
+        <Link href="/" className="gl-brand" title="Home">
+          <ShemaMark />
+          <span className="gl-brand-name">Shema</span>
+        </Link>
+        <span className="gl-bar-rule" aria-hidden />
+        <span className="serif-en gl-bar-title">Glossary</span>
+        <StaffNav />
+        <span className="gl-bar-church">{church}</span>
+        <span className="gl-bar-end">
+          <AccountMenu />
+        </span>
+      </header>
 
-      {readOnly && (
-        <div className="gl-banner">
-          This server has no glossary database, so terms are read-only and come from the
-          CHURCH_GLOSSARY environment variables.
-        </div>
-      )}
+      <main className="gl-main">
+        <p className="gl-lede">
+          Names and terms {churchDisplayName(church) || 'this church'} needs rendered the same way every
+          week. These are read before every translation, and are biased into speech recognition when a
+          broadcast starts.
+        </p>
 
-      <section className="gl-section">
-        <div className="gl-section-head">
-          <span className="gl-section-title">Church terms · {snap?.church.length ?? 0}</span>
-          <input
-            className="field"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search"
-            aria-label="Search terms"
-            style={{ width: 200, padding: '7px 11px', fontSize: '0.85rem' }}
-          />
-        </div>
-
-        {!readOnly && (
-          <div className="gl-add">
-            <input
-              className="field"
-              value={newTerm}
-              onChange={(e) => setNewTerm(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-              placeholder="Term as spoken, e.g. 목장"
-              aria-label="New term"
-            />
-            <input
-              className="field"
-              value={newTarget}
-              onChange={(e) => setNewTarget(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-              placeholder="Rendering, e.g. Mokjang — blank to keep as-is"
-              aria-label="Rendering"
-            />
-            <button className="gl-btn" onClick={add} disabled={busy || !newTerm.trim()}>
-              Add
-            </button>
+        {readOnly && (
+          <div className="gl-banner">
+            This server has no glossary database, so terms are read-only and come from the
+            CHURCH_GLOSSARY environment variables.
           </div>
         )}
 
-        <div style={{ marginTop: 18 }}>
-          <div className="gl-row gl-row-head">
-            <span>Term</span>
-            <span>Rendering</span>
-            <span>Notes</span>
-            <span />
+        <section className="gl-section">
+          <div className="gl-section-head">
+            <div>
+              <span className="gl-section-title">Church terms</span>
+              <span className="gl-count">{snap?.church.length ?? 0}</span>
+              <p className="gl-section-note">Permanent — in force for every service.</p>
+            </div>
+            <input
+              className="field"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder="Search"
+              aria-label="Search terms"
+              style={{ width: 190, padding: '8px 12px', fontSize: '0.86rem' }}
+            />
           </div>
 
-          {churchTerms.length === 0 && (
-            <p className="gl-empty">
-              {query ? 'Nothing matches that search.' : 'No church terms yet.'}
-            </p>
+          {!readOnly && (
+            <div className="gl-add">
+              <input
+                className="field"
+                value={newTerm}
+                onChange={(e) => setNewTerm(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+                placeholder="Term as spoken"
+                aria-label="New term"
+              />
+              <input
+                className="field"
+                value={newTarget}
+                onChange={(e) => setNewTarget(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
+                placeholder="Rendering"
+                aria-label="Rendering"
+              />
+              <button className="gl-btn gl-btn-primary" onClick={add} disabled={busy || !newTerm.trim()}>
+                Add term
+              </button>
+              <span className="gl-add-hint">
+                Leave the rendering blank to carry a name across untranslated.
+              </span>
+            </div>
           )}
 
-          {churchTerms.map((term) =>
-            editingId === term.id ? (
-              <div className="gl-row" key={term.id}>
-                <input
-                  className="field"
-                  value={editTerm}
-                  onChange={(e) => setEditTerm(e.target.value)}
-                  aria-label="Edit term"
-                  style={{ padding: '7px 10px', fontSize: '0.9rem' }}
-                />
-                <input
-                  className="field"
-                  value={editTarget}
-                  onChange={(e) => setEditTarget(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(term.id); }}
-                  placeholder="blank to keep as-is"
-                  aria-label="Edit rendering"
-                  style={{ padding: '7px 10px', fontSize: '0.9rem' }}
-                />
-                <span className="gl-notes">{term.notes}</span>
-                <span className="gl-actions">
-                  <button className="gl-btn" onClick={() => saveEdit(term.id)} disabled={busy || !editTerm.trim()}>
-                    Save
-                  </button>
-                  <button className="gl-btn" onClick={() => setEditingId(null)} disabled={busy}>
-                    Cancel
-                  </button>
-                </span>
-              </div>
-            ) : (
+          <div className="gl-list">
+            {churchTerms.length === 0 && (
+              <p className="gl-empty">
+                {query
+                  ? `Nothing matches “${query.trim()}”.`
+                  : 'No church terms yet. Add the names your congregation hears every week.'}
+              </p>
+            )}
+
+            {churchTerms.map((term) =>
+              editingId === term.id ? (
+                <div className="gl-row" key={term.id}>
+                  <input
+                    className="field"
+                    value={editTerm}
+                    onChange={(e) => setEditTerm(e.target.value)}
+                    aria-label="Edit term"
+                    style={{ padding: '8px 11px', fontSize: '0.92rem' }}
+                  />
+                  <input
+                    className="field"
+                    value={editTarget}
+                    onChange={(e) => setEditTarget(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(term.id); }}
+                    placeholder="blank to keep as-is"
+                    aria-label="Edit rendering"
+                    style={{ padding: '8px 11px', fontSize: '0.92rem' }}
+                  />
+                  <span className="gl-actions">
+                    <button className="gl-btn gl-btn-primary" onClick={() => saveEdit(term.id)} disabled={busy || !editTerm.trim()}>
+                      Save
+                    </button>
+                    <button className="gl-btn" onClick={() => setEditingId(null)} disabled={busy}>
+                      Cancel
+                    </button>
+                  </span>
+                </div>
+              ) : (
+                <div className="gl-row" key={term.id}>
+                  <span className="gl-term">{term.sourceTerm}</span>
+                  <span className="gl-rendering">
+                    <Rendering term={term} />
+                  </span>
+                  <span className="gl-actions">
+                    <button className="gl-btn" onClick={() => startEdit(term)} disabled={busy || readOnly}>
+                      Edit
+                    </button>
+                    <button
+                      className="gl-btn gl-btn-danger"
+                      onClick={() => run(() => deleteGlossaryTerm(term.id))}
+                      disabled={busy || readOnly}
+                    >
+                      Delete
+                    </button>
+                  </span>
+                </div>
+              ),
+            )}
+          </div>
+        </section>
+
+        <section className="gl-section">
+          <div className="gl-section-head">
+            <div>
+              <span className="gl-section-title">From past services</span>
+              <span className="gl-count">{promotable.length}</span>
+              <p className="gl-section-note">
+                Added for a single service. Promote one if it turns out to recur.
+              </p>
+            </div>
+          </div>
+
+          <div className="gl-list">
+            {promotable.length === 0 && (
+              <p className="gl-empty">Nothing yet — terms added at the desk for one service land here.</p>
+            )}
+
+            {promotable.map((term) => (
               <div className="gl-row" key={term.id}>
                 <span className="gl-term">{term.sourceTerm}</span>
-                <span className="gl-target">
-                  {term.behavior === 'keep' ? <span className="gl-keep">KEPT AS-IS</span> : targetOf(term)}
+                <span className="gl-rendering">
+                  <Rendering term={term} />
+                  <span className="gl-tag-date">{new Date(term.createdAt).toLocaleDateString()}</span>
                 </span>
-                <span className="gl-notes">{term.notes}</span>
                 <span className="gl-actions">
-                  <button className="gl-btn" onClick={() => startEdit(term)} disabled={busy || readOnly}>
-                    Edit
+                  <button
+                    className="gl-btn"
+                    onClick={() => run(() => promoteGlossaryTerm(term.id))}
+                    disabled={busy || readOnly}
+                  >
+                    Promote
                   </button>
                   <button
                     className="gl-btn gl-btn-danger"
@@ -264,53 +332,12 @@ export default function GlossaryPage() {
                   </button>
                 </span>
               </div>
-            ),
-          )}
-        </div>
-      </section>
-
-      <section className="gl-section">
-        <div className="gl-section-head">
-          <span className="gl-section-title">From past services · {promotable.length}</span>
-        </div>
-        <p className="gl-sub" style={{ marginTop: 0, marginBottom: 10, fontSize: '0.86rem' }}>
-          Terms added for a single service. Promote one if it turns out to recur.
-        </p>
-
-        {promotable.length === 0 && <p className="gl-empty">Nothing from past services.</p>}
-
-        {promotable.map((term) => (
-          <div className="gl-row" key={term.id}>
-            <span className="gl-term">{term.sourceTerm}</span>
-            <span className="gl-target">
-              {term.behavior === 'keep' ? <span className="gl-keep">KEPT AS-IS</span> : targetOf(term)}
-            </span>
-            <span className="gl-notes">{new Date(term.createdAt).toLocaleDateString()}</span>
-            <span className="gl-actions">
-              <button
-                className="gl-btn"
-                onClick={() => run(() => promoteGlossaryTerm(term.id))}
-                disabled={busy || readOnly}
-              >
-                Promote
-              </button>
-              <button
-                className="gl-btn gl-btn-danger"
-                onClick={() => run(() => deleteGlossaryTerm(term.id))}
-                disabled={busy || readOnly}
-              >
-                Delete
-              </button>
-            </span>
+            ))}
           </div>
-        ))}
-      </section>
+        </section>
 
-      {error && <p className="gl-error">{error}</p>}
-
-      <p className="gl-sub" style={{ marginTop: 34, fontSize: '0.86rem' }}>
-        <Link href="/host" style={{ color: 'var(--accent)' }}>← Back to dashboard</Link>
-      </p>
+        {error && <p className="gl-error">{error}</p>}
+      </main>
     </div>
   );
 }

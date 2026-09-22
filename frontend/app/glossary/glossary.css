@@ -1,79 +1,143 @@
 /*
- * Glossary management. Product-screen palette (night/cream), same tokens and
- * radius scale as the rest of the signed-in surfaces.
+ * Glossary management.
+ *
+ * Shares the broadcast desk's shell — same top bar, same night/cream palette,
+ * same 8/10/12px radius scale, one gold accent — so the two staff surfaces
+ * read as one app rather than two projects.
  */
 
-.gl-page { max-width: 940px; margin: 0 auto; padding: clamp(28px, 5vw, 64px) clamp(16px, 4vw, 24px); }
+.gl-root { min-height: 100dvh; display: flex; flex-direction: column; }
 
-.gl-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-.gl-title { font-size: 2rem; font-weight: 600; }
-.gl-sub { color: var(--text-muted); margin-top: 0.35rem; font-size: 0.95rem; }
-.gl-church { font-family: var(--font-mono, monospace); color: var(--accent); }
+/* ── Top bar: mirrors the desk's, so the tabs sit in the same place ──────── */
+.gl-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px clamp(14px, 2vw, 24px);
+  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+}
+.gl-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
+.gl-brand-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.gl-bar-rule { width: 1px; height: 18px; background: rgba(244, 241, 234, 0.12); }
+.gl-bar-title { font-size: 19px; color: rgba(244, 241, 234, 0.9); }
+.gl-bar-church {
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+.gl-bar-end { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
 
-.gl-section { margin-top: 34px; }
-.gl-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
-.gl-section-title { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+/* ── Body ────────────────────────────────────────────────────────────────── */
+.gl-main { flex: 1; width: 100%; max-width: 880px; margin: 0 auto; padding: clamp(26px, 4vw, 46px) clamp(16px, 4vw, 24px) 64px; }
 
-.gl-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.gl-add .field { flex: 1 1 190px; min-width: 0; padding: 9px 12px; font-size: 0.9rem; }
+.gl-lede { color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; max-width: 60ch; }
 
-/* One row shape for header and body, so columns line up without a table. */
+.gl-section { margin-top: 38px; }
+.gl-section:first-of-type { margin-top: 30px; }
+.gl-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.gl-section-title { font-size: 1.05rem; font-weight: 500; }
+.gl-count { font-family: var(--font-mono, monospace); font-size: 0.7rem; color: var(--text-muted); margin-left: 8px; }
+.gl-section-note { color: var(--text-muted); font-size: 0.85rem; margin-top: 4px; }
+
+/* ── Add form ────────────────────────────────────────────────────────────── */
+.gl-add { display: flex; gap: 8px; flex-wrap: wrap; align-items: stretch; margin-top: 16px; }
+.gl-add .field { flex: 1 1 200px; min-width: 0; padding: 10px 13px; font-size: 0.92rem; }
+.gl-add-hint { flex-basis: 100%; color: rgba(244, 241, 234, 0.4); font-size: 0.78rem; margin-top: -2px; }
+
+/* ── Rows ────────────────────────────────────────────────────────────────── */
+.gl-list { margin-top: 18px; }
 .gl-row {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.4fr) minmax(0, 1fr) auto;
-  gap: 12px;
+  /* The term and its rendering are one statement and belong near each other;
+     a wide first column left them stranded at opposite ends of the row. */
+  grid-template-columns: minmax(120px, 0.42fr) minmax(0, 1fr) auto;
+  gap: 14px;
   align-items: center;
-  padding: 11px 4px;
-  border-top: 1px solid var(--border);
+  padding: 12px 10px;
+  margin: 0 -10px;
+  border-radius: var(--radius-sm);
+  border-top: 1px solid rgba(244, 241, 234, 0.07);
+  transition: background-color 140ms var(--ease);
 }
-.gl-row-head {
-  border-top: 0;
-  font-size: 0.66rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(244, 241, 234, 0.4);
-  padding-bottom: 6px;
-}
-.gl-term { font-size: 0.98rem; overflow-wrap: anywhere; }
-.gl-target { color: var(--text-muted); font-size: 0.9rem; overflow-wrap: anywhere; }
-.gl-notes { color: rgba(244, 241, 234, 0.4); font-size: 0.82rem; overflow-wrap: anywhere; }
-.gl-keep { font-family: var(--font-mono, monospace); font-size: 0.66rem; color: var(--accent); opacity: 0.8; }
+.gl-row:first-child { border-top: 0; }
+.gl-row:hover { background: rgba(244, 241, 234, 0.03); }
 
-.gl-actions { display: flex; gap: 6px; justify-content: flex-end; }
-.gl-btn {
+.gl-term { font-size: 1.02rem; overflow-wrap: anywhere; }
+.gl-rendering { color: var(--text-muted); font-size: 0.93rem; overflow-wrap: anywhere; display: flex; align-items: center; gap: 8px; }
+.gl-arrow { color: rgba(244, 241, 234, 0.25); flex: 0 0 auto; }
+
+.gl-tag {
   font-family: var(--font-mono, monospace);
-  font-size: 0.64rem;
+  font-size: 0.6rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  padding: 6px 10px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+.gl-tag-keep { color: var(--accent); background: rgba(200, 162, 94, 0.12); }
+.gl-tag-date { color: rgba(244, 241, 234, 0.4); font-family: var(--font-mono, monospace); font-size: 0.72rem; }
+
+/*
+ * Six rows each shouting EDIT DELETE turned the table into a wall of buttons
+ * and buried the terms, which are what anyone came here to read. The fix is to
+ * quieten them, NOT to hide them until hover: hover-reveal is undiscoverable
+ * on touch and easy to get subtly wrong for keyboard users. They stay present
+ * and reachable, just low-contrast until you interact with the row.
+ */
+.gl-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.gl-row .gl-btn { color: rgba(244, 241, 234, 0.32); border-color: rgba(244, 241, 234, 0.08); }
+.gl-row:hover .gl-btn,
+.gl-row:focus-within .gl-btn { color: var(--text-muted); border-color: var(--border); }
+
+.gl-btn {
+  font-family: var(--font-sans);
+  font-size: 0.78rem;
+  padding: 5px 11px;
   border-radius: 6px;
   border: 1px solid var(--border);
   color: var(--text-muted);
   background: none;
   cursor: pointer;
-  transition: color 140ms var(--ease), border-color 140ms var(--ease);
   white-space: nowrap;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease), background-color 140ms var(--ease);
 }
 .gl-btn:hover:not(:disabled) { color: var(--text); border-color: rgba(244, 241, 234, 0.3); }
 .gl-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-.gl-btn-danger:hover:not(:disabled) { color: var(--alert); border-color: var(--alert); }
 .gl-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.gl-btn-primary { color: var(--night); background: var(--gold); border-color: var(--gold); font-weight: 500; }
+.gl-btn-primary:hover:not(:disabled) { background: var(--gold-hover); border-color: var(--gold-hover); color: var(--night); }
+.gl-btn-danger:hover:not(:disabled) { color: var(--alert); border-color: rgba(255, 138, 128, 0.5); }
 
-.gl-empty { color: var(--text-muted); font-size: 0.9rem; padding: 18px 4px; }
-.gl-error { color: var(--alert); font-size: 0.86rem; margin-top: 10px; }
+.gl-empty {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  padding: 26px 0;
+  border-top: 1px solid rgba(244, 241, 234, 0.07);
+}
+.gl-error { color: var(--alert); font-size: 0.86rem; margin-top: 14px; }
 .gl-banner {
-  border: 1px solid rgba(200, 162, 94, 0.4);
+  border: 1px solid rgba(200, 162, 94, 0.35);
   background: rgba(200, 162, 94, 0.06);
-  border-radius: var(--radius-sm, 8px);
-  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  padding: 13px 15px;
   font-size: 0.88rem;
   color: var(--text-muted);
-  margin-top: 18px;
+  margin-top: 20px;
+  line-height: 1.55;
 }
 
-/* The row collapses to stacked blocks rather than squeezing four columns. */
-@media (max-width: 720px) {
-  .gl-row { grid-template-columns: 1fr; gap: 4px; padding: 14px 4px; }
-  .gl-row-head { display: none; }
-  .gl-actions { justify-content: flex-start; margin-top: 8px; }
+@media (max-width: 640px) {
+  .gl-row { grid-template-columns: 1fr; gap: 6px; }
+  .gl-actions { justify-content: flex-start; margin-top: 6px; }
+  .gl-bar-title { font-size: 17px; }
 }

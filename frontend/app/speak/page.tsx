@@ -16,6 +16,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AccountMenu from '@/components/AccountMenu';
+import StaffNav from '@/components/StaffNav';
+import ShemaMark from '@/components/ShemaMark';
 import {
   addGlossaryTerm,
   deleteGlossaryTerm,
@@ -851,14 +853,12 @@ export default function SpeakPage() {
         }}
       >
         <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)' }} title="Home">
-          <svg width="12" height="16" viewBox="0 0 24 32" fill="none" aria-hidden>
-            <line x1="12" y1="1" x2="12" y2="31" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-            <line x1="3" y1="10" x2="21" y2="10" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" />
-          </svg>
+          <ShemaMark />
           <span style={{ ...MONO, fontSize: 11, letterSpacing: '0.24em' }}>Shema</span>
         </Link>
         <span style={{ width: 1, height: 18, background: 'rgba(244,241,234,0.12)' }} aria-hidden />
         <span className="serif-en" style={{ fontSize: 19, color: 'rgba(244,241,234,0.9)' }}>Broadcast desk</span>
+        <StaffNav />
 
         {/* Church slug: chip while live, editable field otherwise */}
         <input
