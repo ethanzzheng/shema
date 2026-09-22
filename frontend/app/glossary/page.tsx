@@ -17,7 +17,7 @@ import StaffNav from '@/components/StaffNav';
 import ShemaMark from '@/components/ShemaMark';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { getUsername } from '@/lib/auth';
-import { normalizeChurchSlug, churchDisplayName } from '@/lib/slug';
+import { normalizeChurchSlug } from '@/lib/slug';
 import {
   addGlossaryTerm,
   deleteGlossaryTerm,
@@ -174,12 +174,6 @@ export default function GlossaryPage() {
       </header>
 
       <main className="gl-main">
-        <p className="gl-lede">
-          Names and terms {churchDisplayName(church) || 'this church'} needs said the same way every
-          week. These are read before every translation, and are biased into speech recognition when a
-          broadcast starts.
-        </p>
-
         {readOnly && (
           <div className="gl-banner">
             This server has no glossary database, so terms are read-only and come from the
