@@ -13,6 +13,7 @@ import { isDbConfigured } from '../db';
 import { normalizeRoomId, SessionManager } from '../session-manager';
 import * as repo from '../glossary/repo';
 import { isBehavior, GlossaryTerm } from '../glossary/types';
+import { envTerms } from '../glossary/env';
 
 /**
  * Same posture as the broadcaster's start check: when no auth is configured
@@ -75,8 +76,10 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
     if (!authorize(req, res)) return;
     const churchId = normalizeRoomId(String(req.query.church ?? ''));
     if (!isDbConfigured()) {
-      const session = sessions.get(churchId);
-      res.json({ source: 'env', church: session?.glossaryChurch ?? [], service: [], past: [] });
+      // Read straight from the env vars rather than the session cache, which is
+      // empty until a broadcast starts — otherwise the desk would show no terms
+      // on a server that does in fact have some.
+      res.json({ source: 'env', church: envTerms(churchId), service: [], past: [] });
       return;
     }
     try {
