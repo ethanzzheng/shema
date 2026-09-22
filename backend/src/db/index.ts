@@ -46,7 +46,11 @@ export function getPool(): Pool | null {
       connectionString: url,
       ssl: needsSsl(url) ? { rejectUnauthorized: false } : undefined,
       max: 5,
-      connectionTimeoutMillis: 5_000,
+      // Short on purpose. This budget is spent while a broadcast is trying to
+      // go on air, so a dead database must be given up on quickly and fall
+      // back to the env glossary. A healthy connection over Railway's private
+      // network answers in single-digit milliseconds.
+      connectionTimeoutMillis: 2_000,
       idleTimeoutMillis: 30_000,
     });
     // An idle client erroring must not take the process down with it; the

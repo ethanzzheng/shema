@@ -424,12 +424,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // so terms added before the break survive it. Terms staged before going on
     // air also keep their scope — an operator who types a song title during the
     // opening hymn should not lose it the moment they hit Start.
-    const staged = session.broadcastId ? await loadSessionTerms(session.broadcastId) : [];
+    // Concurrent, not sequential: if the database is unreachable these each
+    // wait out a connection timeout, and doing them in turn would double the
+    // delay before a service can go on air.
+    const targetLang = direction === 'en-ko' ? 'ko' : 'en';
+    const [staged, loaded] = await Promise.all([
+      session.broadcastId ? loadSessionTerms(session.broadcastId) : Promise.resolve([]),
+      loadChurchGlossary(session.roomId, targetLang),
+    ]);
     if (!isResume && staged.length === 0) session.broadcastId = randomUUID();
     else session.ensureBroadcastId();
-
-    const targetLang = direction === 'en-ko' ? 'ko' : 'en';
-    const loaded = await loadChurchGlossary(session.roomId, targetLang);
     const live = session.broadcastId === null ? [] : staged;
     session.setGlossary(loaded.terms, live, loaded.source);
     console.log(

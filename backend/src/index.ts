@@ -148,14 +148,25 @@ const PORT = parseInt(process.env.PORT ?? '3001', 10);
 
 /**
  * Migrations run before the first request, because Railway has no release
- * phase to hang them off. A migration failure is fatal — starting with a
- * half-known schema would be worse than not starting. A missing DATABASE_URL
- * is NOT fatal: the glossary falls back to its env vars and everything else
- * works exactly as it did before there was a database.
+ * phase to hang them off.
+ *
+ * A failure here is loud but NOT fatal. The glossary is the only thing that
+ * needs the database and it already degrades to the CHURCH_GLOSSARY env vars,
+ * so a database blip during a deploy should cost a church its glossary for one
+ * service — not the ability to go on air at all. Refusing to start would make
+ * this feature strictly worse for availability than not having it.
  */
 async function start(): Promise<void> {
   if (isDbConfigured()) {
-    await runMigrations();
+    try {
+      await runMigrations();
+    } catch (err) {
+      console.error(
+        `[DB] MIGRATIONS FAILED: ${(err as Error).message}\n` +
+          '[DB] Starting anyway. The glossary will fall back to CHURCH_GLOSSARY env vars ' +
+          'and writes will fail until the database is reachable.',
+      );
+    }
   } else {
     console.warn('[DB] No DATABASE_URL — glossary falls back to CHURCH_GLOSSARY env vars.');
   }

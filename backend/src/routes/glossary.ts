@@ -91,7 +91,12 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
       const service = session?.broadcastId ? await repo.listSessionTerms(session.broadcastId) : [];
       res.json({ source: 'db', church, service, past });
     } catch (err) {
-      res.status(502).json({ error: `Glossary unavailable: ${(err as Error).message}` });
+      // Mirror what the pipeline does when the database is unreachable: fall
+      // back to the env glossary. Showing an error while translation quietly
+      // keeps working from the env vars would tell the operator the opposite
+      // of the truth about which terms are in force.
+      console.warn(`[Glossary] Read failed, serving env fallback: ${(err as Error).message}`);
+      res.json({ source: 'env', church: envTerms(churchId), service: [], past: [] });
     }
   });
 
