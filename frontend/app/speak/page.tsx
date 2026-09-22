@@ -1126,7 +1126,7 @@ export default function SpeakPage() {
             <span style={{ fontSize: 10.5, color: 'rgba(244,241,234,0.4)', lineHeight: 1.45 }}>
               {termsReadOnly
                 ? 'Read-only — this server has no glossary database.'
-                : 'Enter to add. A bare name is kept as-is; use = to force a rendering.'}
+                : 'Enter to add. Type a name on its own to keep it unchanged, or 목장=Mokjang to set how it comes out.'}
             </span>
 
             <div className="toggle-group">

@@ -175,7 +175,7 @@ export default function GlossaryPage() {
 
       <main className="gl-main">
         <p className="gl-lede">
-          Names and terms {churchDisplayName(church) || 'this church'} needs rendered the same way every
+          Names and terms {churchDisplayName(church) || 'this church'} needs said the same way every
           week. These are read before every translation, and are biased into speech recognition when a
           broadcast starts.
         </p>
@@ -211,22 +211,22 @@ export default function GlossaryPage() {
                 value={newTerm}
                 onChange={(e) => setNewTerm(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-                placeholder="Term as spoken"
-                aria-label="New term"
+                placeholder="As spoken, e.g. 목장"
+                aria-label="Term as spoken"
               />
               <input
                 className="field"
                 value={newTarget}
                 onChange={(e) => setNewTarget(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter') add(); }}
-                placeholder="Rendering"
-                aria-label="Rendering"
+                placeholder="Comes out as, e.g. Mokjang"
+                aria-label="Comes out as"
               />
               <button className="gl-btn gl-btn-primary" onClick={add} disabled={busy || !newTerm.trim()}>
                 Add term
               </button>
               <span className="gl-add-hint">
-                Leave the rendering blank to carry a name across untranslated.
+                Leave the second box empty to keep a name exactly as it is said.
               </span>
             </div>
           )}
@@ -255,8 +255,8 @@ export default function GlossaryPage() {
                     value={editTarget}
                     onChange={(e) => setEditTarget(e.target.value)}
                     onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(term.id); }}
-                    placeholder="blank to keep as-is"
-                    aria-label="Edit rendering"
+                    placeholder="blank to leave it unchanged"
+                    aria-label="Edit what it comes out as"
                     style={{ padding: '8px 11px', fontSize: '0.92rem' }}
                   />
                   <span className="gl-actions">
