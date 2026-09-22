@@ -16,6 +16,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AccountMenu from '@/components/AccountMenu';
+import {
+  addGlossaryTerm,
+  deleteGlossaryTerm,
+  describeTerm,
+  fetchGlossary,
+  parseTermEntry,
+  type GlossaryTerm,
+} from '@/lib/glossary';
 import QRCode from 'qrcode';
 import { WsClient, ServerMessage, DebugMsg, TranslationMsg, AudioChunkMsg } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
@@ -138,6 +146,18 @@ export default function SpeakPage() {
   const [script, setScript] = useState<ScriptEntry[]>([]);
   const [liveKorean, setLiveKorean] = useState('');
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);
+
+  // ── Glossary ("Terms") ──────────────────────────────────────────────────
+  // Names and terms the pipeline must get right. Church-scope terms are
+  // permanent; service-scope ones belong to this broadcast. Adding one takes
+  // effect on the next translated sentence.
+  const [terms, setTerms] = useState<GlossaryTerm[]>([]);
+  const [termDraft, setTermDraft] = useState('');
+  const [termServiceOnly, setTermServiceOnly] = useState(true);
+  const [termsOpen, setTermsOpen] = useState(false);
+  const [termBusy, setTermBusy] = useState(false);
+  const [termError, setTermError] = useState('');
+  const [termsReadOnly, setTermsReadOnly] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [listenerCount, setListenerCount] = useState(0);
   const [showDiag, setShowDiag] = useState(false);
@@ -316,6 +336,59 @@ export default function SpeakPage() {
       levelRef.current = 0;
     };
   }, [gate, broadcasting, deviceId, needsPermission, devices.length, refreshDevices]);
+
+  // Load this church's terms whenever the room changes. The backend pushes
+  // updates over the broadcaster socket after that, so this runs once.
+  useEffect(() => {
+    if (!church || gate !== 'ok') return;
+    let cancelled = false;
+    fetchGlossary(church)
+      .then((snap) => {
+        if (cancelled) return;
+        setTerms([...snap.church, ...snap.service]);
+        setTermsReadOnly(snap.source === 'env');
+      })
+      .catch(() => {
+        // A glossary that will not load must not look like a broken desk.
+        if (!cancelled) setTerms([]);
+      });
+    return () => { cancelled = true; };
+  }, [church, gate]);
+
+  const submitTerm = async () => {
+    const parsed = parseTermEntry(termDraft);
+    // church is null until the URL/localStorage lookup resolves on mount.
+    if (!parsed || termBusy || !church) return;
+    setTermBusy(true);
+    setTermError('');
+    try {
+      const term = await addGlossaryTerm({
+        church,
+        sourceTerm: parsed.sourceTerm,
+        behavior: parsed.behavior,
+        targets: parsed.targets,
+        serviceOnly: termServiceOnly,
+      });
+      setTerms((prev) => [...prev.filter((t) => t.id !== term.id), term]);
+      setTermDraft('');
+      setTermsOpen(true);
+    } catch (err) {
+      setTermError((err as Error).message);
+    } finally {
+      setTermBusy(false);
+    }
+  };
+
+  const removeTerm = async (id: string) => {
+    const before = terms;
+    setTerms((prev) => prev.filter((t) => t.id !== id)); // optimistic
+    try {
+      await deleteGlossaryTerm(id);
+    } catch (err) {
+      setTerms(before);
+      setTermError((err as Error).message);
+    }
+  };
 
   const selectDevice = (id: string) => {
     setDeviceId(id);
@@ -532,6 +605,12 @@ export default function SpeakPage() {
         setLiveKorean(''); // clear interim korean after translation arrives
         break;
       }
+      case 'glossary':
+        // Pushed after any add/edit/delete, including ones made on the
+        // management page, so two operators never disagree about the terms.
+        if (Array.isArray(msg.terms)) setTerms(msg.terms as GlossaryTerm[]);
+        break;
+
       case 'debug': {
         const d = msg as DebugMsg;
         setDebug({
@@ -1018,7 +1097,94 @@ export default function SpeakPage() {
             )}
           </div>
 
-          {/* 6. Congregation link — pinned to the rail's bottom */}
+          {/* 6. Terms — the glossary. The input stays visible because adding a
+              term is the live action; the list collapses because it is the
+              bulky part and is only consulted after the fact. */}
+          <div style={railCard}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+              <span style={railLabel}>Terms</span>
+              <button
+                onClick={() => setTermsOpen((v) => !v)}
+                aria-expanded={termsOpen}
+                style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}
+              >
+                {terms.length}
+                <span aria-hidden style={{ display: 'inline-block', transform: termsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>▾</span>
+              </button>
+            </div>
+
+            <input
+              className="field"
+              value={termDraft}
+              onChange={(e) => setTermDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') submitTerm(); }}
+              disabled={termsReadOnly || termBusy}
+              placeholder="목장=Mokjang"
+              aria-label="Add a term"
+              style={{ padding: '7px 10px', fontSize: 12.5 }}
+            />
+            <span style={{ fontSize: 10.5, color: 'rgba(244,241,234,0.4)', lineHeight: 1.45 }}>
+              {termsReadOnly
+                ? 'Read-only — this server has no glossary database.'
+                : 'Enter to add. A bare name is kept as-is; use = to force a rendering.'}
+            </span>
+
+            <div className="toggle-group">
+              <button
+                className={`toggle-opt${termServiceOnly ? ' active' : ''}`}
+                onClick={() => setTermServiceOnly(true)}
+                style={{ fontFamily: 'var(--font-sans)', fontSize: 11.5, textTransform: 'none', letterSpacing: 0 }}
+              >
+                This service
+              </button>
+              <button
+                className={`toggle-opt${!termServiceOnly ? ' active' : ''}`}
+                onClick={() => setTermServiceOnly(false)}
+                style={{ fontFamily: 'var(--font-sans)', fontSize: 11.5, textTransform: 'none', letterSpacing: 0 }}
+              >
+                Church
+              </button>
+            </div>
+
+            {termError && (
+              <span style={{ fontSize: 11, color: 'var(--alert)' }}>{termError}</span>
+            )}
+
+            {termsOpen && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 190, overflowY: 'auto' }}>
+                {terms.length === 0 && (
+                  <span style={{ fontSize: 11.5, color: 'rgba(244,241,234,0.4)' }}>No terms yet.</span>
+                )}
+                {terms.map((t) => (
+                  <div
+                    key={t.id}
+                    style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '5px 0', borderTop: '1px solid rgba(244,241,234,0.07)' }}
+                  >
+                    <span style={{ fontSize: 12.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {t.sourceTerm}
+                    </span>
+                    <span style={{ flex: 1, fontSize: 11, color: 'rgba(244,241,234,0.45)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {describeTerm(t)}
+                    </span>
+                    {/* Church terms outlive the service, so they are marked. */}
+                    {t.sessionId === null && (
+                      <span style={{ ...MONO, fontSize: 8, color: 'var(--gold)', opacity: 0.75 }}>CHURCH</span>
+                    )}
+                    <button
+                      onClick={() => removeTerm(t.id)}
+                      disabled={termsReadOnly}
+                      aria-label={`Remove ${t.sourceTerm}`}
+                      style={{ ...MONO, fontSize: 11, color: 'rgba(244,241,234,0.35)', padding: '0 2px' }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 7. Congregation link — pinned to the rail's bottom */}
           {church && (
             <div style={{ ...railCard, marginTop: 'auto', borderColor: 'rgba(200,162,94,0.45)', background: 'rgba(200,162,94,0.05)' }}>
               <span style={{ ...railLabel, color: 'var(--gold)' }}>Congregation link</span>

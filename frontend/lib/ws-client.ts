@@ -105,12 +105,19 @@ export interface DebugMsg {
   sttConnected: boolean;
 }
 
+/** Pushed to a room's broadcasters after any glossary change. */
+export interface GlossaryMsg {
+  type: 'glossary';
+  terms: unknown[];
+}
+
 export interface ErrorMsg {
   type: 'error';
   message: string;
 }
 
 export type ServerMessage =
+  | GlossaryMsg
   | TranscriptMsg
   | TranslationMsg
   | AudioMsg

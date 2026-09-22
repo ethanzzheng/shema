@@ -44,12 +44,29 @@ function actor(req: Request): string | null {
 export function createGlossaryRouter(sessions: SessionManager): Router {
   const router = Router();
 
-  /** Push the room's current terms to its desk, if anyone is broadcasting. */
-  function syncRoom(churchId: string, mutate?: (s: ReturnType<SessionManager['get']>) => void): void {
+  /**
+   * Apply a change to the live pipeline's cache, then tell the room's desks.
+   *
+   * The pushed list is read back from the database rather than taken from the
+   * session cache. Off air that cache is empty — it is only filled at broadcast
+   * start — so pushing it would wipe the desk's list the moment anyone added a
+   * term before going live. Writes are rare, so the extra read costs nothing
+   * that matters; the live pipeline still never reads the database per chunk.
+   */
+  async function syncRoom(
+    churchId: string,
+    mutate?: (s: NonNullable<ReturnType<SessionManager['get']>>) => void,
+  ): Promise<void> {
     const session = sessions.get(churchId);
+    if (session && mutate) mutate(session);
     if (!session) return;
-    mutate?.(session);
-    session.sendToBroadcasters({ type: 'glossary', terms: session.glossaryAll });
+    try {
+      const church = await repo.listChurchTerms(churchId);
+      const service = session.broadcastId ? await repo.listSessionTerms(session.broadcastId) : [];
+      session.sendToBroadcasters({ type: 'glossary', terms: [...church, ...service] });
+    } catch {
+      /* The desk keeps what it has; the pipeline cache is already updated. */
+    }
   }
 
   // Read. Church terms always; service terms for the live broadcast, and past
@@ -117,7 +134,7 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
       }
       // Live tier whatever the scope: a church term added mid-broadcast must
       // not be folded into the cached system prompt until the next one.
-      syncRoom(churchId, (s) => s?.addLiveTerm(term));
+      await syncRoom(churchId, (s) => s.addLiveTerm(term));
       res.status(201).json({ term });
     } catch (err) {
       res.status(502).json({ error: `Could not save: ${(err as Error).message}` });
@@ -138,7 +155,7 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
         res.status(404).json({ error: 'No such term' });
         return;
       }
-      syncRoom(term.churchId, (s) => s?.addLiveTerm(term));
+      await syncRoom(term.churchId, (s) => s.addLiveTerm(term));
       res.json({ term });
     } catch (err) {
       res.status(502).json({ error: `Could not update: ${(err as Error).message}` });
@@ -154,7 +171,7 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
         return;
       }
       await repo.deleteTerm(req.params.id);
-      syncRoom(existing.churchId, (s) => s?.removeGlossaryTerm(existing.id));
+      await syncRoom(existing.churchId, (s) => s.removeGlossaryTerm(existing.id));
       res.json({ ok: true });
     } catch (err) {
       res.status(502).json({ error: `Could not delete: ${(err as Error).message}` });
@@ -170,7 +187,7 @@ export function createGlossaryRouter(sessions: SessionManager): Router {
         res.status(404).json({ error: 'No such term' });
         return;
       }
-      syncRoom(term.churchId);
+      await syncRoom(term.churchId);
       res.json({ term });
     } catch (err) {
       res.status(502).json({ error: `Could not promote: ${(err as Error).message}` });
