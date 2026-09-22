@@ -11,6 +11,7 @@
  * and meta-commentary getting read aloud.
  */
 
+import { envGlossaryPairs } from './glossary/env';
 import Anthropic from '@anthropic-ai/sdk';
 import { ScriptureRef, formatReference } from './scripture';
 import { formatReferenceKorean } from './scripture-en';
@@ -496,18 +497,9 @@ export class ClaudeTranslator {
  * which is what DEEPGRAM_KEYTERMS does — the two work together, one so the
  * name is HEARD and one so it is SPELLED the same way every time.
  */
-/** "grace-church" → CHURCH_GLOSSARY_GRACE_CHURCH. Slugs are already [a-z0-9-]. */
-export function glossaryEnvKey(roomId: string): string {
-  return `CHURCH_GLOSSARY_${roomId.toUpperCase().replace(/-/g, '_')}`;
-}
+/** Re-exported: the env format now has one implementation, in glossary/env. */
+export { glossaryEnvKey } from './glossary/env';
 
-function parsePairs(raw: string | undefined, into: Map<string, string>): void {
-  if (!raw) return;
-  for (const pair of raw.split(',')) {
-    const [ko, en] = pair.split('=');
-    if (ko?.trim() && en?.trim()) into.set(ko.trim(), en.trim());
-  }
-}
 
 /**
  * Proper nouns pinned for one church, as prompt lines.
@@ -528,8 +520,5 @@ export function churchGlossaryFromEnv(
   env: NodeJS.ProcessEnv = process.env,
   roomId?: string,
 ): string {
-  const merged = new Map<string, string>();
-  parsePairs(env.CHURCH_GLOSSARY, merged);
-  if (roomId) parsePairs(env[glossaryEnvKey(roomId)], merged);
-  return [...merged].map(([ko, en]) => `${ko} = "${en}"`).join('\n');
+  return [...envGlossaryPairs(env, roomId)].map(([ko, en]) => `${ko} = "${en}"`).join('\n');
 }
