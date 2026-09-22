@@ -851,7 +851,9 @@ export default function SpeakPage() {
           borderBottom: '1px solid rgba(244,241,234,0.08)',
         }}
       >
-        <Link href="/" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)' }} title="Home">
+        {/* Dashboard, not the marketing site. Everyone who reaches this page is
+            signed in, and none of them came here to read the landing page. */}
+        <Link href="/host" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)' }} title="Dashboard">
           <ShemaMark />
           <span style={{ ...MONO, fontSize: 11, letterSpacing: '0.24em' }}>Shema</span>
         </Link>
@@ -1095,12 +1097,13 @@ export default function SpeakPage() {
             )}
           </div>
 
-          {/* 6. Terms — the glossary. The input stays visible because adding a
-              term is the live action; the list collapses because it is the
-              bulky part and is only consulted after the fact. */}
+          {/* 6. Glossary. The input stays visible because adding a term is the
+              live action; the list collapses because it is the bulky part and
+              is only consulted after the fact. Same name as the management
+              page, so the two are obviously the same thing. */}
           <div style={railCard}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={railLabel}>Terms</span>
+              <span style={railLabel}>Glossary</span>
               <button
                 onClick={() => setTermsOpen((v) => !v)}
                 aria-expanded={termsOpen}
