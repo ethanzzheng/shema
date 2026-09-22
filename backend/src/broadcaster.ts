@@ -18,7 +18,7 @@
 
 import { WebSocket } from 'ws';
 import { Session } from './session';
-import { ElevenLabsSTT } from './stt';
+import { DeepgramSTT } from './stt';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
@@ -37,6 +37,7 @@ import {
 } from './direction-config';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
+const DEEPGRAM_API_KEY = process.env.DEEPGRAM_API_KEY!;
 const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY!;
 
 function send(ws: WebSocket, payload: unknown): void {
@@ -49,7 +50,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   console.log(`[Broadcaster] New connection (room "${session.roomId}")`);
   session.addBroadcaster(ws);
 
-  let stt: ElevenLabsSTT | null = null;
+  let stt: DeepgramSTT | null = null;
   let chunker: KoreanChunker | null = null;
   // Translator and scripture detector are per-direction; rebuilt on each
   // start (a fresh translator also resets the discourse context).
@@ -437,8 +438,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     let lastPartialSentAt = 0;
 
     // Set up streaming STT in the direction's input language
-    stt = new ElevenLabsSTT({
-      apiKey: ELEVENLABS_API_KEY,
+    stt = new DeepgramSTT({
+      apiKey: DEEPGRAM_API_KEY,
       language: cfg.sttLanguage,
       onTranscript: async ({ text, isFinal, timestamp }) => {
         // Interims arrive many times per second and exist only to tell the

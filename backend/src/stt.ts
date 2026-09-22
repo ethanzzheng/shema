@@ -16,8 +16,15 @@ import WebSocket from 'ws';
 /**
  * Korean biblical / sermon vocabulary fed to Deepgram as keyterms (nova-3
  * keyterm prompting). Biases recognition toward these so names and church
- * terms stop coming out as garbled tokens (e.g. 빌립 → "Gilim"). Override per
- * sermon with the DEEPGRAM_KEYTERMS env var (comma-separated).
+ * terms stop coming out as garbled tokens (e.g. 빌립 → "Gilim").
+ *
+ * Deliberately GENERIC: every church served by this process shares one
+ * process, so anything congregation-specific here biases recognition for all
+ * of them. House-church terms (목장, 목자, 목자님, 목녀) and Hanmaum's own name
+ * used to live in this list and now belong to that church's glossary, which is
+ * merged in per broadcast — see the caller in broadcaster.ts.
+ *
+ * DEEPGRAM_KEYTERMS replaces this list wholesale rather than adding to it.
  */
 const DEFAULT_KEYTERMS = [
   // Names of God / titles
@@ -29,10 +36,8 @@ const DEFAULT_KEYTERMS = [
   '오병이어', '보리떡', '물고기', '천국', '십자가', '부활', '회개', '축복',
   // 교회 gets misheard as 기회 ("opportunity") in fast speech — bias hard.
   '교회',
-  // House-church terms (this congregation) — STT garbles these without biasing.
-  // 목자님 (honorific) included separately: it was misheard as 목사님 ("pastor"),
-  // which collapses the shepherd/pastor distinction whole stories hang on.
-  '목장', '목자', '목자님', '목녀', '한마음교회', '큐티', '성령님', '은사',
+  // Generic Korean church vocabulary, true of any congregation.
+  '큐티', '성령님', '은사',
 ];
 
 export interface TranscriptEvent {
@@ -60,8 +65,7 @@ export function isDuplicateUtterance(text: string, recent: readonly string[]): b
   return recent.some((prev) => norm(prev) === n);
 }
 
-export class ElevenLabsSTT {
-  // Keep class name for backward compatibility with broadcaster.ts
+export class DeepgramSTT {
   private apiKey: string;
   private language: string;
   private onTranscript: (event: TranscriptEvent) => void;
@@ -105,17 +109,29 @@ export class ElevenLabsSTT {
    */
   private consumedEndSec = 0;
 
+  /**
+   * Recognition bias for this connection. Deepgram bakes keyterms into the
+   * connection URL, so these are fixed for the life of the socket — a term
+   * added mid-broadcast cannot reach STT without reconnecting, and we do not
+   * reconnect mid-sermon. Supplied by the caller (the broadcaster merges the
+   * church glossary in); falls back to the generic defaults.
+   */
+  private readonly keyterms: string[] | undefined;
+
   constructor(opts: {
     apiKey: string;
     /** Deepgram language code for the input speech (default 'ko'). */
     language?: string;
     flushIntervalMs?: number; // unused, kept for interface compat
+    /** Explicit keyterm list; omit to use DEEPGRAM_KEYTERMS or the defaults. */
+    keyterms?: string[];
     onTranscript: (event: TranscriptEvent) => void;
     onError: (err: Error) => void;
     onStatusChange: (connected: boolean) => void;
   }) {
-    this.apiKey = process.env.DEEPGRAM_API_KEY || opts.apiKey;
+    this.apiKey = opts.apiKey || process.env.DEEPGRAM_API_KEY || '';
     this.language = opts.language ?? 'ko';
+    this.keyterms = opts.keyterms;
     this.onTranscript = opts.onTranscript;
     this.onError = opts.onError;
     this.onStatusChange = opts.onStatusChange;
@@ -159,12 +175,12 @@ export class ElevenLabsSTT {
 
     // nova-3 keyterm prompting — bias recognition toward sermon/biblical
     // vocabulary so names & terms stop coming out garbled. Repeat per term.
-    const keyterms = (process.env.DEEPGRAM_KEYTERMS
-      ? process.env.DEEPGRAM_KEYTERMS.split(',')
-      : DEFAULT_KEYTERMS
-    )
-      .map((k) => k.trim())
-      .filter(Boolean);
+    // Caller-supplied terms win: the broadcaster merges this church's glossary
+    // into them, which is the only congregation-specific bias there should be.
+    const source =
+      this.keyterms ??
+      (process.env.DEEPGRAM_KEYTERMS ? process.env.DEEPGRAM_KEYTERMS.split(',') : DEFAULT_KEYTERMS);
+    const keyterms = source.map((k) => k.trim()).filter(Boolean);
     for (const kt of keyterms) params.append('keyterm', kt);
 
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
@@ -358,7 +374,7 @@ export class ElevenLabsSTT {
       try { ws.ping(); } catch {}
       const sincePong = Date.now() - this.lastPongAt;
       const sinceAnyMessage = Date.now() - this.lastMessageAt;
-      if (sincePong > ElevenLabsSTT.PONG_TIMEOUT_MS && sinceAnyMessage > ElevenLabsSTT.PONG_TIMEOUT_MS) {
+      if (sincePong > DeepgramSTT.PONG_TIMEOUT_MS && sinceAnyMessage > DeepgramSTT.PONG_TIMEOUT_MS) {
         console.warn(
           `[STT] Watchdog: no pong for ${Math.round(sincePong / 1000)}s and no data for ` +
             `${Math.round(sinceAnyMessage / 1000)}s — connection is half-dead, forcing reconnect`,
@@ -372,11 +388,11 @@ export class ElevenLabsSTT {
       // reconnect during genuine dead silence costs ~2s of nothing.)
       const audioFresh = Date.now() - this.lastAudioSentAt < 10_000;
       const sinceMsg = Date.now() - this.lastMessageAt;
-      if (audioFresh && sinceMsg > ElevenLabsSTT.SILENT_LINK_TIMEOUT_MS) {
+      if (audioFresh && sinceMsg > DeepgramSTT.SILENT_LINK_TIMEOUT_MS) {
         console.warn(`[STT] Watchdog: audio flowing but no Deepgram messages for ${Math.round(sinceMsg / 1000)}s — forcing reconnect`);
         ws.terminate();
       }
-    }, ElevenLabsSTT.PING_INTERVAL_MS);
+    }, DeepgramSTT.PING_INTERVAL_MS);
   }
 
   private stopWatchdog(): void {
