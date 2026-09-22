@@ -32,6 +32,44 @@ Debug panel ◄────
 
 ---
 
+## Glossary
+
+Names and terms the pipeline must get right — the church's own name, member
+names, song titles. Two scopes, one table:
+
+| Scope | Lives for | Added from |
+|---|---|---|
+| Church | Permanently, per church | `/glossary`, or the desk with scope "Church" |
+| Service | One broadcast | The desk's **Terms** card (the default) |
+
+Terms reach the pipeline in two places:
+
+- **Translation.** Church terms are rendered into the cached system prompt at
+  broadcast start; service terms and anything added mid-broadcast ride the
+  per-call user message. The split is deliberate: the system prompt is
+  prompt-cached, so editing it mid-service would cost a cache miss, paid as
+  time-to-first-token that a listener hears as a gap. A term added at the desk
+  is therefore in force for the very next sentence and costs nothing.
+- **Recognition.** Source terms are sent to Deepgram as nova-3 keyterms,
+  combined with the generic defaults in `src/stt.ts` and capped at the
+  provider's limit (100 terms / 500 tokens). Deepgram bakes keyterms into the
+  connection URL, so **a term added mid-sermon improves translation immediately
+  but only biases recognition from the next broadcast** — reconnecting mid-
+  sermon would drop whatever the preacher was part-way through saying.
+
+Storage is Postgres (`DATABASE_URL`), with migrations applied at boot. If no
+database is configured or it is unreachable, the glossary falls back to the
+`CHURCH_GLOSSARY` / `CHURCH_GLOSSARY_<SLUG>` env vars, read-only, and the
+service still goes on air. To import those vars into the database:
+
+```bash
+cd backend
+npx tsx scripts/seed-glossary.ts --dry-run   # show what would be imported
+npx tsx scripts/seed-glossary.ts             # idempotent; safe to re-run
+```
+
+---
+
 ## Quick Start — Local Development
 
 ### Prerequisites
