@@ -12,6 +12,8 @@
  */
 
 import { envGlossaryPairs } from './glossary/env';
+import { renderGlossaryLines, liveTermsForChunk } from './glossary/merge';
+import { GlossaryTerm, LangCode } from './glossary/types';
 import Anthropic from '@anthropic-ai/sdk';
 import { ScriptureRef, formatReference } from './scripture';
 import { formatReferenceKorean } from './scripture-en';
@@ -235,12 +237,26 @@ export class ClaudeTranslator {
   // subject and oscillates between "he/we/you/God" across segments.
   private readonly maxContext = 8;
 
+  /**
+   * Terms added during the broadcast, or scoped to this one service. Read per
+   * call and injected into the USER message, NOT the cached system prompt —
+   * see the note in the constructor.
+   */
+  private readonly getLiveTerms: (() => GlossaryTerm[]) | undefined;
+  private readonly targetLang: LangCode;
+
   constructor(
     apiKey: string,
     model = process.env.TRANSLATION_MODEL || 'claude-sonnet-5',
     direction: Direction = 'ko-en',
     /** Church slug (the room). Selects that church's glossary; see below. */
     roomId?: string,
+    opts: {
+      /** Church-scope terms, already loaded. Omit to fall back to the env vars. */
+      churchTerms?: GlossaryTerm[];
+      /** Called per translation for terms that may change mid-broadcast. */
+      getLiveTerms?: () => GlossaryTerm[];
+    } = {},
   ) {
     // A hung request is worse here than a failed one: emission is ordered by
     // seq, so one stalled call blocks every sentence behind it. A run saw a
@@ -261,8 +277,19 @@ export class ClaudeTranslator {
     // from CHURCH_GLOSSARY as "한국어=English" pairs, comma-separated. Appended
     // to the SYSTEM prompt so they ride the prompt cache rather than costing
     // uncached tokens on every segment.
-    const extra = churchGlossaryFromEnv(process.env, roomId);
+    //
+    // This is the CHURCH tier, and it must stay byte-identical for the whole
+    // broadcast: the system prompt is sent with cache_control ephemeral, and
+    // any edit to it rewrites the cached prefix. That cache miss is paid as
+    // time-to-first-token, which a listener hears as a gap in the sermon.
+    // Terms added mid-service therefore go to the LIVE tier below instead,
+    // never here — they are folded into this block at the next broadcast.
+    this.targetLang = direction === 'en-ko' ? 'ko' : 'en';
+    const extra = opts.churchTerms
+      ? renderGlossaryLines(opts.churchTerms, this.targetLang)
+      : churchGlossaryFromEnv(process.env, roomId);
     if (extra) this.systemPrompt += `\n\nCHURCH-SPECIFIC NAMES (use these exact renderings every time):\n${extra}`;
+    this.getLiveTerms = opts.getLiveTerms;
     this.srcLabel = direction === 'en-ko' ? 'English' : 'Korean';
     this.tgtLabel = direction === 'en-ko' ? 'Korean' : 'English';
   }
@@ -282,6 +309,23 @@ export class ClaudeTranslator {
         `Terms already established EARLIER IN THIS SERVICE. Reuse these exact renderings ` +
         `every time they recur, however long ago they were first said:\n${pinned}\n\n---\n\n` +
         contextBlock;
+    }
+
+    // LIVE tier: service-scope terms, plus anything an operator added while the
+    // broadcast is running. It rides the user message precisely because that is
+    // NOT cached — a term typed at the desk takes effect on the very next
+    // sentence without invalidating the system prompt everything else depends
+    // on. Filtered to what the chunk mentions once the list grows past the
+    // point where sending all of it is cheaper than checking.
+    const live = this.getLiveTerms?.() ?? [];
+    if (live.length > 0) {
+      const lines = renderGlossaryLines(liveTermsForChunk(live, sourceText), this.targetLang);
+      if (lines) {
+        contextBlock =
+          `TERMS FOR THIS SERVICE (highest priority — these override any other ` +
+          `rendering, including the ones in your instructions):\n${lines}\n\n---\n\n` +
+          contextBlock;
+      }
     }
 
     // Scripture anchoring, strongest available form first:
