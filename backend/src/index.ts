@@ -17,6 +17,9 @@ import { SessionManager, normalizeRoomId } from './session-manager';
 import { handleBroadcasterConnection } from './broadcaster';
 import { handleListenerConnection } from './listener';
 import { login, authEnabled } from './auth';
+import { createGlossaryRouter } from './routes/glossary';
+import { isDbConfigured } from './db';
+import { runMigrations } from './db/migrate';
 
 // ── Validate required env vars at startup ─────────────────────────────────
 const REQUIRED = ['ANTHROPIC_API_KEY', 'ELEVENLABS_API_KEY', 'DEEPGRAM_API_KEY'];
@@ -96,6 +99,8 @@ app.post('/login', (req, res) => {
   res.json({ token, username });
 });
 
+app.use(createGlossaryRouter(sessions));
+
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
 
@@ -138,10 +143,30 @@ wss.on('connection', (ws, req) => {
 });
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
-server.listen(PORT, '0.0.0.0', () => {
-  console.log(`\n🎙️  Shema backend running on port ${PORT}`);
-  console.log(`   WebSocket: ws://localhost:${PORT}/ws?role=broadcaster|listener`);
-  console.log(`   Health:    http://localhost:${PORT}/health\n`);
+
+/**
+ * Migrations run before the first request, because Railway has no release
+ * phase to hang them off. A migration failure is fatal — starting with a
+ * half-known schema would be worse than not starting. A missing DATABASE_URL
+ * is NOT fatal: the glossary falls back to its env vars and everything else
+ * works exactly as it did before there was a database.
+ */
+async function start(): Promise<void> {
+  if (isDbConfigured()) {
+    await runMigrations();
+  } else {
+    console.warn('[DB] No DATABASE_URL — glossary falls back to CHURCH_GLOSSARY env vars.');
+  }
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🎙️  Shema backend running on port ${PORT}`);
+    console.log(`   WebSocket: ws://localhost:${PORT}/ws?role=broadcaster|listener`);
+    console.log(`   Health:    http://localhost:${PORT}/health\n`);
+  });
+}
+
+start().catch((err) => {
+  console.error('[Server] Failed to start:', (err as Error).message);
+  process.exit(1);
 });
 
 // ── Graceful shutdown ──────────────────────────────────────────────────────

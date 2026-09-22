@@ -20,7 +20,7 @@ import { WebSocket } from 'ws';
 import { Session } from './session';
 import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS } from './stt';
 import { randomUUID } from 'crypto';
-import { loadChurchGlossary } from './glossary/load';
+import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
@@ -420,12 +420,21 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // database again: the translator renders the church tier into its cached
     // system prompt, and the live tier is served from memory per sentence.
     // A failure falls back to the env vars rather than delaying going on air.
-    session.broadcastId = randomUUID();
+    // A fresh sermon opens a new service scope; a resume keeps the existing one
+    // so terms added before the break survive it. Terms staged before going on
+    // air also keep their scope — an operator who types a song title during the
+    // opening hymn should not lose it the moment they hit Start.
+    const staged = session.broadcastId ? await loadSessionTerms(session.broadcastId) : [];
+    if (!isResume && staged.length === 0) session.broadcastId = randomUUID();
+    else session.ensureBroadcastId();
+
     const targetLang = direction === 'en-ko' ? 'ko' : 'en';
     const loaded = await loadChurchGlossary(session.roomId, targetLang);
-    session.setGlossary(loaded.terms, [], loaded.source);
+    const live = session.broadcastId === null ? [] : staged;
+    session.setGlossary(loaded.terms, live, loaded.source);
     console.log(
       `[Glossary] room "${session.roomId}": ${loaded.terms.length} church term(s) from ${loaded.source}` +
+        `, ${live.length} service term(s)` +
         (loaded.source === 'env' ? ' (DATABASE FALLBACK)' : ''),
     );
 

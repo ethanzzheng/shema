@@ -8,6 +8,7 @@
  */
 
 import { WebSocket } from 'ws';
+import { randomUUID } from 'crypto';
 import { Direction } from './direction-config';
 import { GlossaryTerm } from './glossary/types';
 
@@ -72,6 +73,12 @@ export class Session {
 
   constructor(roomId = 'default') {
     this.roomId = roomId;
+  }
+
+  /** Mint an id on demand, so terms can be staged before going on air. */
+  ensureBroadcastId(): string {
+    if (!this.broadcastId) this.broadcastId = randomUUID();
+    return this.broadcastId;
   }
 
   /** Called once at broadcast start, after the glossary has been loaded. */

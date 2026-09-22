@@ -7,7 +7,7 @@
  */
 
 import { isDbConfigured } from '../db';
-import { listChurchTerms } from './repo';
+import { listChurchTerms, listSessionTerms } from './repo';
 import { envTerms } from './env';
 import { GlossaryTerm, LangCode } from './types';
 
@@ -31,4 +31,18 @@ export async function loadChurchGlossary(
     }
   }
   return { terms: envTerms(churchId, process.env, lang), source: 'env' };
+}
+
+/**
+ * Service-scope terms for one broadcast. Returns [] rather than throwing: a
+ * database problem must degrade the glossary, never stop a service going live.
+ */
+export async function loadSessionTerms(broadcastId: string): Promise<GlossaryTerm[]> {
+  if (!isDbConfigured()) return [];
+  try {
+    return await listSessionTerms(broadcastId);
+  } catch (err) {
+    console.warn(`[Glossary] Could not load service terms: ${(err as Error).message}`);
+    return [];
+  }
 }
