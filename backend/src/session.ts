@@ -68,6 +68,14 @@ export class Session {
    */
   glossaryLive: GlossaryTerm[] = [];
 
+  /**
+   * Whether this room's broadcasts are recorded to a transcript. On by
+   * default — the archive is the point — but an operator can switch it off
+   * for a service that should not be kept, such as a prayer night or a
+   * sensitive testimony. Per-room and remembered across a resume.
+   */
+  transcriptEnabled = true;
+
   /** Where glossaryChurch came from — 'env' means the database was unreachable. */
   glossarySource: 'db' | 'env' | null = null;
 

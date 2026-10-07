@@ -70,12 +70,14 @@ export class TranscriptWriter {
     sessionId: string;
     sourceLang: string;
     targetLangs: string[];
-    startedAtMs: number;
   }): Promise<TranscriptWriter | null> {
     if (!isDbConfigured()) return null;
     try {
       const t = await openTranscript(input);
-      return new TranscriptWriter(t.id, input.startedAtMs, input.churchId);
+      // Offsets are measured from the TRANSCRIPT's start, not from now. On a
+      // resume the transcript already exists, and timing from the reconnect
+      // would restart every offset at zero in the middle of a sermon.
+      return new TranscriptWriter(t.id, Date.parse(t.startedAt), input.churchId);
     } catch (err) {
       console.warn(`[Transcript] Could not open for "${input.churchId}": ${(err as Error).message}`);
       return null;
