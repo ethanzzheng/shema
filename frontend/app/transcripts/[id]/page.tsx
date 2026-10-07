@@ -147,16 +147,21 @@ export default function TranscriptDetailPage() {
     }
   };
 
-  const download = () => {
-    if (!data) return;
-    const mode: ExportMode = view === 'original' ? 'original' : view === 'translation' ? 'translation' : 'bilingual';
-    const blob = new Blob([exportText(mode)], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `shema-${church}-${data.transcript.startedAt.slice(0, 10)}-${mode}.txt`;
-    a.click();
-    URL.revokeObjectURL(url);
+  /**
+   * The browser's own print pipeline, not a JS PDF library: none of them ship
+   * Hangul glyphs, so Korean would need a ~5MB font embedded at runtime. Print
+   * already has the page's fonts and typesets both languages correctly, and
+   * every platform's dialog offers Save as PDF. It prints whatever the view is
+   * showing, so English-only and Korean-only come out of the same control.
+   */
+  const savePdf = () => {
+    // The tab title becomes the PDF's default filename on most platforms.
+    const previous = document.title;
+    if (data) {
+      document.title = `Shema ${church} ${data.transcript.startedAt.slice(0, 10)}`;
+    }
+    window.print();
+    setTimeout(() => { document.title = previous; }, 500);
   };
 
   const remove = async () => {
@@ -233,11 +238,17 @@ export default function TranscriptDetailPage() {
                 <span className="tr-hits">{hits.length} {hits.length === 1 ? 'match' : 'matches'}</span>
               )}
               <button className="tr-btn" onClick={copy}>{copied ? 'Copied' : 'Copy'}</button>
-              <button className="tr-btn" onClick={download}>Download .txt</button>
+              <button className="tr-btn" onClick={savePdf}>Save as PDF</button>
               <button className="tr-btn tr-btn-danger" onClick={() => setConfirming(true)} disabled={busy}>
                 Delete
               </button>
             </div>
+            {/* The language switch drives the export as well as the screen, so
+                "English only" needs no second control to discover. */}
+            <p className="tr-export-note">
+              Copy and PDF follow the language shown above
+              {view === 'bilingual' ? ' (both languages)' : view === 'translation' ? ' (English only)' : ' (Korean only)'}.
+            </p>
 
             {confirming && (
               <div className="tr-confirm" role="alertdialog" aria-label="Confirm delete">
@@ -251,6 +262,16 @@ export default function TranscriptDetailPage() {
                 </div>
               </div>
             )}
+
+            <div className="tr-print-head" aria-hidden>
+              <div className="tr-print-title">
+                {serviceDate(t.startedAt)} {serviceYear(t.startedAt)}
+              </div>
+              <div className="tr-print-meta">
+                {church} · {durationLabel(derived.durationSec)} · {derived.count} segments
+                {query.trim() ? ` · filtered to "${query.trim()}"` : ''}
+              </div>
+            </div>
 
             {segments.length === 0 ? (
               <p className="tr-empty">This service has no segments recorded.</p>
