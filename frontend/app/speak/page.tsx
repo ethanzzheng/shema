@@ -159,6 +159,12 @@ export default function SpeakPage() {
   const [termBusy, setTermBusy] = useState(false);
   const [termError, setTermError] = useState('');
   const [termsReadOnly, setTermsReadOnly] = useState(false);
+
+  // Whether a transcript is actually being kept for this broadcast. Reported
+  // by the backend rather than assumed: with no database reachable, nothing is
+  // stored, and an indicator that said otherwise would be a lie about what the
+  // church has a record of.
+  const [recordingTranscript, setRecordingTranscript] = useState(false);
   const [errors, setErrors] = useState<string[]>([]);
   const [listenerCount, setListenerCount] = useState(0);
   const [showDiag, setShowDiag] = useState(false);
@@ -606,6 +612,10 @@ export default function SpeakPage() {
         setLiveKorean(''); // clear interim korean after translation arrives
         break;
       }
+      case 'started':
+        setRecordingTranscript((msg as { recordingTranscript?: boolean }).recordingTranscript === true);
+        break;
+
       case 'glossary':
         // Pushed after any add/edit/delete, including ones made on the
         // management page, so two operators never disagree about the terms.
@@ -804,6 +814,7 @@ export default function SpeakPage() {
   };
 
   const stopBroadcast = () => {
+    setRecordingTranscript(false);
     wantBroadcastRef.current = false;
     stopCapture();
     wsRef.current?.sendJSON({ type: 'stop' });
@@ -886,6 +897,34 @@ export default function SpeakPage() {
             }}
           >
             {mode} pacing
+          </span>
+        )}
+
+        {/* A record of the service is being kept. Quiet and outlined rather
+            than filled: it must be visible to anyone glancing at the desk
+            while a testimony is being given, without competing with the
+            on-air state, which is the thing the operator is actually
+            watching. */}
+        {broadcasting && recordingTranscript && (
+          <span
+            style={{
+              ...MONO,
+              fontSize: 9,
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6,
+              color: 'rgba(244,241,234,0.55)',
+              border: '1px solid rgba(244,241,234,0.18)',
+              borderRadius: 999,
+              padding: '3px 10px',
+            }}
+            title="Every service is saved. Remove one from the transcripts page."
+          >
+            <span
+              aria-hidden
+              style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--sage)' }}
+            />
+            Recording transcript
           </span>
         )}
 

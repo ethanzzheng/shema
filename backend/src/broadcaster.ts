@@ -55,8 +55,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   session.addBroadcaster(ws);
 
   let stt: DeepgramSTT | null = null;
-  /** Records this broadcast to the database. Null when off or unavailable. */
+  /** Records this broadcast to the database. Null when no database is reachable. */
   let transcript: TranscriptWriter | null = null;
+  const recordingTranscript = (): boolean => transcript !== null;
   let chunker: KoreanChunker | null = null;
   // Translator and scripture detector are per-direction; rebuilt on each
   // start (a fresh translator also resets the discourse context).
@@ -460,19 +461,19 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     // Record the service. Opened alongside the glossary and equally optional:
     // no database, or an unreachable one, costs the transcript and nothing
-    // else. An operator can switch it off for a service that should not be
-    // archived — a prayer night, a sensitive testimony.
-    if (session.transcriptEnabled) {
-      transcript = await TranscriptWriter.open({
-        churchId: session.roomId,
-        sessionId: session.broadcastId as string,
-        sourceLang: cfg.sttLanguage,
-        targetLangs: [targetLang],
-      });
-      if (transcript) console.log(`[Transcript] Recording room "${session.roomId}"`);
-    } else {
-      console.log(`[Transcript] Off for room "${session.roomId}" — nothing will be stored`);
-    }
+    // else. Every service is kept; a church removes one afterwards from the
+    // transcripts page rather than deciding in the moment.
+    transcript = await TranscriptWriter.open({
+      churchId: session.roomId,
+      sessionId: session.broadcastId as string,
+      sourceLang: cfg.sttLanguage,
+      targetLangs: [targetLang],
+    });
+    console.log(
+      transcript
+        ? `[Transcript] Recording room "${session.roomId}"`
+        : `[Transcript] NOT recording room "${session.roomId}" — no database reachable`,
+    );
 
     translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId, {
       churchTerms: loaded.terms,
@@ -635,7 +636,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
             send(ws, { type: 'error', message });
             break;
           }
-          send(ws, { type: 'started', mode: session.mode, direction: session.direction, transcript: session.transcriptEnabled });
+          // recordingTranscript is whether a writer actually opened, not
+          // whether we intended to: with the database unreachable the desk
+          // would otherwise show a recording indicator while nothing is kept.
+          send(ws, {
+            type: 'started',
+            mode: session.mode,
+            direction: session.direction,
+            recordingTranscript: recordingTranscript(),
+          });
           break;
         }
 
@@ -643,23 +652,6 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           stopSession();
           send(ws, { type: 'stopped' });
           break;
-
-        case 'transcript': {
-          // Off means "do not keep a record of this service". Honoured at the
-          // next start; switching it off mid-broadcast also closes the writer
-          // immediately, since an operator reaching for it has usually just
-          // realised something sensitive is being said.
-          const on = (msg as { enabled?: unknown }).enabled !== false;
-          session.transcriptEnabled = on;
-          if (!on && transcript) {
-            const closing = transcript;
-            transcript = null;
-            void closing.close().catch(() => {});
-            console.log(`[Transcript] Switched off mid-broadcast for room "${session.roomId}"`);
-          }
-          send(ws, { type: 'transcript', enabled: session.transcriptEnabled });
-          break;
-        }
 
         case 'mode':
           session.mode = msg.mode === 'smooth' ? 'smooth' : 'fast';
