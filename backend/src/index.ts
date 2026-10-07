@@ -18,6 +18,7 @@ import { handleBroadcasterConnection } from './broadcaster';
 import { handleListenerConnection } from './listener';
 import { login, authEnabled } from './auth';
 import { createGlossaryRouter } from './routes/glossary';
+import { createTranscriptRouter } from './routes/transcripts';
 import { isDbConfigured, dbReachable } from './db';
 import { runMigrations } from './db/migrate';
 
@@ -122,6 +123,7 @@ app.post('/login', (req, res) => {
 });
 
 app.use(createGlossaryRouter(sessions));
+app.use(createTranscriptRouter());
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
