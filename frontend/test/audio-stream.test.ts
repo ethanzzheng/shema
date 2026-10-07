@@ -175,3 +175,80 @@ test('stats() counts a replay, so a regression is visible in a real service', as
     'a backward jump into played audio must be counted, or the metric is blind',
   );
 });
+
+test('a lost audio_end must not disable the silence fill for the rest of the service', async () => {
+  // The fill is suppressed while a clip is streaming so silence cannot land
+  // inside a word. That suppression is a counter, incremented on audio_start
+  // and decremented on audio_end — so a single missed audio_end (TTS error
+  // mid-clip, a socket blip, a sentence abandoned on stop) pins it above zero
+  // and the fill never runs again. Every later sentence then starts on a
+  // drained buffer, which is heard as the first word being cut off.
+  const sim = await makePlayer();
+  const p = sim.player as unknown as {
+    noteClipStart(): void;
+    noteClipEnd(): void;
+    padsAppended: number;
+  };
+
+  // Sentence 1 arrives and completes normally.
+  p.noteClipStart();
+  sim.player.appendChunk(new Uint8Array(1000), 1);
+  p.noteClipEnd();
+  sim.clock.advance(4000, 20, () => sim.el.tick(0.02));
+
+  // Sentence 2 opens and its audio_end is LOST.
+  p.noteClipStart();
+  sim.player.appendChunk(new Uint8Array(1000), 2);
+  // (no noteClipEnd)
+  sim.clock.advance(4000, 20, () => sim.el.tick(0.02));
+
+  const padsBefore = p.padsAppended;
+  // Sentence 3 and a realistic gap after it.
+  sim.player.appendChunk(new Uint8Array(1000), 3);
+  sim.clock.advance(5000, 20, () => sim.el.tick(0.02));
+
+  assert.ok(
+    p.padsAppended > padsBefore,
+    'the fill stayed dead after one missed audio_end — every later sentence starts on a dry buffer',
+  );
+});
+
+test('a sentence onset onto a drained buffer gets a silent runway ahead of it', async () => {
+  // Defence in depth for the clipped-onset report. When the fill is healthy
+  // there is already silence ahead of every sentence and this never fires.
+  // It exists for the cases where the fill did NOT run — a clip whose end was
+  // lost, or a mobile timer throttled through the gap — because the clips
+  // themselves carry a median of only ~52ms of lead-in. On a cold output the
+  // resume transient removes the opening word rather than shortening it.
+  const sim = await makePlayer();
+  const p = sim.player as unknown as {
+    noteClipStart(): void;
+    padsAppended: number;
+    leadIns: number;
+  };
+
+  // A clip streams but its audio_end never arrives, so the fill is suppressed
+  // and the buffer really does drain — the exact pre-fix failure mode.
+  p.noteClipStart();
+  sim.player.appendChunk(new Uint8Array(1000), 1); // 1s of audio
+  sim.clock.advance(4000, 20, () => sim.el.tick(0.02)); // drains; still under CLIP_STALE_MS
+
+  const before = p.leadIns;
+  sim.player.appendChunk(new Uint8Array(1000), 2); // next sentence, onto nothing
+  sim.clock.advance(100, 10, () => sim.el.tick(0.02));
+
+  assert.ok(
+    p.leadIns > before,
+    'the sentence was appended straight onto a drained buffer with no runway ahead of it',
+  );
+});
+
+test('a backlog is never delayed to insert a runway', async () => {
+  // The runway is only for a cold start. When audio is already queued the
+  // listener is behind, and inserting silence would push speech further back.
+  const sim = await makePlayer();
+  const p = sim.player as unknown as { leadIns: number };
+  for (let i = 0; i < 10; i++) sim.player.appendChunk(new Uint8Array(1000), i + 1);
+  sim.clock.advance(2000, 20, () => sim.el.tick(0.02));
+  assert.equal(p.leadIns, 0, 'padded ahead of a backlog — speech would be delayed');
+});

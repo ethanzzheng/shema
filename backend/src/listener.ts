@@ -49,11 +49,25 @@ export function handleListenerConnection(ws: WebSocket, session: Session): void 
       // Logged only when something actually went wrong; a clean listener is
       // silent.
       if (msg.type === 'playback_stats' && typeof msg.secondsPlayed === 'number') {
-        const { replays = 0, underruns = 0, padsAppended = 0, secondsPlayed } = msg;
-        if (replays > 0 || underruns > 2) {
+        const {
+          replays = 0,
+          underruns = 0,
+          padsAppended = 0,
+          secondsPlayed,
+          leadIns = 0,
+          fillRecoveries = 0,
+          padSupported = true,
+        } = msg;
+        // padSupported false means the device rejected a silence pad and the
+        // fill is off for that listener's whole session; fillRecoveries counts
+        // clips whose audio_end never arrived. Either one leaves a sentence
+        // starting on a drained buffer, which is heard as the first word being
+        // cut off — so both are worth a line even when nothing else looks wrong.
+        if (replays > 0 || underruns > 2 || fillRecoveries > 0 || !padSupported) {
           console.log(
             `[Playback] room "${session.roomId}": ${replays} replay(s), ${underruns} underrun(s), ` +
-              `${padsAppended} pad(s) over ${secondsPlayed}s of audio`,
+              `${padsAppended} pad(s), ${leadIns} lead-in(s), ${fillRecoveries} fill recovery(ies)` +
+              `${padSupported ? '' : ', PAD UNSUPPORTED (fill disabled)'} over ${secondsPlayed}s of audio`,
           );
         }
       }

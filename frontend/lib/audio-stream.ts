@@ -82,6 +82,32 @@ export class AudioStreamPlayer {
    * across the sermon. Silence is only ever safe BETWEEN sentences.
    */
   private clipsOpen = 0;
+  /**
+   * When the last real chunk landed. A clip whose chunks have stopped arriving
+   * is treated as finished even if its audio_end never came — see topUpSilence.
+   */
+  private lastChunkAt = 0;
+  /**
+   * A sentence's chunks arrive milliseconds apart. Five seconds of silence
+   * mid-clip means its audio_end is never coming (TTS failed, the socket
+   * blipped, the sentence was abandoned on stop), and continuing to suppress
+   * the fill on its behalf would drain the buffer before every later sentence.
+   * Comfortably longer than the worst mid-sentence jitter seen in a service.
+   */
+  private static readonly CLIP_STALE_MS = 5000;
+  /** Times a stuck clip counter was cleared — a lost audio_end, counted. */
+  private fillRecoveries = 0;
+  /**
+   * Below this buffered lead, a new sentence is considered to be starting on a
+   * cold output and gets a silent runway first. Measured from real services:
+   * TTS clips carry a median of only ~52ms of lead-in silence of their own, so
+   * the first phoneme begins almost at sample 0 and a resume transient removes
+   * the word rather than shortening it.
+   */
+  private static readonly LEAD_IN_MIN_SEC = 0.35;
+  /** The seq a lead-in pad has already been laid down for. */
+  private leadInSeq: number | null = null;
+  private leadIns = 0;
   private starved = true; // diagnostics only now: nothing seeks on it
 
   // ── Stall watchdog ────────────────────────────────────────────────────────
@@ -355,7 +381,12 @@ export class AudioStreamPlayer {
 
   /** A sentence's audio has begun streaming — suppress the fill until it ends. */
   noteClipStart(): void {
-    this.clipsOpen++;
+    // Set, not increment. Sentences are emitted in order and never overlap, so
+    // a new clip starting is itself proof the previous one ended — which also
+    // makes a missed audio_end self-heal at the next sentence instead of
+    // pinning the counter above zero for the rest of the service.
+    this.clipsOpen = 1;
+    this.lastChunkAt = Date.now();
   }
 
   /** A sentence's audio is complete; the gap after it is safe to pad. */
@@ -367,6 +398,7 @@ export class AudioStreamPlayer {
   appendChunk(bytes: Uint8Array, seq?: number): void {
     if (!this.active || bytes.length === 0) return;
     this.pending.push({ bytes, seq: seq ?? null });
+    this.lastChunkAt = Date.now();
     this.flush();
   }
 
@@ -387,6 +419,42 @@ export class AudioStreamPlayer {
       // producing audio instead of underrunning between sentences.
       if (!sb.updating) this.topUpSilence();
       return;
+    }
+
+    // ── Lead-in ───────────────────────────────────────────────────────────
+    // A sentence must never be the first thing a cold output has to render.
+    // The clips themselves carry a median of only ~52ms of leading silence, so
+    // if the buffer has gone thin the resume transient eats the opening word
+    // outright — reported from the field as "this is" heard as "is".
+    //
+    // Only when there is nothing else queued: a backlog means audio is already
+    // flowing and speech must never be delayed to insert silence.
+    const head = this.pending[0];
+    if (
+      this.padSupported &&
+      this.pending.length === 1 &&
+      head.seq !== null &&
+      head.seq !== this.lastAppendedSeq &&
+      head.seq !== this.leadInSeq &&
+      this.audioEl
+    ) {
+      const end = this.bufferedEnd();
+      const lead = end === null ? null : (end - this.audioEl.currentTime) / (this.audioEl.playbackRate || 1);
+      // end === null is the very first clip of the stream, which anchors the
+      // timeline and must be appended as-is.
+      if (lead !== null && lead < AudioStreamPlayer.LEAD_IN_MIN_SEC) {
+        try {
+          sb.appendBuffer(silencePad() as BufferSource);
+          this.padsAppended++;
+          this.leadIns++;
+          this.leadInSeq = head.seq;
+          // The sentence itself stays queued; the next updateend appends it
+          // directly behind this runway.
+          return;
+        } catch {
+          // Fall through and append the sentence: late speech beats no speech.
+        }
+      }
     }
 
     const next = this.pending.shift()!;
@@ -433,8 +501,15 @@ export class AudioStreamPlayer {
     if (!el || !sb || !this.active || !this.padSupported || sb.updating) return;
     if (this.pending.length > 0) return; // real audio wins, always
     // A clip is still streaming: its remaining chunks are in flight, and
-    // padding here would land inside a word.
-    if (this.clipsOpen > 0) return;
+    // padding here would land inside a word. But only while they really are in
+    // flight — a clip whose chunks stopped arriving long ago is over, whatever
+    // its audio_end did, and must not keep the fill switched off.
+    if (this.clipsOpen > 0) {
+      if (Date.now() - this.lastChunkAt < AudioStreamPlayer.CLIP_STALE_MS) return;
+      this.clipsOpen = 0;
+      this.fillRecoveries++;
+      console.warn('[AudioStream] clip never ended; resuming the silence fill');
+    }
     const end = this.bufferedEnd();
     if (end === null) return; // nothing buffered yet; the first clip anchors the timeline
 
@@ -595,12 +670,26 @@ export class AudioStreamPlayer {
    * Pair it with `secondsPlayed` — two replays across an hour is nothing, two
    * across five minutes is a regression.
    */
-  stats(): { replays: number; underruns: number; padsAppended: number; secondsPlayed: number } {
+  stats(): {
+    replays: number;
+    underruns: number;
+    padsAppended: number;
+    secondsPlayed: number;
+    leadIns: number;
+    fillRecoveries: number;
+    padSupported: boolean;
+  } {
     return {
       replays: this.replays,
       underruns: this.underruns,
       padsAppended: this.padsAppended,
       secondsPlayed: Math.round(this.maxPlayed),
+      // Instrumentation for the clipped-onset report. padSupported false means
+      // the device rejected a pad and the fill is off for the session;
+      // fillRecoveries counts clips whose audio_end never arrived.
+      leadIns: this.leadIns,
+      fillRecoveries: this.fillRecoveries,
+      padSupported: this.padSupported,
     };
   }
 
