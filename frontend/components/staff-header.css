@@ -1,0 +1,34 @@
+/* Staff page header. Mirrors the broadcast desk's top bar so the signed-in
+   surfaces feel like one app. */
+
+.sh-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px clamp(14px, 2vw, 24px);
+  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+}
+.sh-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
+.sh-brand-name {
+  font-family: var(--font-mono, monospace);
+  font-size: 11px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+.sh-brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+.sh-rule { width: 1px; height: 18px; background: rgba(244, 241, 234, 0.12); }
+.sh-title { font-size: 19px; color: rgba(244, 241, 234, 0.9); }
+.sh-church {
+  font-family: var(--font-mono, monospace);
+  font-size: 12.5px;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+.sh-end { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+@media (max-width: 640px) {
+  .sh-title { font-size: 17px; }
+}

@@ -64,6 +64,10 @@ export default function GlossaryPage() {
     // slug in Phase A, with the desk's last-used room as the fallback.
     const user = getUsername();
     setChurch(normalizeChurchSlug(user ?? window.localStorage.getItem('shema-church') ?? 'default'));
+    // ?add= arrives from a transcript, where the operator just saw a name
+    // come out wrong and selected it. Prefill rather than make them retype it.
+    const add = new URLSearchParams(window.location.search).get('add');
+    if (add) setNewTerm(add);
   }, []);
 
   const reload = useCallback(async () => {

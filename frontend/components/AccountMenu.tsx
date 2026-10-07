@@ -14,7 +14,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { SignOut, BookOpenText, CaretDown, User } from '@phosphor-icons/react';
+import { SignOut, BookOpenText, CaretDown, User, FileText } from '@phosphor-icons/react';
 import { clearSession, getUsername } from '@/lib/auth';
 import './account-menu.css';
 
@@ -89,6 +89,14 @@ export default function AccountMenu() {
             <span className="am-item-body">
               <span className="am-item-line">Glossary</span>
               <span className="am-item-sub">Church names and terms</span>
+            </span>
+          </Link>
+
+          <Link href="/transcripts" className="am-item" onClick={() => setOpen(false)}>
+            <FileText size={ICON_SIZE} weight={ICON_WEIGHT} />
+            <span className="am-item-body">
+              <span className="am-item-line">Transcripts</span>
+              <span className="am-item-sub">What each service said</span>
             </span>
           </Link>
 
