@@ -164,6 +164,37 @@ export default function DemoPage() {
     [cfg, ttsAllowed, hitWall],
   );
 
+  /**
+   * Join the room as a listener so the real translated voice is audible on
+   * this page. Opened for anonymous demos too, now that they get a genuine
+   * taste of the voice rather than only captions.
+   */
+  const openListener = useCallback((room: string) => {
+    if (listenWsRef.current) return;
+    const player = new AudioStreamPlayer();
+    player.start();
+    playerRef.current = player;
+    const lws = new WsClient({
+      url: getBackendWsUrl(),
+      role: 'listener',
+      room,
+      onMessage: (m) => {
+        const msg = m as { type: string; data?: string; seq?: number };
+        if (msg.type === 'audio_start') player.noteClipStart();
+        else if (msg.type === 'audio_end') player.noteClipEnd();
+        else if (msg.type === 'audio_chunk' && msg.data) {
+          const bin = atob(msg.data);
+          const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          player.appendChunk(bytes, msg.seq);
+        }
+      },
+      reconnectDelayMs: 0,
+    });
+    listenWsRef.current = lws;
+    lws.connect();
+  }, []);
+
   /** Open the demo room and start the pipeline. */
   const connect = useCallback(
     async (room: string, dir: Direction): Promise<void> => {
@@ -196,8 +227,11 @@ export default function DemoPage() {
       });
       ws.sendJSON({ type: 'start', mode: 'fast', direction: dir });
       startedAtRef.current = Date.now();
+      // The real voice starts immediately; the server decides when it stops.
+      openListener(room);
+      setTtsAllowed(true);
     },
-    [handleMessage, voiceOn],
+    [handleMessage, voiceOn, openListener],
   );
 
   const beginSession = useCallback(async (): Promise<DemoSession> => {
@@ -332,36 +366,12 @@ export default function DemoPage() {
       const up = await upgradeDemoSession(session.room, token);
       setTtsAllowed(up.ttsAllowed);
       if (up.ttsAllowed) previewVoiceRef.current?.stop();
+      openListener(session.room);
       if (!up.ttsAllowed) setTtsNote("This account's voice preview is already used up.");
 
       const url = `${window.location.origin}${up.listenPath}`;
       setListenUrl(url);
       setQr(await QRCode.toDataURL(url, { width: 264, margin: 1 }));
-
-      // Hear it here as well as on the phone: the page the prospect is already
-      // looking at should not stay silent.
-      const player = new AudioStreamPlayer();
-      player.start();
-      playerRef.current = player;
-      const lws = new WsClient({
-        url: getBackendWsUrl(),
-        role: 'listener',
-        room: session.room,
-        onMessage: (m) => {
-          const msg = m as { type: string; data?: string; seq?: number };
-          if (msg.type === 'audio_start') player.noteClipStart();
-          else if (msg.type === 'audio_end') player.noteClipEnd();
-          else if (msg.type === 'audio_chunk' && msg.data) {
-            const bin = atob(msg.data);
-            const bytes = new Uint8Array(bin.length);
-            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-            player.appendChunk(bytes, msg.seq);
-          }
-        },
-        reconnectDelayMs: 0,
-      });
-      listenWsRef.current = lws;
-      lws.connect();
 
       // Resume capture, which stopped at the wall.
       if (!captureRef.current && !sampleStopRef.current) await startWithMic();
@@ -372,7 +382,7 @@ export default function DemoPage() {
     } finally {
       setBusy(false);
     }
-  }, [session, getToken]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [session, getToken, openListener]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Clerk reports the sign-in asynchronously after the modal closes.
   useEffect(() => {
@@ -432,7 +442,7 @@ export default function DemoPage() {
               </div>
               <p className="dm-note">
                 Currently set to <strong>{direction === 'ko-en' ? '한국어 to English' : 'English to 한국어'}</strong>.
-                The sample is a Korean reading, so it always runs Korean to English.
+                The sample is a short Korean passage, so it always runs Korean to English.
               </p>
             </div>
           </>
@@ -470,16 +480,16 @@ export default function DemoPage() {
             </div>
 
             <div className="dm-captions" aria-live="polite">
-              {captions.length > 0 && stage === 'live' && voiceOn && previewVoiceSupported() && (
+              {captions.length > 0 && stage === 'live' && !ttsAllowed && voiceOn && previewVoiceSupported() && (
                 <p className="dm-note" style={{ marginTop: 0 }}>
-                  That is your browser reading the translation aloud. Signing in swaps it for the
-                  natural voice your congregation would actually hear.
+                  The natural voice ran out, so your browser is reading the rest. Sign in to get it
+                  back.
                 </p>
               )}
               {captions.length === 0 && (
                 <p className="dm-waiting">
                   {usingSample
-                    ? 'Playing a short clip of a Korean sermon. The translation will appear here.'
+                    ? 'Playing a short Korean passage. The translation will appear here, and you will hear it spoken.'
                     : 'Say something, and the translation will appear here.'}
                 </p>
               )}
@@ -550,9 +560,8 @@ export default function DemoPage() {
           <div className="dm-wall">
             <h2>That is the free preview.</h2>
             <p>
-              You have been hearing your browser's robotic voice. Sign in to swap it for the
-              natural one your congregation would actually hear, and get a QR code to listen on
-              your own phone. Free, and takes a moment.
+              Sign in to keep the natural voice going, and get a QR code so you can hear it on
+              your own phone the way someone in the pews would. Free, and takes a moment.
             </p>
             <div className="dm-actions">
               <SignedOut>

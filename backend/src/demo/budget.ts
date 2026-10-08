@@ -8,7 +8,7 @@
  */
 
 import { isDbConfigured, query } from '../db';
-import { demoConfig, perAccountCharCap } from './config';
+import { anonCharCap, demoConfig, perAccountCharCap } from './config';
 
 export type TtsDecision =
   | { allowed: true }
@@ -21,6 +21,49 @@ export type TtsDecision =
  * Fails CLOSED on a database error. A demo falling back to captions is a worse
  * demo; an uncapped TTS endpoint on a public page is a bill.
  */
+/**
+ * Whether the day's global ceiling still has room. Checked for anonymous
+ * visitors too: they now spend real money, and an uncapped public page is a
+ * bill no matter who is holding it.
+ */
+export async function dailyBudgetHasRoom(): Promise<boolean> {
+  if (!isDbConfigured()) return false;
+  try {
+    const rows = await query<{ today: string | null }>(
+      `SELECT SUM(chars) AS today FROM demo_tts_usage WHERE created_at >= date_trunc('day', now())`,
+    );
+    return Number(rows[0]?.today ?? 0) < demoConfig.ttsDailyBudgetChars();
+  } catch (err) {
+    console.warn('[Demo] Daily budget check failed, denying:', (err as Error).message);
+    return false;
+  }
+}
+
+/** The ledger key for anonymous spend, so it counts toward the daily ceiling. */
+export const ANON_LEDGER_KEY = 'anon';
+
+/**
+ * Whether an anonymous visitor may still hear the real voice. Two ceilings:
+ * this session's taste, and the day's global spend.
+ */
+export async function mayUseAnonTts(usedChars: number): Promise<TtsDecision> {
+  if (usedChars >= anonCharCap()) {
+    return {
+      allowed: false,
+      reason: 'account-cap',
+      message: 'Sign in to keep hearing the natural voice.',
+    };
+  }
+  if (!(await dailyBudgetHasRoom())) {
+    return {
+      allowed: false,
+      reason: 'daily-budget',
+      message: "Today's voice allowance is used up. Captions are still live.",
+    };
+  }
+  return { allowed: true };
+}
+
 export async function mayUseTts(clerkUserId: string): Promise<TtsDecision> {
   if (!isDbConfigured()) {
     return {

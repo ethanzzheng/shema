@@ -60,7 +60,8 @@ export function createDemoRouter(sessions: SessionManager): Router {
     const ttlMs = demoConfig.sessionTtlSeconds() * 1000;
     session.demo = {
       clerkUserId: null,
-      ttsAllowed: false, // anonymous is captions only; speech is the cost
+      // The real voice, bounded. Server-side caps decide when it stops.
+      ttsAllowed: true,
       ttsChars: 0,
       createdAt: Date.now(),
       expiresAt: Date.now() + ttlMs,
@@ -69,7 +70,8 @@ export function createDemoRouter(sessions: SessionManager): Router {
     recordEvent({ event: 'page_view', sessionId: roomId, meta: { ip: ip.slice(0, 45) } });
     res.status(201).json({
       room: roomId,
-      ttsAllowed: false,
+      ttsAllowed: true,
+      anonTtsSeconds: demoConfig.anonTtsSeconds(),
       anonSeconds: demoConfig.anonSeconds(),
       anonSegments: demoConfig.anonSegments(),
       expiresAt: session.demo.expiresAt,

@@ -23,7 +23,7 @@ import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
 import { TranscriptWriter } from './transcripts/writer';
-import { mayUseTts, recordTtsSpend } from './demo/budget';
+import { ANON_LEDGER_KEY, mayUseAnonTts, mayUseTts, recordTtsSpend } from './demo/budget';
 import { recordEvent } from './demo/events';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
@@ -372,9 +372,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     const demo = session.demo;
     if (!demo) return true; // a real service
 
-    if (!demo.ttsAllowed || !demo.clerkUserId) return false;
+    if (!demo.ttsAllowed) return false;
 
-    const decision = await mayUseTts(demo.clerkUserId);
+    // An anonymous visitor gets a real taste before the wall. A browser voice
+    // undersells the product at the exact moment it is meant to impress, so
+    // the opening stretch is the genuine voice and the fallback is what makes
+    // signing in worth doing.
+    const decision = demo.clerkUserId
+      ? await mayUseTts(demo.clerkUserId)
+      : await mayUseAnonTts(demo.ttsChars);
     if (!decision.allowed) {
       // Tell the desk once, so the UI can explain itself rather than just
       // going quiet, then drop to captions for the rest of the session.
@@ -391,7 +397,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     }
 
     demo.ttsChars += text.length;
-    void recordTtsSpend(demo.clerkUserId, text.length);
+    // Anonymous spend is real spend, so it goes on the same ledger and counts
+    // against the day's global ceiling.
+    void recordTtsSpend(demo.clerkUserId ?? ANON_LEDGER_KEY, text.length);
     return true;
   }
 

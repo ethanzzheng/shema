@@ -29,6 +29,15 @@ export const demoConfig = {
   anonSegments: () => num('DEMO_ANON_SEGMENTS', 12),
 
   /**
+   * Real speech an ANONYMOUS visitor gets before the wall. A browser voice is
+   * audibly robotic, which undersells the product at the exact moment it is
+   * trying to impress someone, so the first stretch is the genuine voice and
+   * the fallback becomes the argument for signing in. At ~1,100 characters a
+   * minute this is roughly $0.04-0.08 a visitor.
+   */
+  anonTtsSeconds: () => num('DEMO_ANON_TTS_SECONDS', 25),
+
+  /**
    * Signed-in stage, per account, for the life of that account. Five minutes
    * is about $0.45-0.95 of TTS. The convincing happens in the first ninety
    * seconds plus the moment they hear it on their own phone; ten minutes
@@ -60,6 +69,11 @@ export const demoConfig = {
 /** The per-account cap expressed in the unit ElevenLabs bills in. */
 export function perAccountCharCap(): number {
   return Math.round(demoConfig.ttsSecondsPerAccount() * demoConfig.charsPerSecond());
+}
+
+/** The anonymous taste, in the same unit. */
+export function anonCharCap(): number {
+  return Math.round(demoConfig.anonTtsSeconds() * demoConfig.charsPerSecond());
 }
 
 export function isDemoRoom(roomId: string): boolean {
