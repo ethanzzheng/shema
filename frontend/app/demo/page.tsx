@@ -30,6 +30,7 @@ import {
   type DemoSession,
 } from '@/lib/demo';
 import { getBackendWsUrl } from '@/lib/backend-config';
+import { PreviewVoice, previewVoiceSupported } from '@/lib/preview-voice';
 import './demo.css';
 
 type Stage = 'pick' | 'live' | 'wall' | 'full' | 'done';
@@ -63,6 +64,8 @@ export default function DemoPage() {
   const [usingSample, setUsingSample] = useState(false);
   /** Set when the browser refused to start the clip without a direct tap. */
   const [needsAudioTap, setNeedsAudioTap] = useState(false);
+  /** Browser voice for the anonymous stage. Free, and audibly not ElevenLabs. */
+  const [voiceOn, setVoiceOn] = useState(true);
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -71,6 +74,7 @@ export default function DemoPage() {
   const levelRef = useRef(0);
   const sampleStopRef = useRef<(() => void) | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
+  const previewVoiceRef = useRef<PreviewVoice | null>(null);
   const startedAtRef = useRef(0);
   const roomRef = useRef<string | null>(null);
 
@@ -89,6 +93,7 @@ export default function DemoPage() {
       sampleAudioRef.current = null;
     }
     setUsingSample(false);
+    previewVoiceRef.current?.stop();
     captureRef.current?.stop();
     captureRef.current = null;
     wsRef.current?.disconnect();
@@ -137,6 +142,11 @@ export default function DemoPage() {
           source: String(msg.korean ?? msg.source ?? ''),
           output: String(msg.sermon ?? ''),
         };
+        // Say it out loud. Once ElevenLabs is unlocked the real voice arrives
+        // over the listener socket, so the browser voice stands down rather
+        // than talking over it.
+        if (!ttsAllowed) previewVoiceRef.current?.speak(caption.output);
+
         setCaptions((prev) => {
           if (prev.length === 0) reportDemoEvent('first_caption', { room: roomRef.current });
           const next = [...prev, caption];
@@ -166,6 +176,14 @@ export default function DemoPage() {
         reconnectDelayMs: 0,
       });
       wsRef.current = ws;
+
+      // Prepared inside the click that started the demo: iOS will not let
+      // speech begin outside a user gesture.
+      const voice = new PreviewVoice();
+      voice.setEnabled(voiceOn);
+      void voice.prepare(dir === 'en-ko' ? 'ko' : 'en');
+      previewVoiceRef.current = voice;
+
       ws.connect();
       await new Promise<void>((resolve) => {
         const started = Date.now();
@@ -179,7 +197,7 @@ export default function DemoPage() {
       ws.sendJSON({ type: 'start', mode: 'fast', direction: dir });
       startedAtRef.current = Date.now();
     },
-    [handleMessage],
+    [handleMessage, voiceOn],
   );
 
   const beginSession = useCallback(async (): Promise<DemoSession> => {
@@ -313,6 +331,7 @@ export default function DemoPage() {
       if (!token) throw new Error('Sign-in did not complete.');
       const up = await upgradeDemoSession(session.room, token);
       setTtsAllowed(up.ttsAllowed);
+      if (up.ttsAllowed) previewVoiceRef.current?.stop();
       if (!up.ttsAllowed) setTtsNote("This account's voice preview is already used up.");
 
       const url = `${window.location.origin}${up.listenPath}`;
@@ -426,6 +445,19 @@ export default function DemoPage() {
                 <span className="dm-dot" aria-hidden />
                 {stage === 'full' ? 'Live with voice' : usingSample ? 'Playing sample' : 'Listening'}
               </span>
+              {previewVoiceSupported() && stage === 'live' && (
+                <button
+                  className="dm-voice"
+                  aria-pressed={voiceOn}
+                  onClick={() => {
+                    const next = !voiceOn;
+                    setVoiceOn(next);
+                    previewVoiceRef.current?.setEnabled(next);
+                  }}
+                >
+                  {voiceOn ? 'Voice on' : 'Voice off'}
+                </button>
+              )}
               {stage === 'live' && secondsLeft !== null && (
                 <span className="dm-left">{secondsLeft}s left in the free preview</span>
               )}
@@ -438,6 +470,12 @@ export default function DemoPage() {
             </div>
 
             <div className="dm-captions" aria-live="polite">
+              {captions.length > 0 && stage === 'live' && voiceOn && previewVoiceSupported() && (
+                <p className="dm-note" style={{ marginTop: 0 }}>
+                  That is your browser reading the translation aloud. Signing in swaps it for the
+                  natural voice your congregation would actually hear.
+                </p>
+              )}
               {captions.length === 0 && (
                 <p className="dm-waiting">
                   {usingSample
@@ -512,8 +550,9 @@ export default function DemoPage() {
           <div className="dm-wall">
             <h2>That is the free preview.</h2>
             <p>
-              Sign in and keep going with the natural voice your congregation would actually hear,
-              plus a QR code to try it on your own phone. Free, and takes a moment.
+              You have been hearing your browser's robotic voice. Sign in to swap it for the
+              natural one your congregation would actually hear, and get a QR code to listen on
+              your own phone. Free, and takes a moment.
             </p>
             <div className="dm-actions">
               <SignedOut>

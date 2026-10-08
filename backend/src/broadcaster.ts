@@ -525,17 +525,25 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // no database, or an unreachable one, costs the transcript and nothing
     // else. Every service is kept; a church removes one afterwards from the
     // transcripts page rather than deciding in the moment.
-    transcript = await TranscriptWriter.open({
+    //
+    // Demos are the exception and keep nothing. A stranger trying the product
+    // from a cold email has not consented to their voice being archived, and
+    // their sentences would otherwise sit in a church's transcript list.
+    transcript = session.demo ? null : await TranscriptWriter.open({
       churchId: session.roomId,
       sessionId: session.broadcastId as string,
       sourceLang: cfg.sttLanguage,
       targetLangs: [targetLang],
     });
-    console.log(
-      transcript
-        ? `[Transcript] Recording room "${session.roomId}"`
-        : `[Transcript] NOT recording room "${session.roomId}" — no database reachable`,
-    );
+    if (session.demo) {
+      console.log(`[Transcript] Not recording demo room "${session.roomId}" — demos keep nothing`);
+    } else {
+      console.log(
+        transcript
+          ? `[Transcript] Recording room "${session.roomId}"`
+          : `[Transcript] NOT recording room "${session.roomId}" — no database reachable`,
+      );
+    }
 
     translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId, {
       churchTerms: loaded.terms,

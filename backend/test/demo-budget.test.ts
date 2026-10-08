@@ -131,3 +131,18 @@ describe('demo rooms are sandboxed and time-boxed', () => {
     assert.equal(new Session('hanmaum').demo, null);
   });
 });
+
+describe('demos keep nothing', () => {
+  test('a demo room is never recorded to a transcript', async () => {
+    // A stranger trying the product from a cold email has not consented to
+    // their voice being archived, and their sentences must not appear in a
+    // church's transcript list.
+    const fs = await import('fs');
+    const src = fs.readFileSync(new URL('../src/broadcaster.ts', import.meta.url), 'utf8');
+    assert.match(
+      src,
+      /transcript = session\.demo \? null : await TranscriptWriter\.open/,
+      'the transcript writer must be skipped for demo rooms',
+    );
+  });
+});

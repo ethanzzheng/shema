@@ -65,6 +65,20 @@
 .dm-live-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: 0 0 auto; }
 .dm-listening { font-family: var(--font-mono, monospace); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sage); display: inline-flex; align-items: center; gap: 7px; }
+/* Sits with the live status rather than in a settings panel: it controls
+   something the listener is hearing right now. */
+.dm-voice {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: none; color: var(--text-muted);
+  cursor: pointer; white-space: nowrap;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease), background-color 140ms var(--ease);
+}
+.dm-voice:hover { color: var(--text); border-color: rgba(244, 241, 234, 0.3); }
+.dm-voice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-voice[aria-pressed='true'] { color: var(--sage); border-color: rgba(147, 181, 160, 0.45); background: rgba(147, 181, 160, 0.08); }
+
 .dm-left { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
 
 /* The meter is the proof the mic is actually working, before a word lands. */
