@@ -59,6 +59,10 @@ export default function DemoPage() {
   const [qr, setQr] = useState('');
   const [listenUrl, setListenUrl] = useState('');
   const [busy, setBusy] = useState(false);
+  /** True while the bundled clip is the source, rather than a microphone. */
+  const [usingSample, setUsingSample] = useState(false);
+  /** Set when the browser refused to start the clip without a direct tap. */
+  const [needsAudioTap, setNeedsAudioTap] = useState(false);
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -66,6 +70,7 @@ export default function DemoPage() {
   const listenWsRef = useRef<WsClient | null>(null);
   const levelRef = useRef(0);
   const sampleStopRef = useRef<(() => void) | null>(null);
+  const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
   const startedAtRef = useRef(0);
   const roomRef = useRef<string | null>(null);
 
@@ -78,6 +83,12 @@ export default function DemoPage() {
   const teardown = useCallback(() => {
     sampleStopRef.current?.();
     sampleStopRef.current = null;
+    if (sampleAudioRef.current) {
+      sampleAudioRef.current.pause();
+      sampleAudioRef.current.remove();
+      sampleAudioRef.current = null;
+    }
+    setUsingSample(false);
     captureRef.current?.stop();
     captureRef.current = null;
     wsRef.current?.disconnect();
@@ -224,15 +235,45 @@ export default function DemoPage() {
       const pcm = await decodeSampleToPcm(SAMPLE_URL);
       await connect(s.room, 'ko-en'); // the clip is Korean
       setDirection('ko-en');
+      setUsingSample(true);
       setStage('live');
       reportDemoEvent('sample_played', { room: s.room });
+
+      // Play it aloud as well as sending it. "Play a sample" plainly means
+      // the listener should hear the sermon being translated; without this the
+      // page translates in silence and looks broken.
+      // Attached to the document rather than left detached. A bare `new Audio`
+      // held only by a ref has been seen collected mid-playback, which is the
+      // same fragility the listener player had to fix; attaching it also lets
+      // the element be inspected when something sounds wrong.
+      const audio = document.createElement('audio');
+      audio.src = SAMPLE_URL;
+      audio.volume = 0.9;
+      audio.setAttribute('data-demo-sample', 'true');
+      audio.style.display = 'none';
+      document.body.appendChild(audio);
+      sampleAudioRef.current = audio;
+      // Autoplay is refused unless the browser counts this as a user gesture.
+      // It normally does, since a button was pressed, but when it does not the
+      // page would translate in silence with no explanation — so check whether
+      // playback really began and offer a tap if it did not.
+      void audio.play().catch(() => {});
+      setTimeout(() => {
+        if (sampleAudioRef.current === audio && (audio.paused || audio.currentTime === 0)) {
+          setNeedsAudioTap(true);
+        }
+      }, 1500);
 
       // Paced to wall clock: the pipeline chunks on silence, so faster than
       // real time would arrive as one unreadable block.
       const samplesPerChunk = 16000 * 0.2;
       let offset = 0;
       let cancelled = false;
-      sampleStopRef.current = () => { cancelled = true; };
+      sampleStopRef.current = () => {
+        cancelled = true;
+        audio.pause();
+        audio.remove();
+      };
       const pump = () => {
         if (cancelled || offset >= pcm.length) return;
         const slice = pcm.subarray(offset, offset + samplesPerChunk);
@@ -383,7 +424,7 @@ export default function DemoPage() {
             <div className="dm-live-head">
               <span className="dm-listening">
                 <span className="dm-dot" aria-hidden />
-                {stage === 'full' ? 'Live with voice' : 'Listening'}
+                {stage === 'full' ? 'Live with voice' : usingSample ? 'Playing sample' : 'Listening'}
               </span>
               {stage === 'live' && secondsLeft !== null && (
                 <span className="dm-left">{secondsLeft}s left in the free preview</span>
@@ -397,7 +438,13 @@ export default function DemoPage() {
             </div>
 
             <div className="dm-captions" aria-live="polite">
-              {captions.length === 0 && <p className="dm-waiting">Say something, and the translation will appear here.</p>}
+              {captions.length === 0 && (
+                <p className="dm-waiting">
+                  {usingSample
+                    ? 'Playing a short clip of a Korean sermon. The translation will appear here.'
+                    : 'Say something, and the translation will appear here.'}
+                </p>
+              )}
               {captions.map((c) => (
                 <div className="dm-cap" key={`${c.seq}-${c.output.slice(0, 12)}`}>
                   <p className="dm-cap-src">{c.source}</p>
@@ -405,6 +452,19 @@ export default function DemoPage() {
                 </div>
               ))}
             </div>
+
+            {needsAudioTap && (
+              <button
+                className="dm-btn"
+                style={{ marginTop: 14 }}
+                onClick={() => {
+                  void sampleAudioRef.current?.play();
+                  setNeedsAudioTap(false);
+                }}
+              >
+                Tap to hear the sermon audio
+              </button>
+            )}
 
             {ttsNote && <p className="dm-note">{ttsNote}</p>}
 
