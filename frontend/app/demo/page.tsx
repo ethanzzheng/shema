@@ -66,6 +66,7 @@ export default function DemoPage() {
   const [needsAudioTap, setNeedsAudioTap] = useState(false);
   /** Browser voice for the anonymous stage. Free, and audibly not ElevenLabs. */
   const [voiceOn, setVoiceOn] = useState(true);
+  const [samplePaused, setSamplePaused] = useState(false);
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -75,6 +76,11 @@ export default function DemoPage() {
   const sampleStopRef = useRef<(() => void) | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
   const previewVoiceRef = useRef<PreviewVoice | null>(null);
+  /** Read by the sample pump, which must stop sending audio when paused. */
+  const samplePausedRef = useRef(false);
+  /** Milliseconds spent paused, excluded from the free-preview countdown. */
+  const pausedMsRef = useRef(0);
+  const pausedAtRef = useRef(0);
   const startedAtRef = useRef(0);
   const roomRef = useRef<string | null>(null);
 
@@ -93,6 +99,9 @@ export default function DemoPage() {
       sampleAudioRef.current = null;
     }
     setUsingSample(false);
+    setSamplePaused(false);
+    samplePausedRef.current = false;
+    pausedMsRef.current = 0;
     previewVoiceRef.current?.stop();
     captureRef.current?.stop();
     captureRef.current = null;
@@ -113,16 +122,27 @@ export default function DemoPage() {
     return () => clearInterval(t);
   }, [stage]);
 
-  // The anonymous countdown. The server enforces the same cap; this only tells
-  // the truth about it so the wall is not a surprise.
-  useEffect(() => {
-    if (stage !== 'live' || !cfg) return;
-    const t = setInterval(() => {
-      const elapsed = (Date.now() - startedAtRef.current) / 1000;
-      setSecondsLeft(Math.max(0, Math.ceil(cfg.anonSeconds - elapsed)));
-    }, 250);
-    return () => clearInterval(t);
-  }, [stage, cfg]);
+  /**
+   * Pause or resume the sample. Everything stops together: the clip the
+   * listener hears, the stream feeding the pipeline, the free-preview
+   * countdown, and any sentence the browser voice is part-way through. Pausing
+   * only the audio would leave the pipeline translating ahead of what is being
+   * heard, and the visitor would return to captions for audio that never
+   * played.
+   */
+  const toggleSamplePause = useCallback(() => {
+    const next = !samplePausedRef.current;
+    samplePausedRef.current = next;
+    setSamplePaused(next);
+    if (next) {
+      pausedAtRef.current = Date.now();
+      sampleAudioRef.current?.pause();
+      previewVoiceRef.current?.stop();
+    } else {
+      pausedMsRef.current += Date.now() - pausedAtRef.current;
+      void sampleAudioRef.current?.play().catch(() => setNeedsAudioTap(true));
+    }
+  }, []);
 
   const hitWall = useCallback(() => {
     sampleStopRef.current?.();
@@ -132,6 +152,22 @@ export default function DemoPage() {
     setStage('wall');
     reportDemoEvent('wall_hit', { room: roomRef.current });
   }, []);
+
+  // The anonymous countdown. The server enforces the same cap; this only tells
+  // the truth about it so the wall is not a surprise.
+  useEffect(() => {
+    if (stage !== 'live' || !cfg) return;
+    const t = setInterval(() => {
+      const pausedNow = samplePausedRef.current ? Date.now() - pausedAtRef.current : 0;
+      const elapsed = (Date.now() - startedAtRef.current - pausedMsRef.current - pausedNow) / 1000;
+      const left = Math.max(0, Math.ceil(cfg.anonSeconds - elapsed));
+      setSecondsLeft(left);
+      // The countdown owns the wall. A separate timeout would fire while the
+      // demo sat paused, ending a preview the visitor had stopped.
+      if (left <= 0 && !ttsAllowed) hitWall();
+    }, 250);
+    return () => clearInterval(t);
+  }, [stage, cfg, ttsAllowed, hitWall]);
 
   const handleMessage = useCallback(
     (raw: ServerMessage) => {
@@ -328,6 +364,13 @@ export default function DemoPage() {
       };
       const pump = () => {
         if (cancelled || offset >= pcm.length) return;
+        // Paused means paused for the pipeline too. Letting the pump run on
+        // would translate ahead of what the listener is hearing, and they
+        // would come back to captions for audio that never played.
+        if (samplePausedRef.current) {
+          setTimeout(pump, 200);
+          return;
+        }
         const slice = pcm.subarray(offset, offset + samplesPerChunk);
         offset += samplesPerChunk;
         // Copy rather than view: sendBinary wants a plain ArrayBuffer, and the
@@ -346,14 +389,6 @@ export default function DemoPage() {
       setBusy(false);
     }
   };
-
-  // Enforce the anonymous time cap client-side too, so the wall arrives when
-  // the countdown says it will.
-  useEffect(() => {
-    if (stage !== 'live' || !cfg || ttsAllowed) return;
-    const t = setTimeout(hitWall, cfg.anonSeconds * 1000);
-    return () => clearTimeout(t);
-  }, [stage, cfg, ttsAllowed, hitWall]);
 
   /** Signed in at the wall: unlock speech and the phone listener. */
   const unlock = useCallback(async () => {
@@ -440,10 +475,6 @@ export default function DemoPage() {
                   No mic? Play a sample
                 </button>
               </div>
-              <p className="dm-note">
-                Currently set to <strong>{direction === 'ko-en' ? '한국어 to English' : 'English to 한국어'}</strong>.
-                The sample is a short Korean passage, so it always runs Korean to English.
-              </p>
             </div>
           </>
         )}
@@ -451,10 +482,25 @@ export default function DemoPage() {
         {(stage === 'live' || stage === 'full') && (
           <>
             <div className="dm-live-head">
-              <span className="dm-listening">
-                <span className="dm-dot" aria-hidden />
-                {stage === 'full' ? 'Live with voice' : usingSample ? 'Playing sample' : 'Listening'}
+              <span className="dm-listening" style={samplePaused ? { color: 'var(--text-muted)' } : undefined}>
+                <span
+                  className="dm-dot"
+                  aria-hidden
+                  style={samplePaused ? { background: 'rgba(244,241,234,0.3)' } : undefined}
+                />
+                {stage === 'full'
+                  ? 'Live with voice'
+                  : usingSample
+                    ? samplePaused
+                      ? 'Paused'
+                      : 'Playing sample'
+                    : 'Listening'}
               </span>
+              {usingSample && stage === 'live' && (
+                <button className="dm-voice" onClick={toggleSamplePause}>
+                  {samplePaused ? 'Resume' : 'Pause'}
+                </button>
+              )}
               {previewVoiceSupported() && stage === 'live' && (
                 <button
                   className="dm-voice"
