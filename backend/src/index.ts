@@ -19,6 +19,9 @@ import { handleListenerConnection } from './listener';
 import { login, authEnabled } from './auth';
 import { createGlossaryRouter } from './routes/glossary';
 import { createTranscriptRouter } from './routes/transcripts';
+import { createDemoRouter } from './routes/demo';
+import { createClerkWebhookRouter } from './routes/clerk-webhook';
+import { demoConfig } from './demo/config';
 import { isDbConfigured, dbReachable } from './db';
 import { runMigrations } from './db/migrate';
 
@@ -65,6 +68,10 @@ app.use(
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   }),
 );
+
+// Before express.json(): the Clerk webhook verifies a signature over the raw
+// body, and a re-serialised object would not match what Clerk signed.
+app.use(createClerkWebhookRouter());
 
 app.use(express.json());
 
@@ -124,6 +131,7 @@ app.post('/login', (req, res) => {
 
 app.use(createGlossaryRouter(sessions));
 app.use(createTranscriptRouter());
+app.use(createDemoRouter(sessions));
 
 const server = createServer(app);
 const wss = new WebSocketServer({ server, path: '/ws' });
@@ -192,6 +200,17 @@ async function start(): Promise<void> {
   } else {
     console.warn('[DB] No DATABASE_URL — glossary falls back to CHURCH_GLOSSARY env vars.');
   }
+  // Demo rooms are time-boxed whether or not anyone is still in them, so
+  // emptiness-based cleanup is not enough on its own.
+  const demoReaper = setInterval(() => sessions.reapExpiredDemos(), 60_000);
+  demoReaper.unref?.();
+  console.log(
+    `[Demo] Caps: ${demoConfig.anonSeconds()}s anonymous, ` +
+      `${demoConfig.ttsSecondsPerAccount()}s of speech per account, ` +
+      `${demoConfig.ttsDailyBudgetChars()} chars/day globally, ` +
+      `${demoConfig.sessionTtlSeconds()}s room TTL`,
+  );
+
   server.listen(PORT, '0.0.0.0', () => {
     console.log(`\n🎙️  Shema backend running on port ${PORT}`);
     console.log(`   WebSocket: ws://localhost:${PORT}/ws?role=broadcaster|listener`);

@@ -68,11 +68,49 @@ export class Session {
    */
   glossaryLive: GlossaryTerm[] = [];
 
+  /**
+   * Demo rooms only. Set when the room is created so the pipeline can enforce
+   * the funnel's limits without a demo ever being mistaken for a real service.
+   *
+   * `null` on every church room, and that is the safe default: code that
+   * forgets to check it treats the session as a normal broadcast, which is
+   * what it is.
+   */
+  demo: {
+    /** Verified Clerk user id once they sign in; null while anonymous. */
+    clerkUserId: string | null;
+    /** Anonymous demos are captions only — speech is the cost. */
+    ttsAllowed: boolean;
+    /** Characters of speech produced so far, for the per-account ledger. */
+    ttsChars: number;
+    /** Reclaimed after this, used or not. */
+    expiresAt: number;
+    createdAt: number;
+  } | null = null;
+
   /** Where glossaryChurch came from — 'env' means the database was unreachable. */
   glossarySource: 'db' | 'env' | null = null;
 
   constructor(roomId = 'default') {
     this.roomId = roomId;
+  }
+
+  /**
+   * Close every socket in the room. Used when a demo expires: the prospect
+   * should see the session end rather than sit in front of a page that has
+   * quietly stopped working.
+   */
+  closeAll(code = 1000, reason = ''): void {
+    for (const ws of [...this.listeners, ...this.broadcasters]) {
+      try {
+        ws.close(code, reason);
+      } catch {
+        /* already gone */
+      }
+    }
+    this.listeners.clear();
+    this.broadcasters.clear();
+    this.isActive = false;
   }
 
   /** Mint an id on demand, so terms can be staged before going on air. */

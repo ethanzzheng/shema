@@ -55,6 +55,29 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Drop expired demo rooms.
+   *
+   * Emptiness alone is not enough for a demo: a prospect who closes the tab
+   * mid-session leaves nothing behind, but one who leaves it open walks away
+   * from a room that would otherwise live as long as the process. A demo is
+   * time-boxed by definition, so it expires whether or not anyone is in it.
+   *
+   * Only ever touches rooms in the demo namespace.
+   */
+  reapExpiredDemos(now = Date.now()): number {
+    let reaped = 0;
+    for (const [roomId, session] of this.rooms) {
+      if (!session.demo) continue;
+      if (session.demo.expiresAt > now) continue;
+      session.closeAll(1000, 'Demo session expired');
+      this.rooms.delete(roomId);
+      reaped++;
+    }
+    if (reaped > 0) console.log(`[Demo] Expired ${reaped} demo room(s) (${this.rooms.size} left)`);
+    return reaped;
+  }
+
   get roomCount(): number {
     return this.rooms.size;
   }

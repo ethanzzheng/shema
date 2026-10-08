@@ -84,3 +84,50 @@ describe('funnel events', () => {
     assert.equal(isDemoEvent(null), false);
   });
 });
+
+describe('demo rooms are sandboxed and time-boxed', () => {
+  test('an expired demo is reclaimed; a church room never is', async () => {
+    const { SessionManager } = await import('../src/session-manager');
+    const sessions = new SessionManager();
+
+    const demo = sessions.getOrCreate('demo-abc123');
+    demo.demo = {
+      clerkUserId: null,
+      ttsAllowed: false,
+      ttsChars: 0,
+      createdAt: Date.now() - 10_000,
+      expiresAt: Date.now() - 1, // already due
+    };
+    // A church room with no demo marker, which must survive whatever happens
+    // to the demo namespace.
+    sessions.getOrCreate('hanmaum');
+
+    assert.equal(sessions.roomCount, 2);
+    const reaped = sessions.reapExpiredDemos();
+    assert.equal(reaped, 1, 'the expired demo should have been reclaimed');
+    assert.ok(sessions.get('hanmaum'), 'a real church must never be touched by the demo reaper');
+    assert.equal(sessions.get('demo-abc123'), undefined);
+  });
+
+  test('a demo that has not expired is left alone', async () => {
+    const { SessionManager } = await import('../src/session-manager');
+    const sessions = new SessionManager();
+    const demo = sessions.getOrCreate('demo-live01');
+    demo.demo = {
+      clerkUserId: 'user_x',
+      ttsAllowed: true,
+      ttsChars: 0,
+      createdAt: Date.now(),
+      expiresAt: Date.now() + 60_000,
+    };
+    assert.equal(sessions.reapExpiredDemos(), 0);
+    assert.ok(sessions.get('demo-live01'), 'a running demo must not be cut off early');
+  });
+
+  test('a session is a real broadcast unless explicitly marked a demo', async () => {
+    // The safe default matters: code that forgets to check `demo` treats the
+    // session as a church service, which is what it is.
+    const { Session } = await import('../src/session');
+    assert.equal(new Session('hanmaum').demo, null);
+  });
+});

@@ -23,6 +23,8 @@ import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
 import { TranscriptWriter } from './transcripts/writer';
+import { mayUseTts, recordTtsSpend } from './demo/budget';
+import { recordEvent } from './demo/events';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
@@ -353,6 +355,49 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     },
   });
 
+  /**
+   * Demo rooms pay for speech out of a capped budget, so TTS is gated here
+   * rather than at the edges: this is the single point every spoken segment
+   * passes through, and a check anywhere else could be bypassed by a code
+   * path that forgot about it.
+   *
+   * Anonymous demos never reach ElevenLabs at all — captions are the whole
+   * anonymous product. Signed-in demos are checked against the account's
+   * allowance and the day's global ceiling before each segment, and the spend
+   * is recorded after.
+   *
+   * Returns true when the segment may be spoken. Church rooms always may.
+   */
+  async function demoMaySpeak(text: string): Promise<boolean> {
+    const demo = session.demo;
+    if (!demo) return true; // a real service
+
+    if (!demo.ttsAllowed || !demo.clerkUserId) return false;
+
+    const decision = await mayUseTts(demo.clerkUserId);
+    if (!decision.allowed) {
+      // Tell the desk once, so the UI can explain itself rather than just
+      // going quiet, then drop to captions for the rest of the session.
+      demo.ttsAllowed = false;
+      send(ws, { type: 'demo_tts_stopped', reason: decision.reason, message: decision.message });
+      recordEvent({
+        event: 'cap_reached',
+        sessionId: session.roomId,
+        clerkUserId: demo.clerkUserId,
+        meta: { reason: decision.reason },
+      });
+      console.log(`[Demo] TTS stopped for "${session.roomId}": ${decision.reason}`);
+      return false;
+    }
+
+    demo.ttsChars += text.length;
+    void recordTtsSpend(demo.clerkUserId, text.length);
+    return true;
+  }
+
+  /** Serialises demo budget checks so TTS stays in spoken order. */
+  let demoTtsGate: Promise<void> = Promise.resolve();
+
   function enqueueTTS(seq: number, text: string, chunkSize: number, chunkerWaitMs: number, translationLatencyMs: number, chunkStart: number): void {
     if (ttsPipeline.depth === 0 && audioStarvedSince) {
       const starvedMs = Date.now() - audioStarvedSince;
@@ -363,7 +408,24 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         );
       }
     }
-    ttsPipeline.enqueue({ seq, text, chunkSize, chunkerWaitMs, translationLatencyMs, chunkStart, enqueuedAt: Date.now() });
+    const job = { seq, text, chunkSize, chunkerWaitMs, translationLatencyMs, chunkStart, enqueuedAt: Date.now() };
+
+    // A church room enqueues synchronously, exactly as before. The demo path
+    // has to await a budget check, and TtsPipeline is a FIFO on ARRIVAL order,
+    // not seq — so two checks resolving out of order would speak the sermon
+    // out of order. Chaining them keeps the queue in the order the emitter
+    // handed segments over.
+    if (!session.demo) {
+      ttsPipeline.enqueue(job);
+      return;
+    }
+    demoTtsGate = demoTtsGate
+      .then(async () => {
+        if (await demoMaySpeak(text)) ttsPipeline.enqueue(job);
+      })
+      .catch(() => {
+        /* a failed check already denied; never break the chain */
+      });
   }
 
   // A start within this window of the last stop is a RESUME (network blip +
