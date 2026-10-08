@@ -283,12 +283,19 @@ export default function DemoPage() {
       });
       ws.sendJSON({ type: 'start', mode: 'fast', direction: dir });
       startedAtRef.current = Date.now();
+      // Signed in already? Unlock straight away. Making someone who has
+      // handed over their email sit through a countdown first is a tax on the
+      // warmest lead this funnel produces.
+      if (isSignedIn) setTimeout(() => void unlockRef.current?.(), 300);
       // The real voice starts immediately; the server decides when it stops.
       openListener(room);
       setTtsAllowed(true);
     },
-    [handleMessage, voiceOn, openListener],
+    [handleMessage, voiceOn, openListener, isSignedIn],
   );
+
+  /** Set once unlock() exists; connect() runs before it is declared. */
+  const unlockRef = useRef<(() => Promise<void>) | null>(null);
 
   const beginSession = useCallback(async (): Promise<DemoSession> => {
     const s = await startDemoSession();
@@ -439,6 +446,10 @@ export default function DemoPage() {
     }
   }, [session, getToken, openListener]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    unlockRef.current = unlock;
+  }, [unlock]);
+
   // Clerk reports the sign-in asynchronously after the modal closes.
   useEffect(() => {
     if (isSignedIn && stage === 'wall') void unlock();
@@ -495,6 +506,24 @@ export default function DemoPage() {
                   No mic? Play a sample
                 </button>
               </div>
+
+              {/* The preview is capped; signing in first skips the cap rather
+                  than making someone hit it before they are offered the way
+                  past it. */}
+              <SignedOut>
+                <p className="dm-note">
+                  The preview runs for {cfg?.anonSeconds ?? 90} seconds.{' '}
+                  <SignInButton mode="modal">
+                    <button className="dm-link">Sign in free</button>
+                  </SignInButton>{' '}
+                  first for the full demo, with the voice and a QR code to hear it on your phone.
+                </p>
+              </SignedOut>
+              <SignedIn>
+                <p className="dm-note">
+                  Signed in. The full demo starts as soon as you pick an option above.
+                </p>
+              </SignedIn>
             </div>
           </>
         )}

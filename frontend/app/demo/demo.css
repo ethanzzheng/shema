@@ -118,3 +118,16 @@
   .dm-btn { width: 100%; }
   .dm-actions { flex-direction: column; }
 }
+
+/* A sign-in offer inside a sentence, not another button competing with the
+   two that start the demo. */
+.dm-link {
+  /* Vertical padding on an inline element grows the hit area without changing
+     the line box, so the sentence still wraps the same on a phone. */
+  background: none; border: 0; padding: 6px 0;
+  font: inherit; color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dm-link:hover { color: var(--gold-hover); }
+.dm-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
