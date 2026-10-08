@@ -677,7 +677,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           // Phase A auth: with AUTH_USERS configured, starting a broadcast
           // requires a valid session token from POST /login. Listeners are
           // never gated; open mode (no auth env) allows everything.
-          const auth = isStartAuthorized(msg.token);
+          // A demo room authorises itself. It was minted by the rate-limited
+          // demo API, which is what stands in for a staff login here — a
+          // prospect arriving from a cold email has no account yet, and that
+          // is the entire point of the funnel.
+          //
+          // The guard is `session.demo`, NOT the room name: anyone can connect
+          // to a socket claiming room "demo-whatever" and have getOrCreate
+          // make it, but only the demo API ever sets this field. A guessed
+          // name therefore gets an ordinary room and still needs a real login.
+          const auth = session.demo ? { ok: true as const, username: null } : isStartAuthorized(msg.token);
           if (!auth.ok) {
             console.warn(`[Broadcaster] Rejected start for room "${session.roomId}": ${auth.reason}`);
             send(ws, { type: 'error', message: auth.reason });

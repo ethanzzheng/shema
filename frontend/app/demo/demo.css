@@ -1,0 +1,106 @@
+/*
+ * Public demo.
+ *
+ * Same night/cream palette and gold accent as the product, but composed for a
+ * stranger arriving from a cold email on a phone: one thing to do per screen,
+ * and the captions are the hero because they are the proof.
+ */
+
+.dm-root { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
+
+.dm-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px clamp(16px, 4vw, 28px);
+  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+}
+.dm-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
+.dm-brand-name { font-family: var(--font-mono, monospace); font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; }
+.dm-bar-end { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+
+.dm-main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: clamp(28px, 6vw, 56px) clamp(16px, 5vw, 24px) 64px; }
+
+.dm-lede { font-size: clamp(1.5rem, 5.5vw, 2.1rem); font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; }
+.dm-sub { color: var(--text-muted); font-size: 1rem; line-height: 1.6; margin-top: 12px; max-width: 52ch; }
+
+.dm-step { margin-top: 30px; }
+.dm-langs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.dm-lang {
+  flex: 1 1 200px; min-height: 64px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 14px 18px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(244, 241, 234, 0.02); color: var(--text);
+  font-family: var(--font-sans); font-size: 1rem; cursor: pointer;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+}
+.dm-lang:hover { border-color: rgba(200, 162, 94, 0.5); background: rgba(200, 162, 94, 0.05); }
+.dm-lang:active { transform: translateY(1px); }
+.dm-lang:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* aria-pressed alone is invisible. A prospect picking a direction has to see
+   which one is picked, not read a sentence underneath to find out. */
+.dm-lang[aria-pressed='true'] {
+  border-color: var(--gold);
+  background: rgba(200, 162, 94, 0.1);
+}
+.dm-lang[aria-pressed='true'] .dm-lang-sub { color: rgba(244, 241, 234, 0.7); }
+.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; }
+
+.dm-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+.dm-btn {
+  min-height: 48px; padding: 13px 22px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: none; color: var(--text);
+  font-family: var(--font-sans); font-size: 0.95rem; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+}
+.dm-btn:hover:not(:disabled) { border-color: rgba(244, 241, 234, 0.3); background: rgba(244, 241, 234, 0.04); }
+.dm-btn:active:not(:disabled) { transform: translateY(1px); }
+.dm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.dm-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-btn-primary { background: var(--gold); border-color: var(--gold); color: var(--night); font-weight: 600; }
+.dm-btn-primary:hover:not(:disabled) { background: var(--gold-hover); border-color: var(--gold-hover); color: var(--night); }
+
+/* ── Live ────────────────────────────────────────────────────────────────── */
+.dm-live-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: 0 0 auto; }
+.dm-listening { font-family: var(--font-mono, monospace); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sage); display: inline-flex; align-items: center; gap: 7px; }
+.dm-left { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* The meter is the proof the mic is actually working, before a word lands. */
+.dm-meter { display: flex; gap: 3px; align-items: flex-end; height: 20px; margin-top: 16px; }
+.dm-meter span { flex: 1; border-radius: 1px; background: rgba(244, 241, 234, 0.12); transition: background-color 120ms linear; }
+.dm-meter span.on { background: var(--sage); }
+
+.dm-captions { margin-top: 24px; display: flex; flex-direction: column; gap: 18px; min-height: 180px; }
+.dm-cap { animation: dmIn 260ms var(--ease) both; }
+.dm-cap-src { color: rgba(244, 241, 234, 0.5); font-size: 0.92rem; line-height: 1.55; }
+.dm-cap-out { color: var(--text); font-size: 1.12rem; line-height: 1.5; margin-top: 4px; }
+@keyframes dmIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dm-cap { animation: none; } }
+
+.dm-waiting { color: rgba(244, 241, 234, 0.35); font-size: 0.95rem; font-style: italic; }
+
+/* ── Wall ────────────────────────────────────────────────────────────────── */
+.dm-wall {
+  margin-top: 26px; padding: 24px;
+  border: 1px solid rgba(200, 162, 94, 0.4);
+  background: rgba(200, 162, 94, 0.06);
+  border-radius: var(--radius);
+}
+.dm-wall h2 { font-size: 1.2rem; font-weight: 500; }
+.dm-wall p { color: var(--text-muted); font-size: 0.94rem; line-height: 1.6; margin-top: 8px; max-width: 46ch; }
+
+.dm-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.dm-qr img { width: 132px; height: 132px; border-radius: 10px; background: #fff; padding: 8px; }
+.dm-qr-copy { flex: 1 1 220px; min-width: 0; }
+.dm-qr-copy p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; }
+
+.dm-note { color: rgba(244, 241, 234, 0.4); font-size: 0.82rem; margin-top: 14px; line-height: 1.55; }
+.dm-error { color: var(--alert); font-size: 0.9rem; margin-top: 14px; }
+
+@media (max-width: 640px) {
+  .dm-lang { flex: 1 1 100%; }
+  .dm-btn { width: 100%; }
+  .dm-actions { flex-direction: column; }
+}
