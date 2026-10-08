@@ -67,6 +67,9 @@ export default function DemoPage() {
   /** Browser voice for the anonymous stage. Free, and audibly not ElevenLabs. */
   const [voiceOn, setVoiceOn] = useState(true);
   const [samplePaused, setSamplePaused] = useState(false);
+  /** The Korean clip. Muting it leaves only the translation, which is how a
+   *  congregant with an earbud actually experiences a service. */
+  const [sourceOn, setSourceOn] = useState(true);
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -100,6 +103,7 @@ export default function DemoPage() {
     }
     setUsingSample(false);
     setSamplePaused(false);
+    setSourceOn(true);
     samplePausedRef.current = false;
     pausedMsRef.current = 0;
     previewVoiceRef.current?.stop();
@@ -130,6 +134,21 @@ export default function DemoPage() {
    * heard, and the visitor would return to captions for audio that never
    * played.
    */
+  /** The translated audio: the real voice, and the browser fallback after it. */
+  const toggleTranslationAudio = useCallback(() => {
+    const next = !voiceOn;
+    setVoiceOn(next);
+    previewVoiceRef.current?.setEnabled(next);
+    playerRef.current?.setVolume(next ? 1 : 0);
+  }, [voiceOn]);
+
+  /** The Korean source clip. */
+  const toggleSourceAudio = useCallback(() => {
+    const next = !sourceOn;
+    setSourceOn(next);
+    if (sampleAudioRef.current) sampleAudioRef.current.muted = !next;
+  }, [sourceOn]);
+
   const toggleSamplePause = useCallback(() => {
     const next = !samplePausedRef.current;
     samplePausedRef.current = next;
@@ -140,9 +159,10 @@ export default function DemoPage() {
       previewVoiceRef.current?.stop();
     } else {
       pausedMsRef.current += Date.now() - pausedAtRef.current;
+      if (sampleAudioRef.current) sampleAudioRef.current.muted = !sourceOn;
       void sampleAudioRef.current?.play().catch(() => setNeedsAudioTap(true));
     }
-  }, []);
+  }, [sourceOn]);
 
   const hitWall = useCallback(() => {
     sampleStopRef.current?.();
@@ -501,17 +521,14 @@ export default function DemoPage() {
                   {samplePaused ? 'Resume' : 'Pause'}
                 </button>
               )}
-              {previewVoiceSupported() && stage === 'live' && (
-                <button
-                  className="dm-voice"
-                  aria-pressed={voiceOn}
-                  onClick={() => {
-                    const next = !voiceOn;
-                    setVoiceOn(next);
-                    previewVoiceRef.current?.setEnabled(next);
-                  }}
-                >
-                  {voiceOn ? 'Voice on' : 'Voice off'}
+              {usingSample && stage === 'live' && (
+                <button className="dm-voice" aria-pressed={sourceOn} onClick={toggleSourceAudio}>
+                  한국어 {sourceOn ? 'on' : 'off'}
+                </button>
+              )}
+              {(stage === 'live' || stage === 'full') && (
+                <button className="dm-voice" aria-pressed={voiceOn} onClick={toggleTranslationAudio}>
+                  English {voiceOn ? 'on' : 'off'}
                 </button>
               )}
               {stage === 'live' && secondsLeft !== null && (
