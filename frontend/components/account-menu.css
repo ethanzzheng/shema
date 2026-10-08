@@ -21,6 +21,11 @@
 .am-trigger:hover { border-color: rgba(244, 241, 234, 0.28); color: var(--text); }
 .am-trigger:active { transform: translateY(1px); }
 .am-trigger:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* A thumb needs a bigger target than a cursor does; the trigger measured 38px
+   on a phone. Pointer devices keep the compact size. */
+@media (pointer: coarse) {
+  .am-trigger { min-height: 44px; min-width: 44px; }
+}
 
 .am-avatar {
   display: grid;

@@ -8,34 +8,6 @@
 
 .gl-root { min-height: 100dvh; display: flex; flex-direction: column; }
 
-/* ── Top bar: mirrors the desk's, so the tabs sit in the same place ──────── */
-.gl-bar {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  flex-wrap: wrap;
-  padding: 12px clamp(14px, 2vw, 24px);
-  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
-}
-.gl-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
-.gl-brand-name {
-  font-family: var(--font-mono, monospace);
-  font-size: 11px;
-  letter-spacing: 0.24em;
-  text-transform: uppercase;
-}
-.gl-bar-rule { width: 1px; height: 18px; background: rgba(244, 241, 234, 0.12); }
-.gl-bar-title { font-size: 19px; color: rgba(244, 241, 234, 0.9); }
-.gl-bar-church {
-  font-family: var(--font-mono, monospace);
-  font-size: 12.5px;
-  color: var(--text-muted);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 4px 11px;
-}
-.gl-bar-end { margin-left: auto; display: inline-flex; align-items: center; gap: 14px; }
-
 /* ── Body ────────────────────────────────────────────────────────────────── */
 .gl-main { flex: 1; width: 100%; max-width: 880px; margin: 0 auto; padding: clamp(26px, 4vw, 46px) clamp(16px, 4vw, 24px) 64px; }
 
@@ -138,5 +110,18 @@
 @media (max-width: 640px) {
   .gl-row { grid-template-columns: 1fr; gap: 6px; }
   .gl-actions { justify-content: flex-start; margin-top: 6px; }
-  .gl-bar-title { font-size: 17px; }
+
+  /* One field per line. Two inputs and a button sharing a row left the button
+     about 60px wide and the second field too short to show its own example. */
+  .gl-add { flex-direction: column; align-items: stretch; }
+  .gl-add .field { flex: 1 1 auto; width: 100%; }
+  .gl-add .gl-btn { width: 100%; }
+
+  /* The search sat at a fixed 190px beside a heading, which on a phone is
+     neither full width nor aligned to anything. */
+  .gl-section-head { flex-direction: column; align-items: stretch; }
+  .gl-section-head .field { width: 100% !important; }
+
+  /* Edit and Delete sit next to each other and were 27px tall. */
+  .gl-btn { min-height: 44px; padding: 10px 14px; }
 }

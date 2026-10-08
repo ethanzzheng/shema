@@ -383,3 +383,40 @@ input, select, textarea {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── Touch targets ────────────────────────────────────────────────────────
+ * Measured on a phone-width desk: the segmented toggles (Direction,
+ * Fast/Smooth, Off/On) came out 27-30px tall and the small buttons 27px, well
+ * under the 44px a thumb needs. An operator uses these during a live service,
+ * often standing at a soundboard, so a missed tap is a real cost.
+ *
+ * Keyed on `pointer: coarse` rather than viewport width: it is the touch
+ * input that needs the bigger target, not the narrow screen, and a desk on a
+ * tablet needs it just as much as one on a phone. Pointer devices keep the
+ * existing compact sizing exactly. */
+@media (pointer: coarse) {
+  .toggle-opt {
+    min-height: 44px;
+    padding-top: 0;
+    padding-bottom: 0;
+  }
+
+  .btn {
+    min-height: 44px;
+  }
+
+  /* Native controls the OS renders at its own scale otherwise. */
+  .field,
+  select.field,
+  input.field {
+    min-height: 44px;
+  }
+
+  /* The desk's smaller controls are inline-styled with padding and no height,
+     so a min-height here applies without fighting the inline rule. Covers
+     Diagnostics, Open listener, the congregation-link Copy and the glossary
+     card's expander, all of which were 12-26px. */
+  .sp-root button {
+    min-height: 44px;
+  }
+}

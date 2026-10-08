@@ -12,8 +12,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import AccountMenu from '@/components/AccountMenu';
-import ShemaMark from '@/components/ShemaMark';
+import StaffHeader from '@/components/StaffHeader';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { getUsername } from '@/lib/auth';
 import { normalizeChurchSlug } from '@/lib/slug';
@@ -161,21 +160,7 @@ export default function GlossaryPage() {
 
   return (
     <div className="gl-root">
-      {/* Mirrors the desk's top bar so the tabs never move between pages. */}
-      <header className="gl-bar">
-        {/* Back to the dashboard, not the marketing site: this is a staff
-            page, and "/" stranded anyone who wanted to get back to /host. */}
-        <Link href="/host" className="gl-brand" title="Dashboard">
-          <ShemaMark />
-          <span className="gl-brand-name">Shema</span>
-        </Link>
-        <span className="gl-bar-rule" aria-hidden />
-        <span className="serif-en gl-bar-title">Glossary</span>
-        <span className="gl-bar-church">{church}</span>
-        <span className="gl-bar-end">
-          <AccountMenu />
-        </span>
-      </header>
+      <StaffHeader title="Glossary" church={church} />
 
       <main className="gl-main">
         {readOnly && (

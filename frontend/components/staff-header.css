@@ -31,4 +31,19 @@
 
 @media (max-width: 640px) {
   .sh-title { font-size: 17px; }
+  /* The bar wrapped the account menu onto a line of its own, leaving a band
+     of empty space under the title. Let the title take the slack instead so
+     the menu stays on the first row where a thumb expects it. */
+  .sh-bar { gap: 10px; flex-wrap: nowrap; }
+  .sh-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sh-end { flex: 0 0 auto; }
+  /* The church slug is the least useful thing in the bar on a phone; the page
+     already belongs to one church and the title says which page it is. */
+  .sh-church { display: none; }
+}
+
+/* The brand mark doubles as the way back to the dashboard, and at 18px tall it
+   was the smallest target on the page. */
+@media (pointer: coarse) {
+  .sh-brand { min-height: 44px; display: inline-flex; align-items: center; }
 }

@@ -23,9 +23,12 @@ export default function HostDashboard() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '4rem 1rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+      {/* No wrap: when this header wrapped on a phone the account menu dropped
+          onto a line of its own and floated in the middle of the page with
+          nothing beside it. The heading takes the slack instead. */}
+      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'nowrap', gap: '0.75rem' }}>
         <div>
-          <h1 style={{ fontSize: '2rem', fontWeight: 600 }}>
+          <h1 style={{ fontSize: 'clamp(1.5rem, 6vw, 2rem)', fontWeight: 600 }}>
             {username ? `Welcome, ${username}` : 'Welcome'}
           </h1>
           <p style={{ color: 'var(--text-muted)', marginTop: '0.35rem' }}>
@@ -36,7 +39,7 @@ export default function HostDashboard() {
             lone item on the wrapped line would sit hard LEFT. The panel hangs
             from the trigger's right edge, so a left-docked trigger threw it
             off-screen on phones. */}
-        <div style={{ marginLeft: 'auto' }}>
+        <div style={{ marginLeft: 'auto', flex: '0 0 auto' }}>
           <AccountMenu />
         </div>
       </div>

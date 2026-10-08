@@ -864,7 +864,7 @@ export default function SpeakPage() {
       >
         {/* Dashboard, not the marketing site. Everyone who reaches this page is
             signed in, and none of them came here to read the landing page. */}
-        <Link href="/host" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)' }} title="Dashboard">
+        <Link href="/host" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)', minHeight: 44 }} title="Dashboard">
           <ShemaMark />
           <span style={{ ...MONO, fontSize: 11, letterSpacing: '0.24em' }}>Shema</span>
         </Link>

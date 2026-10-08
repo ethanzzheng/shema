@@ -165,6 +165,17 @@
 }
 .tr-confirm-actions { display: flex; gap: 8px; margin-top: 12px; }
 
+@media (max-width: 640px) {
+  /* The tool row packs a 3-way switch, a search field and three buttons. On a
+     phone they wrap into a ragged block, so give the search its own line and
+     let the actions share one. */
+  .tr-tools { gap: 10px; }
+  .tr-search { flex: 1 1 100%; }
+  .tr-btn { min-height: 44px; padding: 10px 14px; flex: 1 1 auto; }
+  .tr-tools .toggle-group { width: 100%; }
+  .tr-confirm-actions .tr-btn { flex: 1 1 auto; }
+}
+
 @media (max-width: 860px) {
   /* Interleaved rather than side by side: two 40%-width columns of Korean and
      English are unreadable on a phone. */
