@@ -390,11 +390,13 @@ input, select, textarea {
  * under the 44px a thumb needs. An operator uses these during a live service,
  * often standing at a soundboard, so a missed tap is a real cost.
  *
- * Keyed on `pointer: coarse` rather than viewport width: it is the touch
- * input that needs the bigger target, not the narrow screen, and a desk on a
- * tablet needs it just as much as one on a phone. Pointer devices keep the
- * existing compact sizing exactly. */
-@media (pointer: coarse) {
+ * Keyed on `pointer: coarse` first, because it is the touch input that needs
+ * the bigger target rather than the narrow screen: a desk driven from a tablet
+ * needs this as much as one on a phone. A narrow viewport is included too,
+ * since it is a phone or a split-screen window either way, and a desktop
+ * browser never reports a coarse pointer even when the window is phone-sized.
+ * A full-width pointer device keeps the compact sizing exactly. */
+@media (pointer: coarse), (max-width: 640px) {
   .toggle-opt {
     min-height: 44px;
     padding-top: 0;

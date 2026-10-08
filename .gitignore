@@ -15,3 +15,6 @@ backend/evals/runs/
 *.mp4
 *.wav
 .wrangler/
+
+# Local phone preview (dev tool, not shipped)
+frontend/public/phone-preview.html

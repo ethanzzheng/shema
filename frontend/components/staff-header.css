@@ -44,6 +44,6 @@
 
 /* The brand mark doubles as the way back to the dashboard, and at 18px tall it
    was the smallest target on the page. */
-@media (pointer: coarse) {
+@media (pointer: coarse), (max-width: 640px) {
   .sh-brand { min-height: 44px; display: inline-flex; align-items: center; }
 }
