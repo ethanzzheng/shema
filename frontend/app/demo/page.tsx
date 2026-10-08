@@ -16,6 +16,8 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import QRCode from 'qrcode';
 import { SignInButton, SignedIn, SignedOut, useAuth } from '@clerk/nextjs';
+
+import DeskPreview from './DeskPreview';
 import ShemaMark from '@/components/ShemaMark';
 import { WsClient, type ServerMessage } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
@@ -631,6 +633,15 @@ export default function DemoPage() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* The demo has shown the pews' half. The half being bought is the
+                operator's, so show that before asking for the meeting. */}
+            {stage === 'full' && (
+              <>
+                <h2 className="dm-sub">And this is the other side of it.</h2>
+                <DeskPreview />
+              </>
             )}
 
             {stage === 'full' && (
