@@ -49,7 +49,15 @@ export class SessionManager {
    */
   maybeCleanup(roomId: string): void {
     const session = this.rooms.get(roomId);
-    if (session && session.isEmpty) {
+    if (!session) return;
+    // A demo outlives its sockets until its own deadline. The soft wall asks a
+    // prospect to sign in, which on a phone means leaving the page for a code
+    // and coming back — dropping the socket. Reclaiming the room on that
+    // disconnect destroys the session they are in the middle of upgrading, and
+    // they return to "This demo has expired". reapExpiredDemos() still collects
+    // it at expiresAt, so nothing is leaked by waiting.
+    if (session.demo && session.demo.expiresAt > Date.now()) return;
+    if (session.isEmpty) {
       this.rooms.delete(roomId);
       console.log(`[Rooms] Reclaimed empty room "${roomId}" (${this.rooms.size} left)`);
     }

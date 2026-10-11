@@ -61,7 +61,7 @@ async function main() {
   const frames = Math.ceil(pcm.length / BYTES_PER_FRAME);
   console.log(`[replay] ${file} → ${(pcm.length / 2 / SAMPLE_RATE).toFixed(1)}s, ${frames} frames`);
 
-  const ws = new WebSocket(`${host}/?room=${encodeURIComponent(room)}&role=broadcaster`);
+  const ws = new WebSocket(`${host}/ws?room=${encodeURIComponent(room)}&role=broadcaster`);
   await new Promise<void>((resolve, reject) => {
     ws.once('open', resolve);
     ws.once('error', reject);
