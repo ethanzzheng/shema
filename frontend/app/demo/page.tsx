@@ -330,10 +330,16 @@ export default function DemoPage() {
     } catch (err) {
       const e = err as Error;
       reportDemoEvent('mic_denied', { room: roomRef.current, meta: { name: e.name } });
+      // Browsers only expose mediaDevices in a secure context, so over plain
+      // http on a LAN address the API is simply absent and the raw error is
+      // "Cannot read properties of undefined". Name the actual cause.
+      const insecure = typeof window !== 'undefined' && !window.isSecureContext;
       setError(
         e.name === 'NotAllowedError'
           ? 'Microphone blocked. Allow it in your browser, or try the sample instead.'
-          : `Could not start the microphone: ${e.message}`,
+          : insecure
+            ? 'Your browser only allows microphone access over https. Use the sample instead — it shows the same thing.'
+            : `Could not start the microphone: ${e.message}`,
       );
     } finally {
       setBusy(false);
