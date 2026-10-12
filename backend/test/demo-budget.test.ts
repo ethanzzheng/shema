@@ -40,7 +40,7 @@ describe('caps', () => {
     const prev = process.env.DEMO_ANON_SECONDS;
     process.env.DEMO_ANON_SECONDS = 'not-a-number';
     try {
-      assert.equal(demoConfig.anonSeconds(), 90);
+      assert.equal(demoConfig.anonSeconds(), 180);
     } finally {
       if (prev === undefined) delete process.env.DEMO_ANON_SECONDS;
       else process.env.DEMO_ANON_SECONDS = prev;
@@ -144,5 +144,34 @@ describe('demos keep nothing', () => {
       /transcript = session\.demo \? null : await TranscriptWriter\.open/,
       'the transcript writer must be skipped for demo rooms',
     );
+  });
+});
+
+test('the sign-in wall', async (t) => {
+  await t.test('is off unless explicitly switched on', () => {
+    const prev = process.env.DEMO_REQUIRE_SIGNIN;
+    delete process.env.DEMO_REQUIRE_SIGNIN;
+    try {
+      assert.equal(demoConfig.requireSignIn(), false);
+    } finally {
+      if (prev !== undefined) process.env.DEMO_REQUIRE_SIGNIN = prev;
+    }
+  });
+
+  await t.test('comes back for "true" or "1", so Clerk can be re-enabled without a deploy', () => {
+    const prev = process.env.DEMO_REQUIRE_SIGNIN;
+    try {
+      for (const on of ['true', 'TRUE', '1']) {
+        process.env.DEMO_REQUIRE_SIGNIN = on;
+        assert.equal(demoConfig.requireSignIn(), true, `"${on}" should enable the wall`);
+      }
+      for (const off of ['false', '0', '']) {
+        process.env.DEMO_REQUIRE_SIGNIN = off;
+        assert.equal(demoConfig.requireSignIn(), false, `"${off}" should leave it off`);
+      }
+    } finally {
+      if (prev === undefined) delete process.env.DEMO_REQUIRE_SIGNIN;
+      else process.env.DEMO_REQUIRE_SIGNIN = prev;
+    }
   });
 });

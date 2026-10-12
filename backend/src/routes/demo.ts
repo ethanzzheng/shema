@@ -30,6 +30,7 @@ export function createDemoRouter(sessions: SessionManager): Router {
   /** Limits, so the UI counts down with the same numbers the server enforces. */
   router.get('/demo/config', (_req, res) => {
     res.json({
+      requireSignIn: demoConfig.requireSignIn(),
       anonSeconds: demoConfig.anonSeconds(),
       anonSegments: demoConfig.anonSegments(),
       ttsSecondsPerAccount: demoConfig.ttsSecondsPerAccount(),
@@ -71,6 +72,9 @@ export function createDemoRouter(sessions: SessionManager): Router {
     res.status(201).json({
       room: roomId,
       ttsAllowed: true,
+      // Without a wall there is nothing to trade for the listener link, and it
+      // is the part that convinces people — hand it over immediately.
+      listenPath: demoConfig.requireSignIn() ? null : `/listen/${roomId}`,
       anonTtsSeconds: demoConfig.anonTtsSeconds(),
       anonSeconds: demoConfig.anonSeconds(),
       anonSegments: demoConfig.anonSegments(),

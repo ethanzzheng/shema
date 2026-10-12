@@ -9,6 +9,12 @@
  * That figure sets every cap below.
  */
 
+const bool = (name: string, fallback: boolean): boolean => {
+  const raw = process.env[name];
+  if (raw === undefined || raw === '') return fallback;
+  return raw === '1' || raw.toLowerCase() === 'true';
+};
+
 const num = (name: string, fallback: number): number => {
   const raw = process.env[name];
   if (!raw) return fallback;
@@ -21,12 +27,23 @@ export const DEMO_PREFIX = 'demo-';
 
 export const demoConfig = {
   /**
-   * Anonymous stage is captions only and never reaches TTS, so these bound
-   * abuse rather than cost — the spend is Deepgram and Claude, both far
-   * cheaper per minute than ElevenLabs.
+   * Whether the demo stops at a sign-in wall partway through.
+   *
+   * Off by default: the wall costs a conversion step and the account it
+   * created bought little that the daily ceiling does not already protect.
+   * With it off, every visitor gets the whole thing — real voice and the
+   * phone listener — and cost is held by the per-session, per-IP and daily
+   * caps below instead of by an identity. The Clerk path is intact and comes
+   * back by setting this true; nothing about it was removed.
    */
-  anonSeconds: () => num('DEMO_ANON_SECONDS', 90),
-  anonSegments: () => num('DEMO_ANON_SEGMENTS', 12),
+  requireSignIn: () => bool('DEMO_REQUIRE_SIGNIN', false),
+
+  /**
+   * How long one visitor's demo runs, and how many segments it translates.
+   * With no wall these bound the whole session rather than a first stage.
+   */
+  anonSeconds: () => num('DEMO_ANON_SECONDS', 180),
+  anonSegments: () => num('DEMO_ANON_SEGMENTS', 30),
 
   /**
    * Real speech an ANONYMOUS visitor gets before the wall. A browser voice is
@@ -35,7 +52,12 @@ export const demoConfig = {
    * the fallback becomes the argument for signing in. At ~1,100 characters a
    * minute this is roughly $0.04-0.08 a visitor.
    */
-  anonTtsSeconds: () => num('DEMO_ANON_TTS_SECONDS', 25),
+  /**
+   * With the wall off this is a visitor's entire speech allowance: two
+   * minutes, roughly $0.18-0.36 each. The daily ceiling is what actually
+   * caps the bill — this only stops one visitor draining it alone.
+   */
+  anonTtsSeconds: () => num('DEMO_ANON_TTS_SECONDS', 120),
 
   /**
    * Signed-in stage, per account, for the life of that account. Five minutes

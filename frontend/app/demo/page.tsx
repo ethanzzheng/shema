@@ -130,7 +130,12 @@ export default function DemoPage() {
   const roomRef = useRef<string | null>(null);
 
   useEffect(() => {
-    fetchDemoConfig().then(setCfg).catch(() => setError('The demo is unavailable right now.'));
+    fetchDemoConfig()
+      .then((c) => {
+        cfgRef.current = c;
+        setCfg(c);
+      })
+      .catch(() => setError('The demo is unavailable right now.'));
     reportDemoEvent('page_view');
   }, []);
 
@@ -217,8 +222,12 @@ export default function DemoPage() {
     sampleStopRef.current = null;
     captureRef.current?.stop();
     captureRef.current = null;
-    setStage('wall');
-    reportDemoEvent('wall_hit', { room: roomRef.current });
+    // With no sign-in required the clock is simply the end of the demo, not a
+    // gate: stop cleanly on the closing screen instead of asking for an
+    // account the visitor was never told they would need.
+    const gated = cfgRef.current?.requireSignIn ?? false;
+    setStage(gated ? 'wall' : 'full');
+    reportDemoEvent(gated ? 'wall_hit' : 'demo_finished', { room: roomRef.current });
   }, []);
 
   // The anonymous countdown. The server enforces the same cap; this only tells
@@ -331,10 +340,12 @@ export default function DemoPage() {
       });
       ws.sendJSON({ type: 'start', mode: 'fast', direction: dir });
       startedAtRef.current = Date.now();
-      // Signed in already? Unlock straight away. Making someone who has
-      // handed over their email sit through a countdown first is a tax on the
-      // warmest lead this funnel produces.
-      if (isSignedIn) setTimeout(() => void unlockRef.current?.(), 300);
+      // Signed in already? Skip the countdown to the wall — but only when
+      // there is a wall. With sign-in switched off, unlocking means jumping to
+      // the closing screen seconds into a demo that has not happened yet.
+      if (isSignedIn && cfgRef.current?.requireSignIn) {
+        setTimeout(() => void unlockRef.current?.(), 300);
+      }
       // The real voice starts immediately; the server decides when it stops.
       openListener(room);
       setTtsAllowed(true);
@@ -344,13 +355,24 @@ export default function DemoPage() {
 
   /** Set once unlock() exists; connect() runs before it is declared. */
   const unlockRef = useRef<(() => Promise<void>) | null>(null);
+  /** hitWall is memoised with no deps; reach config through a ref. */
+  const cfgRef = useRef<DemoConfig | null>(null);
 
   const beginSession = useCallback(async (): Promise<DemoSession> => {
     const s = await startDemoSession();
     setSession(s);
     roomRef.current = s.room;
+    // No wall means nothing to trade the listener link for, so put it up
+    // straight away — hearing it on your own phone is the whole pitch, and
+    // making someone finish the demo first only delays it.
+    if (s.listenPath) {
+      const url = `${window.location.origin}${s.listenPath}`;
+      setListenUrl(url);
+      void QRCode.toDataURL(url, { width: 264, margin: 1 }).then(setQr).catch(() => {});
+      openListener(s.room);
+    }
     return s;
-  }, []);
+  }, [openListener]);
 
   /** Microphone path. */
   const startWithMic = async () => {
@@ -514,6 +536,10 @@ export default function DemoPage() {
    */
   const resumedRef = useRef(false);
   useEffect(() => {
+    // Only meaningful when signing in can navigate away mid-demo. With the
+    // wall off there is no redirect to come back from, and resuming would
+    // drop a returning visitor on the closing screen of an old session.
+    if (!cfg?.requireSignIn) return;
     if (!clerkLoaded || !isSignedIn || resumedRef.current || stage !== 'pick') return;
     const saved = recallDemo();
     if (!saved) return;
@@ -604,9 +630,20 @@ export default function DemoPage() {
                 </button>
               </div>
 
+              {/* With no wall, say what the visitor gets rather than what
+                  they must do to get it. */}
+              {cfg && !cfg.requireSignIn && (
+                <p className="dm-note">
+                  Runs for {Math.round((cfg.anonSeconds ?? 180) / 60)} minutes with the real voice,
+                  and gives you a QR code to hear it on your own phone. No account, no install.
+                </p>
+              )}
+
               {/* The preview is capped; signing in first skips the cap rather
                   than making someone hit it before they are offered the way
                   past it. */}
+              {cfg?.requireSignIn && (
+              <>
               <SignedOut>
                 <p className="dm-note">
                   The preview runs for {cfg?.anonSeconds ?? 90} seconds.{' '}
@@ -621,6 +658,8 @@ export default function DemoPage() {
                   Signed in. The full demo starts as soon as you pick an option above.
                 </p>
               </SignedIn>
+              </>
+              )}
             </div>
           </>
         )}
@@ -658,7 +697,9 @@ export default function DemoPage() {
                 </button>
               )}
               {stage === 'live' && secondsLeft !== null && (
-                <span className="dm-left">{secondsLeft}s left in the free preview</span>
+                <span className="dm-left">
+                  {secondsLeft}s left {cfg?.requireSignIn ? 'in the free preview' : 'in this demo'}
+                </span>
               )}
             </div>
 
@@ -705,7 +746,7 @@ export default function DemoPage() {
 
             {ttsNote && <p className="dm-note">{ttsNote}</p>}
 
-            {stage === 'full' && qr && (
+            {(stage === 'full' || stage === 'live') && qr && (
               <div className="dm-wall">
                 <h2>Now hear it the way your congregation would</h2>
                 <div className="dm-qr">

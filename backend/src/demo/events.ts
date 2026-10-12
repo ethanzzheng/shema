@@ -15,6 +15,7 @@ export type DemoEvent =
   | 'sample_played'
   | 'first_caption'
   | 'wall_hit'
+  | 'demo_finished'
   | 'signed_in'
   | 'tts_started'
   | 'cap_reached'
@@ -23,7 +24,7 @@ export type DemoEvent =
 
 export const DEMO_EVENTS: DemoEvent[] = [
   'page_view', 'mic_granted', 'mic_denied', 'sample_played', 'first_caption',
-  'wall_hit', 'signed_in', 'tts_started', 'cap_reached', 'listener_opened', 'cta_clicked',
+  'wall_hit', 'demo_finished', 'signed_in', 'tts_started', 'cap_reached', 'listener_opened', 'cta_clicked',
 ];
 
 export function isDemoEvent(v: unknown): v is DemoEvent {

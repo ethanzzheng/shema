@@ -9,6 +9,8 @@
 import { getBackendHttpUrl } from './backend-config';
 
 export interface DemoConfig {
+  /** When false the demo runs end to end with no sign-in wall. */
+  requireSignIn: boolean;
   anonSeconds: number;
   anonSegments: number;
   ttsSecondsPerAccount: number;
@@ -19,6 +21,8 @@ export interface DemoConfig {
 export interface DemoSession {
   room: string;
   ttsAllowed: boolean;
+  /** Present when the demo needs no sign-in: the phone listener, up front. */
+  listenPath?: string | null;
   anonSeconds: number;
   anonSegments: number;
   expiresAt: number;
@@ -34,7 +38,7 @@ export interface DemoUpgrade {
 /** Every event the funnel reports. Names match the server's allowlist. */
 export type DemoEventName =
   | 'page_view' | 'mic_granted' | 'mic_denied' | 'sample_played' | 'first_caption'
-  | 'wall_hit' | 'signed_in' | 'tts_started' | 'cap_reached' | 'listener_opened' | 'cta_clicked';
+  | 'wall_hit' | 'demo_finished' | 'signed_in' | 'tts_started' | 'cap_reached' | 'listener_opened' | 'cta_clicked';
 
 export async function fetchDemoConfig(): Promise<DemoConfig> {
   const res = await fetch(`${getBackendHttpUrl()}/demo/config`, { cache: 'no-store' });
