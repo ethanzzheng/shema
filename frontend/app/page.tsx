@@ -637,7 +637,7 @@ export default function MarketingPage() {
             <a href="#why" className="mk-nav-link mk-nav-hide-sm">Why Shema</a>
             <a href="#how" className="mk-nav-link mk-nav-hide-sm">How it works</a>
             <Link href="/login" className="mk-nav-link">Log in</Link>
-            <a href="#demo" className="mk-btn mk-btn-ink" style={{ padding: '10px 20px', fontSize: 13.5 }}>Request a demo</a>
+            <a href="/demo" className="mk-btn mk-btn-ink" style={{ padding: '10px 20px', fontSize: 13.5 }}>Try it live</a>
           </div>
         </div>
       </nav>
@@ -662,8 +662,11 @@ export default function MarketingPage() {
               of the Korean church.
             </p>
             <div className="rv" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              <a href="#demo" className="mk-btn mk-btn-ink">Request a demo</a>
-              <a href="#how" className="mk-btn mk-btn-outline">See how it works</a>
+              {/* The live demo leads. Asking someone to request a demo wants
+                  their trust before they have seen anything work; speaking a
+                  sentence and watching it translate costs them nothing. */}
+              <a href="/demo" className="mk-btn mk-btn-ink">Try it live</a>
+              <a href="#demo" className="mk-btn mk-btn-outline">Request a demo</a>
             </div>
           </div>
           <HeroDemo reduced={reduced} />
@@ -891,6 +894,7 @@ export default function MarketingPage() {
             <div className="mk-eyebrow" style={{ marginBottom: 4 }}>Product</div>
             <a href="#why">Why Shema</a>
             <a href="#how">How it works</a>
+            <a href="/demo">Try it live</a>
             <a href="#demo">Request a demo</a>
             <Link href="/login">Staff log in</Link>
           </div>

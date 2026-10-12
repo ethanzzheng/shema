@@ -49,10 +49,41 @@ export class SessionManager {
    */
   maybeCleanup(roomId: string): void {
     const session = this.rooms.get(roomId);
-    if (session && session.isEmpty) {
+    if (!session) return;
+    // A demo outlives its sockets until its own deadline. The soft wall asks a
+    // prospect to sign in, which on a phone means leaving the page for a code
+    // and coming back — dropping the socket. Reclaiming the room on that
+    // disconnect destroys the session they are in the middle of upgrading, and
+    // they return to "This demo has expired". reapExpiredDemos() still collects
+    // it at expiresAt, so nothing is leaked by waiting.
+    if (session.demo && session.demo.expiresAt > Date.now()) return;
+    if (session.isEmpty) {
       this.rooms.delete(roomId);
       console.log(`[Rooms] Reclaimed empty room "${roomId}" (${this.rooms.size} left)`);
     }
+  }
+
+  /**
+   * Drop expired demo rooms.
+   *
+   * Emptiness alone is not enough for a demo: a prospect who closes the tab
+   * mid-session leaves nothing behind, but one who leaves it open walks away
+   * from a room that would otherwise live as long as the process. A demo is
+   * time-boxed by definition, so it expires whether or not anyone is in it.
+   *
+   * Only ever touches rooms in the demo namespace.
+   */
+  reapExpiredDemos(now = Date.now()): number {
+    let reaped = 0;
+    for (const [roomId, session] of this.rooms) {
+      if (!session.demo) continue;
+      if (session.demo.expiresAt > now) continue;
+      session.closeAll(1000, 'Demo session expired');
+      this.rooms.delete(roomId);
+      reaped++;
+    }
+    if (reaped > 0) console.log(`[Demo] Expired ${reaped} demo room(s) (${this.rooms.size} left)`);
+    return reaped;
   }
 
   get roomCount(): number {

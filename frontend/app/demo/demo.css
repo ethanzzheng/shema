@@ -1,0 +1,271 @@
+/*
+ * Public demo.
+ *
+ * Same night/cream palette and gold accent as the product, but composed for a
+ * stranger arriving from a cold email on a phone: one thing to do per screen,
+ * and the captions are the hero because they are the proof.
+ */
+
+.dm-root { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
+
+.dm-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px clamp(16px, 4vw, 28px);
+  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+}
+.dm-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
+.dm-brand-name { font-family: var(--font-mono, monospace); font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; }
+.dm-bar-end { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
+
+.dm-main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: clamp(28px, 6vw, 56px) clamp(16px, 5vw, 24px) 64px; }
+
+.dm-lede { font-size: clamp(1.5rem, 5.5vw, 2.1rem); font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; }
+.dm-sub { color: var(--text-muted); font-size: 1rem; line-height: 1.6; margin-top: 12px; max-width: 52ch; }
+
+.dm-step { margin-top: 30px; }
+.dm-langs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+.dm-lang {
+  flex: 1 1 200px; min-height: 64px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 14px 18px; text-align: left;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(244, 241, 234, 0.02); color: var(--text);
+  font-family: var(--font-sans); font-size: 1rem; cursor: pointer;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+}
+.dm-lang:hover { border-color: rgba(200, 162, 94, 0.5); background: rgba(200, 162, 94, 0.05); }
+.dm-lang:active { transform: translateY(1px); }
+.dm-lang:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* aria-pressed alone is invisible. A prospect picking a direction has to see
+   which one is picked, not read a sentence underneath to find out. */
+.dm-lang[aria-pressed='true'] {
+  border-color: var(--gold);
+  background: rgba(200, 162, 94, 0.1);
+}
+.dm-lang[aria-pressed='true'] .dm-lang-sub { color: rgba(244, 241, 234, 0.7); }
+.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; }
+
+.dm-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+.dm-btn {
+  min-height: 48px; padding: 13px 22px;
+  border-radius: var(--radius-sm); border: 1px solid var(--border);
+  background: none; color: var(--text);
+  font-family: var(--font-sans); font-size: 0.95rem; font-weight: 500;
+  cursor: pointer; white-space: nowrap;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+}
+.dm-btn:hover:not(:disabled) { border-color: rgba(244, 241, 234, 0.3); background: rgba(244, 241, 234, 0.04); }
+.dm-btn:active:not(:disabled) { transform: translateY(1px); }
+.dm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.dm-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-btn-primary { background: var(--gold); border-color: var(--gold); color: var(--night); font-weight: 600; }
+.dm-btn-primary:hover:not(:disabled) { background: var(--gold-hover); border-color: var(--gold-hover); color: var(--night); }
+
+/* ── Live ────────────────────────────────────────────────────────────────── */
+.dm-live-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: 0 0 auto; }
+.dm-listening { font-family: var(--font-mono, monospace); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sage); display: inline-flex; align-items: center; gap: 7px; }
+/* Sits with the live status rather than in a settings panel: it controls
+   something the listener is hearing right now. */
+.dm-voice {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
+  padding: 6px 11px; border-radius: 999px;
+  border: 1px solid var(--border); background: none; color: var(--text-muted);
+  cursor: pointer; white-space: nowrap;
+  transition: color 140ms var(--ease), border-color 140ms var(--ease), background-color 140ms var(--ease);
+}
+.dm-voice:hover { color: var(--text); border-color: rgba(244, 241, 234, 0.3); }
+.dm-voice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-voice[aria-pressed='true'] { color: var(--sage); border-color: rgba(147, 181, 160, 0.45); background: rgba(147, 181, 160, 0.08); }
+
+.dm-left { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+
+/* The meter is the proof the mic is actually working, before a word lands. */
+.dm-meter { display: flex; gap: 3px; align-items: flex-end; height: 20px; margin-top: 16px; }
+.dm-meter span { flex: 1; border-radius: 1px; background: rgba(244, 241, 234, 0.12); transition: background-color 120ms linear; }
+.dm-meter span.on { background: var(--sage); }
+
+.dm-captions { margin-top: 24px; display: flex; flex-direction: column; gap: 18px; min-height: 180px; }
+.dm-cap { animation: dmIn 260ms var(--ease) both; }
+.dm-cap-src { color: rgba(244, 241, 234, 0.5); font-size: 0.92rem; line-height: 1.55; }
+.dm-cap-out { color: var(--text); font-size: 1.12rem; line-height: 1.5; margin-top: 4px; }
+@keyframes dmIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .dm-cap { animation: none; } }
+
+.dm-waiting { color: rgba(244, 241, 234, 0.35); font-size: 0.95rem; font-style: italic; }
+
+/* ── Wall ────────────────────────────────────────────────────────────────── */
+.dm-wall {
+  margin-top: 26px; padding: 24px;
+  border: 1px solid rgba(200, 162, 94, 0.4);
+  background: rgba(200, 162, 94, 0.06);
+  border-radius: var(--radius);
+}
+.dm-wall h2 { font-size: 1.2rem; font-weight: 500; }
+.dm-wall p { color: var(--text-muted); font-size: 0.94rem; line-height: 1.6; margin-top: 8px; max-width: 46ch; }
+
+.dm-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.dm-qr img { width: 132px; height: 132px; border-radius: 10px; background: #fff; padding: 8px; }
+.dm-qr-copy { flex: 1 1 220px; min-width: 0; }
+.dm-qr-copy p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; }
+
+.dm-note { color: rgba(244, 241, 234, 0.4); font-size: 0.82rem; margin-top: 14px; line-height: 1.55; }
+.dm-error { color: var(--alert); font-size: 0.9rem; margin-top: 14px; }
+
+@media (max-width: 640px) {
+  .dm-lang { flex: 1 1 100%; }
+  .dm-btn { width: 100%; }
+  .dm-actions { flex-direction: column; }
+}
+
+/* A sign-in offer inside a sentence, not another button competing with the
+   two that start the demo. */
+.dm-link {
+  /* Vertical padding on an inline element grows the hit area without changing
+     the line box, so the sentence still wraps the same on a phone. */
+  background: none; border: 0; padding: 6px 0;
+  font: inherit; color: var(--accent);
+  text-decoration: underline; text-underline-offset: 2px;
+  cursor: pointer;
+}
+.dm-link:hover { color: var(--gold-hover); }
+.dm-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+
+/* ── Broadcast desk preview ──────────────────────────────────────────────
+   A likeness of /speak for the closing screen. Values track the real rail
+   (1px rgba(244,241,234,0.12) border, radius 10, 14/16 padding, 9.5px mono
+   labels) so the two do not drift apart visually. */
+.dp-figure { margin: 28px 0 0; }
+
+/* The desk is a two-column layout; below ~760px it is swiped, not reflowed —
+   reflowing it would stop it looking like the thing it is depicting. */
+.dp-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 12px;
+  border: 1px solid rgba(244, 241, 234, 0.1);
+  background: #0f0f13;
+}
+.dp-desk { min-width: 720px; font-size: 12px; }
+
+.dp-top {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(244, 241, 234, 0.1);
+}
+.dp-brand { font-size: 10px; letter-spacing: 0.18em; color: var(--gold); }
+.dp-divider { width: 1px; height: 14px; background: rgba(244, 241, 234, 0.18); }
+.dp-title { color: var(--cream); font-weight: 500; }
+.dp-room {
+  font-family: var(--font-mono, ui-monospace, monospace); font-size: 10px;
+  color: rgba(244, 241, 234, 0.6);
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 6px; padding: 3px 8px;
+}
+.dp-live {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px; letter-spacing: 0.12em;
+  color: var(--alert);
+  border: 1px solid rgba(255, 138, 128, 0.4);
+  border-radius: 999px; padding: 4px 10px;
+}
+.dp-dot { width: 6px; height: 6px; border-radius: 999px; background: var(--alert); }
+
+.dp-body { display: grid; grid-template-columns: 236px 1fr; gap: 14px; padding: 14px 16px; }
+.dp-rail { display: flex; flex-direction: column; gap: 10px; }
+
+.dp-stop {
+  border-radius: 10px; padding: 12px 14px; text-align: center;
+  background: rgba(255, 138, 128, 0.12);
+  border: 1px solid rgba(255, 138, 128, 0.35);
+  color: var(--alert); font-weight: 500;
+}
+.dp-card {
+  border: 1px solid rgba(244, 241, 234, 0.12);
+  border-radius: 10px; padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.dp-card-gold { border-color: rgba(200, 162, 94, 0.4); }
+.dp-card-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.dp-label {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9.5px; letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(244, 241, 234, 0.45);
+}
+
+.dp-seg {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 4px;
+  border: 1px solid rgba(244, 241, 234, 0.12);
+  border-radius: 8px; padding: 3px;
+}
+.dp-seg > span {
+  text-align: center; padding: 6px 4px; border-radius: 6px;
+  font-size: 11px; color: rgba(244, 241, 234, 0.55);
+}
+/* Qualified by the element: the `.dp-seg > span` rule above is more specific
+   than a bare class, and silently won the colour, leaving pale text on a pale
+   chip. */
+.dp-seg > span.dp-seg-on { background: var(--gold); color: #1B1B18; font-weight: 500; }
+.dp-seg > span.dp-seg-plain { background: rgba(244, 241, 234, 0.92); color: #1B1B18; font-weight: 500; }
+
+.dp-select {
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px; padding: 7px 10px; color: var(--cream); font-size: 11px;
+}
+.dp-meter { display: flex; align-items: flex-end; gap: 2px; height: 22px; }
+.dp-meter i { width: 4px; border-radius: 1px; background: var(--sage); opacity: 0.85; }
+.dp-meter-tag {
+  margin-left: auto; align-self: center;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 9px; letter-spacing: 0.1em; color: var(--sage);
+}
+
+.dp-input {
+  border: 1px solid rgba(244, 241, 234, 0.14);
+  border-radius: 8px; padding: 7px 10px;
+  color: rgba(244, 241, 234, 0.9); font-size: 11px;
+}
+.dp-hint { margin: 0; font-size: 10px; line-height: 1.4; color: rgba(244, 241, 234, 0.4); }
+.dp-link-row { display: flex; align-items: center; gap: 8px; }
+.dp-link { font-size: 10.5px; color: var(--gold); word-break: break-all; }
+.dp-qr {
+  flex: none; width: 30px; height: 30px; border-radius: 4px;
+  background:
+    repeating-linear-gradient(90deg, var(--cream) 0 3px, transparent 3px 6px),
+    repeating-linear-gradient(0deg, var(--cream) 0 3px, #0f0f13 3px 6px);
+  opacity: 0.75;
+}
+
+.dp-main { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.dp-stats { display: flex; gap: 28px; padding: 2px 2px 10px; }
+.dp-stats > div { display: flex; flex-direction: column; gap: 5px; }
+.dp-stat { color: var(--cream); font-size: 15px; font-weight: 500; }
+.dp-stat-ok { color: var(--sage); font-size: 13px; }
+
+.dp-panel {
+  border: 1px solid rgba(244, 241, 234, 0.12);
+  border-radius: 10px; padding: 14px 16px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dp-cols, .dp-pair { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.dp-cols { padding-bottom: 8px; border-bottom: 1px solid rgba(244, 241, 234, 0.1); }
+.dp-pair { padding: 7px 0; border-bottom: 1px solid rgba(244, 241, 234, 0.05); }
+.dp-pair:last-child { border-bottom: 0; }
+.dp-ko { margin: 0; color: rgba(244, 241, 234, 0.55); line-height: 1.5; }
+.dp-en { margin: 0; color: var(--cream); line-height: 1.5; }
+
+.dp-caption {
+  margin: 12px 2px 0;
+  font-size: 13px; line-height: 1.55;
+  color: rgba(244, 241, 234, 0.55);
+  max-width: 62ch;
+}
+
+.dm-sub {
+  margin: 34px 0 0;
+  font-size: clamp(20px, 3.4vw, 26px);
+  font-weight: 500; letter-spacing: -0.015em;
+  color: var(--cream); text-wrap: balance;
+}

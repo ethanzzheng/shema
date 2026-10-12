@@ -18,3 +18,9 @@ backend/evals/runs/
 
 # Local phone preview (dev tool, not shipped)
 frontend/public/phone-preview.html
+
+# Real service transcripts and design handoff exports. Kept locally, never
+# committed: this repository is public and these contain a named church's
+# service content.
+transcripts/
+design_handoff_shema_redesign/

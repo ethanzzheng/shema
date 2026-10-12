@@ -23,6 +23,8 @@ import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
 import { TranscriptWriter } from './transcripts/writer';
+import { ANON_LEDGER_KEY, mayUseAnonTts, mayUseTts, recordTtsSpend } from './demo/budget';
+import { recordEvent } from './demo/events';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
@@ -353,6 +355,57 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     },
   });
 
+  /**
+   * Demo rooms pay for speech out of a capped budget, so TTS is gated here
+   * rather than at the edges: this is the single point every spoken segment
+   * passes through, and a check anywhere else could be bypassed by a code
+   * path that forgot about it.
+   *
+   * Anonymous demos never reach ElevenLabs at all — captions are the whole
+   * anonymous product. Signed-in demos are checked against the account's
+   * allowance and the day's global ceiling before each segment, and the spend
+   * is recorded after.
+   *
+   * Returns true when the segment may be spoken. Church rooms always may.
+   */
+  async function demoMaySpeak(text: string): Promise<boolean> {
+    const demo = session.demo;
+    if (!demo) return true; // a real service
+
+    if (!demo.ttsAllowed) return false;
+
+    // An anonymous visitor gets a real taste before the wall. A browser voice
+    // undersells the product at the exact moment it is meant to impress, so
+    // the opening stretch is the genuine voice and the fallback is what makes
+    // signing in worth doing.
+    const decision = demo.clerkUserId
+      ? await mayUseTts(demo.clerkUserId)
+      : await mayUseAnonTts(demo.ttsChars);
+    if (!decision.allowed) {
+      // Tell the desk once, so the UI can explain itself rather than just
+      // going quiet, then drop to captions for the rest of the session.
+      demo.ttsAllowed = false;
+      send(ws, { type: 'demo_tts_stopped', reason: decision.reason, message: decision.message });
+      recordEvent({
+        event: 'cap_reached',
+        sessionId: session.roomId,
+        clerkUserId: demo.clerkUserId,
+        meta: { reason: decision.reason },
+      });
+      console.log(`[Demo] TTS stopped for "${session.roomId}": ${decision.reason}`);
+      return false;
+    }
+
+    demo.ttsChars += text.length;
+    // Anonymous spend is real spend, so it goes on the same ledger and counts
+    // against the day's global ceiling.
+    void recordTtsSpend(demo.clerkUserId ?? ANON_LEDGER_KEY, text.length);
+    return true;
+  }
+
+  /** Serialises demo budget checks so TTS stays in spoken order. */
+  let demoTtsGate: Promise<void> = Promise.resolve();
+
   function enqueueTTS(seq: number, text: string, chunkSize: number, chunkerWaitMs: number, translationLatencyMs: number, chunkStart: number): void {
     if (ttsPipeline.depth === 0 && audioStarvedSince) {
       const starvedMs = Date.now() - audioStarvedSince;
@@ -363,7 +416,24 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         );
       }
     }
-    ttsPipeline.enqueue({ seq, text, chunkSize, chunkerWaitMs, translationLatencyMs, chunkStart, enqueuedAt: Date.now() });
+    const job = { seq, text, chunkSize, chunkerWaitMs, translationLatencyMs, chunkStart, enqueuedAt: Date.now() };
+
+    // A church room enqueues synchronously, exactly as before. The demo path
+    // has to await a budget check, and TtsPipeline is a FIFO on ARRIVAL order,
+    // not seq — so two checks resolving out of order would speak the sermon
+    // out of order. Chaining them keeps the queue in the order the emitter
+    // handed segments over.
+    if (!session.demo) {
+      ttsPipeline.enqueue(job);
+      return;
+    }
+    demoTtsGate = demoTtsGate
+      .then(async () => {
+        if (await demoMaySpeak(text)) ttsPipeline.enqueue(job);
+      })
+      .catch(() => {
+        /* a failed check already denied; never break the chain */
+      });
   }
 
   // A start within this window of the last stop is a RESUME (network blip +
@@ -463,17 +533,25 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // no database, or an unreachable one, costs the transcript and nothing
     // else. Every service is kept; a church removes one afterwards from the
     // transcripts page rather than deciding in the moment.
-    transcript = await TranscriptWriter.open({
+    //
+    // Demos are the exception and keep nothing. A stranger trying the product
+    // from a cold email has not consented to their voice being archived, and
+    // their sentences would otherwise sit in a church's transcript list.
+    transcript = session.demo ? null : await TranscriptWriter.open({
       churchId: session.roomId,
       sessionId: session.broadcastId as string,
       sourceLang: cfg.sttLanguage,
       targetLangs: [targetLang],
     });
-    console.log(
-      transcript
-        ? `[Transcript] Recording room "${session.roomId}"`
-        : `[Transcript] NOT recording room "${session.roomId}" — no database reachable`,
-    );
+    if (session.demo) {
+      console.log(`[Transcript] Not recording demo room "${session.roomId}" — demos keep nothing`);
+    } else {
+      console.log(
+        transcript
+          ? `[Transcript] Recording room "${session.roomId}"`
+          : `[Transcript] NOT recording room "${session.roomId}" — no database reachable`,
+      );
+    }
 
     translator = new ClaudeTranslator(ANTHROPIC_API_KEY, undefined, direction, session.roomId, {
       churchTerms: loaded.terms,
@@ -615,7 +693,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           // Phase A auth: with AUTH_USERS configured, starting a broadcast
           // requires a valid session token from POST /login. Listeners are
           // never gated; open mode (no auth env) allows everything.
-          const auth = isStartAuthorized(msg.token);
+          // A demo room authorises itself. It was minted by the rate-limited
+          // demo API, which is what stands in for a staff login here — a
+          // prospect arriving from a cold email has no account yet, and that
+          // is the entire point of the funnel.
+          //
+          // The guard is `session.demo`, NOT the room name: anyone can connect
+          // to a socket claiming room "demo-whatever" and have getOrCreate
+          // make it, but only the demo API ever sets this field. A guessed
+          // name therefore gets an ordinary room and still needs a real login.
+          const auth = session.demo ? { ok: true as const, username: null } : isStartAuthorized(msg.token);
           if (!auth.ok) {
             console.warn(`[Broadcaster] Rejected start for room "${session.roomId}": ${auth.reason}`);
             send(ws, { type: 'error', message: auth.reason });
