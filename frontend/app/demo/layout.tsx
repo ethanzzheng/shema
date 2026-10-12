@@ -20,6 +20,12 @@ export default function DemoLayout({ children }: { children: React.ReactNode }) 
   return (
     <ClerkProvider
       publishableKey={publishableKey}
+      // Clerk defaults to "/" after a sign-in that leaves the page — a Google
+      // round trip, or its development-instance handoff. Landing a prospect on
+      // the marketing homepage abandons the demo they were in the middle of.
+      signInFallbackRedirectUrl="/demo"
+      signUpFallbackRedirectUrl="/demo"
+      afterSignOutUrl="/demo"
       appearance={{
         variables: {
           colorPrimary: '#C8A25E',

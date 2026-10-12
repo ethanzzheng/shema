@@ -46,8 +46,48 @@ interface Caption {
 
 const SAMPLE_URL = '/demo/sample-sermon.mp3';
 
+/**
+ * Signing in can navigate away from the page entirely — a Google round trip,
+ * or Clerk's development handoff, both of which reload /demo from scratch and
+ * wipe React state. The room itself is still alive on the server, so remember
+ * enough to pick it back up; otherwise a prospect returns from signing in to
+ * an empty picker, with the demo they just committed to orphaned.
+ */
+const RESUME_KEY = 'shema.demo.resume';
+
+interface Resume {
+  room: string;
+  expiresAt: number;
+  mode: 'mic' | 'sample';
+  direction: Direction;
+}
+
+function rememberDemo(r: Resume): void {
+  try { window.sessionStorage.setItem(RESUME_KEY, JSON.stringify(r)); } catch { /* private mode */ }
+}
+
+function forgetDemo(): void {
+  try { window.sessionStorage.removeItem(RESUME_KEY); } catch { /* private mode */ }
+}
+
+/** Returns the saved demo only while the server would still honour it. */
+function recallDemo(): Resume | null {
+  try {
+    const raw = window.sessionStorage.getItem(RESUME_KEY);
+    if (!raw) return null;
+    const r = JSON.parse(raw) as Resume;
+    if (!r?.room || typeof r.expiresAt !== 'number' || r.expiresAt <= Date.now()) {
+      forgetDemo();
+      return null;
+    }
+    return r;
+  } catch {
+    return null;
+  }
+}
+
 export default function DemoPage() {
-  const { isSignedIn, getToken } = useAuth();
+  const { isSignedIn, getToken, isLoaded: clerkLoaded } = useAuth();
 
   const [cfg, setCfg] = useState<DemoConfig | null>(null);
   const [session, setSession] = useState<DemoSession | null>(null);
@@ -118,6 +158,12 @@ export default function DemoPage() {
     playerRef.current?.stop();
     playerRef.current = null;
   }, []);
+
+  /** Deliberately not part of teardown: unmounting to sign in must not forget. */
+  const endDemo = useCallback(() => {
+    forgetDemo();
+    teardown();
+  }, [teardown]);
 
   useEffect(() => teardown, [teardown]);
 
@@ -312,6 +358,7 @@ export default function DemoPage() {
     setError('');
     try {
       const s = session ?? (await beginSession());
+      rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'mic', direction });
       const capture = new AudioCapture({
         chunkIntervalMs: 200,
         onChunk: (pcm) => {
@@ -355,6 +402,7 @@ export default function DemoPage() {
     setError('');
     try {
       const s = session ?? (await beginSession());
+      rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'sample', direction: 'ko-en' });
       const pcm = await decodeSampleToPcm(SAMPLE_URL);
       await connect(s.room, 'ko-en'); // the clip is Korean
       setDirection('ko-en');
@@ -458,6 +506,47 @@ export default function DemoPage() {
     unlockRef.current = unlock;
   }, [unlock]);
 
+  /**
+   * Returning from a sign-in that reloaded the page. The room outlives the
+   * socket server-side, so reattach to it and go straight through the wall —
+   * the alternative is making someone who just signed in start over, which is
+   * the worst possible moment to ask for patience.
+   */
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (!clerkLoaded || !isSignedIn || resumedRef.current || stage !== 'pick') return;
+    const saved = recallDemo();
+    if (!saved) return;
+    resumedRef.current = true;
+
+    void (async () => {
+      setBusy(true);
+      try {
+        const revived: DemoSession = {
+          room: saved.room,
+          expiresAt: saved.expiresAt,
+          ttsAllowed: false,
+          anonSeconds: cfg?.anonSeconds ?? 90,
+          anonSegments: cfg?.anonSegments ?? 12,
+        };
+        setSession(revived);
+        roomRef.current = saved.room;
+        setDirection(saved.direction);
+        await connect(saved.room, saved.direction);
+        startedAtRef.current = Date.now();
+        await unlockRef.current?.();
+      } catch {
+        // The room went while they were away. Say so plainly and let them
+        // start again rather than leaving a page that looks stuck.
+        forgetDemo();
+        setError('That demo timed out while you were signing in. Start another — you are signed in now, so it runs in full.');
+        setStage('pick');
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [clerkLoaded, isSignedIn, stage, cfg, connect]);
+
   // Clerk reports the sign-in asynchronously after the modal closes.
   useEffect(() => {
     if (isSignedIn && stage === 'wall') void unlock();
@@ -521,7 +610,7 @@ export default function DemoPage() {
               <SignedOut>
                 <p className="dm-note">
                   The preview runs for {cfg?.anonSeconds ?? 90} seconds.{' '}
-                  <SignInButton mode="modal">
+                  <SignInButton mode="modal" forceRedirectUrl="/demo" signUpForceRedirectUrl="/demo">
                     <button className="dm-link">Sign in free</button>
                   </SignInButton>{' '}
                   first for the full demo, with the voice and a QR code to hear it on your phone.
@@ -674,7 +763,7 @@ export default function DemoPage() {
             </p>
             <div className="dm-actions">
               <SignedOut>
-                <SignInButton mode="modal">
+                <SignInButton mode="modal" forceRedirectUrl="/demo" signUpForceRedirectUrl="/demo">
                   <button className="dm-btn dm-btn-primary">Sign in free to continue</button>
                 </SignInButton>
               </SignedOut>
