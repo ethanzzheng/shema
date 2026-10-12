@@ -86,8 +86,49 @@ function recallDemo(): Resume | null {
   }
 }
 
+/**
+ * Whether Clerk is configured for this build. Inlined by Next at build time.
+ *
+ * The demo must work with no Clerk configuration at all — with the sign-in
+ * wall off, which is the default, nothing on this page needs an identity.
+ * useAuth() throws outside a ClerkProvider, and a hook cannot be called
+ * conditionally, so the branch is made at the component boundary instead.
+ */
+const CLERK_ENABLED = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
+
+type DemoAuth = {
+  isSignedIn: boolean;
+  clerkLoaded: boolean;
+  getToken: () => Promise<string | null>;
+};
+
+/** Stands in for Clerk when it is not configured. Nobody is ever signed in. */
+const NO_AUTH: DemoAuth = {
+  isSignedIn: false,
+  clerkLoaded: true,
+  getToken: async () => null,
+};
+
 export default function DemoPage() {
-  const { isSignedIn, getToken, isLoaded: clerkLoaded } = useAuth();
+  return CLERK_ENABLED ? <DemoWithClerk /> : <Demo auth={NO_AUTH} />;
+}
+
+/** Only ever mounted inside a ClerkProvider, so useAuth() is safe here. */
+function DemoWithClerk() {
+  const { isSignedIn, getToken, isLoaded } = useAuth();
+  return (
+    <Demo
+      auth={{
+        isSignedIn: Boolean(isSignedIn),
+        clerkLoaded: isLoaded,
+        getToken: () => getToken(),
+      }}
+    />
+  );
+}
+
+function Demo({ auth }: { auth: DemoAuth }) {
+  const { isSignedIn, getToken, clerkLoaded } = auth;
 
   const [cfg, setCfg] = useState<DemoConfig | null>(null);
   const [session, setSession] = useState<DemoSession | null>(null);
@@ -642,7 +683,7 @@ export default function DemoPage() {
               {/* The preview is capped; signing in first skips the cap rather
                   than making someone hit it before they are offered the way
                   past it. */}
-              {cfg?.requireSignIn && (
+              {cfg?.requireSignIn && CLERK_ENABLED && (
               <>
               <SignedOut>
                 <p className="dm-note">
@@ -795,7 +836,7 @@ export default function DemoPage() {
           </>
         )}
 
-        {stage === 'wall' && (
+        {stage === 'wall' && CLERK_ENABLED && (
           <div className="dm-wall">
             <h2>That is the free preview.</h2>
             <p>
