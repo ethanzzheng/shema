@@ -254,3 +254,68 @@ test('splitLastClauseZh: finds a cut in an unpunctuated run-on', () => {
   assert.ok(!s!.head.endsWith('在'), s!.head);
   assert.ok(s!.rest.endsWith('这是一种在'), 'the dangling tail stays buffered');
 });
+
+// ── Cuts observed in the first real service (cbcgl-1011) ──────────────────
+
+test('VALIDATION (real service): 呢 as a topic marker is not a sentence end', () => {
+  // Each of these shipped alone and was translated as a whole sentence.
+  assert.equal(looksCompleteZh('是很不容易的那今天的经文当中呢'), false); // #57
+  assert.equal(looksCompleteZh('罗马书我记得在讲到罗马书第14章的时候呢'), false); // #42
+  assert.equal(looksCompleteZh('那主耶稣对彼得的这个挽回呢'), false); // #187
+  assert.equal(looksCompleteZh('爱主呢'), false); // #99 → invented "Do they really love the Lord?"
+  assert.equal(endsDanglingZh('爱主呢'), true);
+  // CONTROL: a real question still ends on 呢.
+  assert.equal(looksCompleteZh('那最后约翰福音以什么为结尾呢'), true);
+  assert.equal(looksCompleteZh('他跟彼得的区别是什么呢'), true);
+  assert.equal(looksCompleteZh('我们还是他呢'), true);
+});
+
+test('VALIDATION (real service): subordinate clauses, adverbs and modals hold', () => {
+  assert.equal(endsDanglingZh('这里边的特别讲到了是和彼得在一起的时候'), true); // #39
+  assert.equal(endsDanglingZh('我们要追求和睦彼此建立德行的事这样才'), true); // #43 → "so that we."
+  assert.equal(endsDanglingZh('仍然是紧紧的抓住主就像'), true); // #251 → "just like."
+  assert.equal(endsDanglingZh('如果你愿意的话'), true);
+  assert.equal(endsDanglingZh('我们都'), true);
+  assert.equal(endsDanglingZh('我们应该'), true);
+  assert.equal(endsDanglingZh('我们会'), true);
+  assert.equal(endsDanglingZh('感谢你舍己的爱主啊'), true); // vocative: the petition follows
+  // CONTROL: ordinary words that merely END in those characters.
+  assert.equal(endsDanglingZh('欢迎大家来到教会'), false);
+  assert.equal(endsDanglingZh('这一点非常重要'), false);
+  assert.equal(endsDanglingZh('我们不要拜偶像'), false);
+  assert.equal(endsDanglingZh('我们下午有聚会'), false);
+});
+
+test('splitLastClauseZh: cuts after a tag question, not after a topic 呢', () => {
+  const s = splitLastClauseZh('他们都是渔夫是吧那后来呢他们回到了加利利');
+  assert.ok(s);
+  assert.equal(s!.head, '他们都是渔夫是吧');
+  const t = splitLastClauseZh('那今天的经文当中呢主耶稣就不停的问彼得');
+  assert.ok(!t || !t.head.endsWith('呢'), JSON.stringify(t));
+});
+
+test('zh chunker VALIDATION (real service): an expired unpunctuated buffer cuts before a new sentence', async () => {
+  // Real speech: almost no punctuation, so the buffer end is wherever a pause
+  // fell. At patience expiry the chunker should cut at the last sentence
+  // opener and keep the new sentence's start buffered.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeZh();
+  try {
+    await chunker.feed('门徒在跟随主的路上常常争论谁为大所以彼得也在和约翰比较', true);
+    mock.timers.tick(5200);
+    await flush();
+    assert.equal(dispatched[0], '门徒在跟随主的路上常常争论谁为大', JSON.stringify(dispatched));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('glossary env fallback only reaches rooms that speak the term language', async () => {
+  const { matchesSourceLanguage } = await import('../src/glossary/load');
+  const term = (sourceTerm: string) => ({ sourceTerm } as Parameters<typeof matchesSourceLanguage>[0]);
+  assert.equal(matchesSourceLanguage(term('목장'), 'zh'), false);
+  assert.equal(matchesSourceLanguage(term('목장'), 'ko'), true);
+  assert.equal(matchesSourceLanguage(term('团契'), 'zh'), true);
+  assert.equal(matchesSourceLanguage(term('团契'), 'ko'), false);
+  assert.equal(matchesSourceLanguage(term('QT'), 'ko'), true);
+});

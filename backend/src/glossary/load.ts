@@ -16,9 +16,25 @@ export interface LoadedGlossary {
   source: 'db' | 'env';
 }
 
+/**
+ * Does a term's source text belong to the language the pastor speaks? The env
+ * fallback is one flat list per deployment, written for the Korean churches;
+ * without this check a Mandarin room was handed 목장 = "Mokjang".
+ */
+export function matchesSourceLanguage(term: GlossaryTerm, sourceLang: string): boolean {
+  const t = term.sourceTerm;
+  const hangul = /[\uac00-\ud7af]/.test(t);
+  const han = /[\u4e00-\u9fff]/.test(t);
+  if (sourceLang === 'ko') return hangul || !han;
+  if (sourceLang === 'zh') return han && !hangul;
+  if (sourceLang === 'en') return !hangul && !han;
+  return true;
+}
+
 export async function loadChurchGlossary(
   churchId: string,
   lang: LangCode = 'en',
+  sourceLang?: string,
 ): Promise<LoadedGlossary> {
   if (isDbConfigured()) {
     try {
@@ -30,7 +46,8 @@ export async function loadChurchGlossary(
       );
     }
   }
-  return { terms: envTerms(churchId, process.env, lang), source: 'env' };
+  const terms = envTerms(churchId, process.env, lang);
+  return { terms: sourceLang ? terms.filter((t) => matchesSourceLanguage(t, sourceLang)) : terms, source: 'env' };
 }
 
 /**

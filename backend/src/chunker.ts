@@ -75,6 +75,14 @@ interface BoundaryDetector {
   /** Safe prefix to ship when a held buffer's patience expires. */
   splitSafe?: (text: string) => { head: string; rest: string } | null;
   /**
+   * Also prefer splitSafe when an expired or oversized buffer is NOT dangling.
+   * Real Mandarin speech arrives with almost no punctuation (24 of 261 chunks
+   * in the first real service ended on 。！？), so the end of the buffer is
+   * just wherever a pause fell. The last sentence-opening word or tag question
+   * inside it is a better cut than that.
+   */
+  splitWhenExpired?: boolean;
+  /**
    * How consecutive STT finals are joined. Chinese has no word spaces, and a
    * stray space inside "约翰福音第 3章16节" is noise to every heuristic.
    */
@@ -107,6 +115,7 @@ const BOUNDARY_DETECTORS: Record<Direction, BoundaryDetector> = {
     splitSentences: splitSentencesZh,
     holdsForHead: endsDanglingZh,
     splitSafe: splitLastClauseZh,
+    splitWhenExpired: true,
     joiner: '',
     tinyChars: 6,
   },
@@ -284,9 +293,10 @@ export class KoreanChunker {
       if (!this.buffer) return;
     }
 
-    // Run-on safety: dispatch immediately once we exceed the hard cap.
+    // Run-on safety: dispatch immediately once we exceed the hard cap —
+    // cutting at the best boundary inside it where the language allows.
     if (this.buffer.length >= this.cfg.maxChars) {
-      this.dispatchBuffer();
+      if (!this.shipSafeHead(true)) this.dispatchBuffer();
       return;
     }
 
@@ -378,18 +388,30 @@ export class KoreanChunker {
    * to the wrong referent.
    */
   private expirePatience(): void {
-    if (this.detector.holdsForHead?.(this.buffer) && this.detector.splitSafe) {
-      const split = this.detector.splitSafe(this.buffer);
-      if (split) {
-        this.cancelTimer();
-        this.dispatchText(split.head);
-        this.buffer = split.rest;
-        this.bufferStartedAt = Date.now(); // the tail gets its own budget
-        this.armTimer();
-        return;
-      }
-    }
-    this.dispatchBuffer();
+    if (!this.shipSafeHead(false)) this.dispatchBuffer();
+  }
+
+  /**
+   * Ship the safe prefix of the buffer and keep the rest. Applies to a
+   * dangling buffer always, and to any buffer when the detector asks for it
+   * (splitWhenExpired). Returns false when there is no safe cut.
+   */
+  private shipSafeHead(oversized: boolean): boolean {
+    if (!this.detector.splitSafe) return false;
+    const dangling = this.detector.holdsForHead?.(this.buffer) ?? false;
+    if (!dangling && !this.detector.splitWhenExpired) return false;
+    // A buffer that already ends at a complete sentence ships whole.
+    if (!dangling && this.detector.looksComplete(this.buffer)) return false;
+    const split = this.detector.splitSafe(this.buffer);
+    if (!split) return false;
+    // Keeping a tail longer than the head would just defer the problem.
+    if (!dangling && !oversized && split.rest.length > split.head.length) return false;
+    this.cancelTimer();
+    this.dispatchText(split.head);
+    this.buffer = split.rest;
+    this.bufferStartedAt = Date.now(); // the tail gets its own budget
+    this.armTimer();
+    return true;
   }
 
   /** Queue one chunk for translation, assigning its spoken-order seq now. */

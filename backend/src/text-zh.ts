@@ -53,7 +53,56 @@ const ZH_DANGLING = [
   '第', '这个', '那个', '一个', '每一个',
   // verbs that introduce a quotation or a complement
   '说', '说过', '告诉我们', '认为', '觉得', '知道', '希望', '是',
+  // subordinate clauses whose main clause is still to come: "…的时候" (when),
+  // "…的话" (if), "在…当中" (in). The first real service cut at all three.
+  '的时候', '时候', '的话', '之后', '以后', '之前', '当中',
+  // linkers and comparisons that announce what follows
+  '这样才', '就像', '好像', '比如说', '比如', '例如', '也就是说', '也就是', '包括', '接下来',
+  '至于', '而', '并', '那么', '只是', '只有', '除了', '不只是', '甚至是',
+  // adverbs that sit directly before their verb
+  '就', '也', '都', '还', '又', '再', '却', '更', '最', '很', '非常', '一直', '常常', '总是',
+  '已经', '正在', '曾经', '不断的', '不断地',
+  // modal verbs awaiting the verb they govern
+  '能够', '可以', '应该', '应当', '愿意', '必须', '想要', '敢',
 ];
+
+/**
+ * Trailing characters that are dangling ONLY when they are not the end of an
+ * ordinary word: 会 is "will" but also 教会/聚会 (church, meeting), 要 is
+ * "must" but also 重要 (important), 像 is "like" but also 偶像 (idol), 才 is
+ * "only then" but also 刚才 (just now).
+ */
+const ZH_DANGLING_RE = [
+  /(?<![教聚大机开学社体协理议宴晚约])会$/,
+  /(?<![重主必纲摘紧需只])要$/,
+  /(?<![图偶影画肖雕想])像$/,
+  /(?<![刚人方])才$/,
+  /(?<![可才功本])能$/,
+];
+
+/**
+ * 呢 is a question particle only when the clause asks something. Far more
+ * often in a sermon it marks a topic mid-sentence — "今天的经文当中呢，…"
+ * ("in today's passage, …"), "爱主呢" ("as for loving the Lord, …") — and
+ * shipping there left the translator to invent the rest: a bare 爱主呢 came
+ * out as "Do they really love the Lord?".
+ */
+const ZH_QUESTION_WORDS = /什么|怎么|怎样|为什么|为何|谁|哪|多少|几|如何|是不是|有没有|对不对|要不要|会不会|能不能|还是|难道|吗/;
+
+/** Vocatives in prayer: "主啊" opens a petition, it does not end one. */
+const ZH_VOCATIVE = /(?:主|神|天父|父|上帝|耶稣|圣灵|父神|主耶稣)(?:啊|呀|阿)$/;
+
+/** The clause the buffer ends on: everything after the last comma or stop. */
+function lastClause(t: string): string {
+  const i = Math.max(...[...'，,。！？!?；;'].map((c) => t.lastIndexOf(c)));
+  return t.slice(i + 1);
+}
+
+/** Ends on 呢 as a topic marker rather than a question. */
+export function endsOnTopicMarkerZh(text: string): boolean {
+  const t = coreEnd(text);
+  return t.endsWith('呢') && !ZH_QUESTION_WORDS.test(lastClause(t).slice(0, -1));
+}
 
 /** Strip trailing whitespace and closing quotes/brackets. */
 function coreEnd(text: string): string {
@@ -98,7 +147,8 @@ export function endsDanglingZh(text: string): boolean {
   if (endsWithStrongTerminatorZh(t)) return false;
   if (endsWithCommaZh(t)) return true;
   if (endsWithIncompleteReferenceZh(t)) return true;
-  return ZH_DANGLING.some((w) => t.endsWith(w));
+  if (endsOnTopicMarkerZh(t) || ZH_VOCATIVE.test(t)) return true;
+  return ZH_DANGLING.some((w) => t.endsWith(w)) || ZH_DANGLING_RE.some((re) => re.test(t));
 }
 
 /**
@@ -142,7 +192,11 @@ export function splitSentencesZh(text: string): { sentences: string[]; remainder
 const ZH_SENTENCE_OPENERS = [
   '弟兄姊妹', '弟兄姐妹', '可是', '但是', '所以', '因此', '然后', '其实', '那么', '另外',
   '我想', '我们来', '我们一起', '请大家', '今天我', '好，', '好,',
+  '因为', '如果', '虽然', '当然', '比如说', '我们看到', '我们就看到', '那我们', '那今天',
 ];
+
+/** Tag questions close the sentence before them: "…是不是很难是吧" | "那…". */
+const ZH_TAGS = ['是吧', '对吧', '对不对', '是不是', '好不好', '对不对啊'];
 
 /**
  * When patience runs out on a dangling buffer, ship the longest prefix that
@@ -156,21 +210,34 @@ const ZH_SENTENCE_OPENERS = [
  */
 export function splitLastClauseZh(text: string, minHead = 6): { head: string; rest: string } | null {
   const t = text.trim();
-  const cuts = new Set<number>();
-  for (let i = 0; i < t.length; i++) {
-    if ('，,；;'.includes(t[i])) cuts.add(i + 1);
-    if ('了吗呢吧啊'.includes(t[i]) && i + 1 < t.length && !'，,。'.includes(t[i + 1])) cuts.add(i + 1);
+  // Strong cuts: a clause comma, the end of a tag question, or just before a
+  // word that opens a new sentence.
+  const strong = new Set<number>();
+  for (let i = 0; i < t.length; i++) if ('，,；;'.includes(t[i])) strong.add(i + 1);
+  for (const w of ZH_TAGS) {
+    for (let i = t.indexOf(w); i !== -1; i = t.indexOf(w, i + 1)) strong.add(i + w.length);
   }
   for (const w of ZH_SENTENCE_OPENERS) {
-    for (let i = t.indexOf(w, 1); i !== -1; i = t.indexOf(w, i + 1)) cuts.add(i);
+    for (let i = t.indexOf(w, 1); i !== -1; i = t.indexOf(w, i + 1)) strong.add(i);
   }
-  const ordered = [...cuts].sort((a, b) => b - a);
-  for (const at of ordered) {
-    if (at < minHead || at >= t.length) continue;
-    const head = t.slice(0, at).trim();
-    const rest = t.slice(at).trim();
-    const core = head.replace(/[，,；;]$/, '');
-    if (rest.length > 0 && !endsDanglingZh(core)) return { head, rest };
+  // Weak cuts, used only when no strong one works: after a sentence-final
+  // particle. Weak because 了 is just as often the verb suffix in the middle
+  // of a clause ("回到了 | 加利利", "returned to | Galilee"). Never 呢 or 啊:
+  // in running speech those are a topic marker or a vocative as often as an
+  // ending.
+  const weak = new Set<number>();
+  for (let i = 0; i < t.length; i++) {
+    if ('了吗吧'.includes(t[i]) && i + 1 < t.length && !'，,。'.includes(t[i + 1])) weak.add(i + 1);
+  }
+  for (const cuts of [strong, weak]) {
+    const ordered = [...cuts].sort((a, b) => b - a);
+    for (const at of ordered) {
+      if (at < minHead || at >= t.length) continue;
+      const head = t.slice(0, at).trim();
+      const rest = t.slice(at).trim();
+      const core = head.replace(/[，,；;]$/, '');
+      if (rest.length > 0 && !endsDanglingZh(core)) return { head, rest };
+    }
   }
   return null;
 }

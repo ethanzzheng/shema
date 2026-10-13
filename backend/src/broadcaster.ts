@@ -525,7 +525,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     const targetLang = cfg.targetLang;
     const [staged, loaded] = await Promise.all([
       session.broadcastId ? loadSessionTerms(session.broadcastId) : Promise.resolve([]),
-      loadChurchGlossary(session.roomId, targetLang),
+      loadChurchGlossary(session.roomId, targetLang, cfg.sourceLang),
     ]);
     if (!isResume && staged.length === 0) session.broadcastId = randomUUID();
     else session.ensureBroadcastId();
