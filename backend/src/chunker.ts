@@ -22,6 +22,7 @@
 
 import { looksComplete, splitSentences, endsWithDanglingHead, endsMidThought, splitLastKoreanClause } from './text';
 import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
+import { looksCompleteZh, splitSentencesZh, endsDanglingZh, splitLastClauseZh } from './text-zh';
 import { Direction } from './direction-config';
 
 // Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
@@ -65,11 +66,50 @@ interface BoundaryDetector {
    * so it never accretes like that.
    */
   clauseRelief?: (text: string) => { head: string; rest: string } | null;
+  /**
+   * Does the buffer end where the head noun / main verb has not arrived yet?
+   * Such a buffer gets doubled patience, and when patience runs out only a
+   * safe prefix ships (see splitSafe). Absent = no special hold (en-ko).
+   */
+  holdsForHead?: (text: string) => boolean;
+  /** Safe prefix to ship when a held buffer's patience expires. */
+  splitSafe?: (text: string) => { head: string; rest: string } | null;
+  /**
+   * How consecutive STT finals are joined. Chinese has no word spaces, and a
+   * stray space inside "约翰福音第 3章16节" is noise to every heuristic.
+   */
+  joiner: string;
+  /** Below this many characters an incomplete buffer is a shard. */
+  tinyChars: number;
 }
 
 const BOUNDARY_DETECTORS: Record<Direction, BoundaryDetector> = {
-  'ko-en': { looksComplete, splitSentences },
-  'en-ko': { looksComplete: looksCompleteEn, splitSentences: splitSentencesEn, clauseRelief: splitLastClause },
+  'ko-en': {
+    looksComplete,
+    splitSentences,
+    holdsForHead: (t) => endsWithDanglingHead(t) || endsMidThought(t),
+    splitSafe: splitLastKoreanClause,
+    joiner: ' ',
+    tinyChars: TINY_FRAGMENT_CHARS,
+  },
+  'en-ko': {
+    looksComplete: looksCompleteEn,
+    splitSentences: splitSentencesEn,
+    clauseRelief: splitLastClause,
+    joiner: ' ',
+    tinyChars: TINY_FRAGMENT_CHARS,
+  },
+  // Mandarin packs a whole sentence into very few characters — 我们要彼此相爱
+  // is seven — so the shard threshold is far lower than Korean's 25. At 10, a
+  // complete seven-character sentence was held 10s as if it were a fragment.
+  'zh-en': {
+    looksComplete: looksCompleteZh,
+    splitSentences: splitSentencesZh,
+    holdsForHead: endsDanglingZh,
+    splitSafe: splitLastClauseZh,
+    joiner: '',
+    tinyChars: 6,
+  },
 };
 
 interface ModeConfig {
@@ -109,6 +149,13 @@ const MODE_CONFIG: Record<Direction, Record<'fast' | 'smooth', ModeConfig>> = {
   'ko-en': {
     fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 260, maxHoldMs: 8000 },
     smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 400, maxHoldMs: 14000 },
+  },
+  // Mandarin is SVO, so a cut costs less than in Korean and completeMs/
+  // incompleteMaxMs match ko-en. maxChars is far lower: spoken Mandarin runs
+  // ~4-5 characters a second, so 400 characters would be ~90s of speech.
+  'zh-en': {
+    fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 120, maxHoldMs: 8000 },
+    smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 180, maxHoldMs: 14000 },
   },
   'en-ko': {
     fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340, softChars: 180, maxHoldMs: 9000 },
@@ -194,7 +241,7 @@ export class KoreanChunker {
     this.lastFinalAt = Date.now();
 
     if (!this.buffer) this.bufferStartedAt = Date.now();
-    this.buffer += (this.buffer ? ' ' : '') + fresh;
+    this.buffer += (this.buffer ? this.detector.joiner : '') + fresh;
     this.cancelTimer();
 
     // Extract fully-punctuated sentences NOW. During a rapid ramble the buffer
@@ -206,14 +253,20 @@ export class KoreanChunker {
     if (sentences.length > 0) {
       let group = '';
       for (const s of sentences) {
-        group += (group ? ' ' : '') + s;
+        group += (group ? this.detector.joiner : '') + s;
         if (group.length >= MIN_DISPATCH_CHARS) {
           this.dispatchText(group);
           group = '';
         }
       }
       // An undersized trailing group rides along with the remainder.
-      this.buffer = group ? group + (remainder ? ' ' + remainder : '') : remainder;
+      this.buffer = group ? group + (remainder ? this.detector.joiner + remainder : '') : remainder;
+      // If everything older shipped, what is left is NEW speech and gets a
+      // fresh hold budget. Without this the tail inherited the start time of
+      // the long buffer it was split from, found maxHoldMs already spent, and
+      // shipped instantly — "另外," was spoken alone as "Also" 773ms after
+      // it arrived.
+      if (!group) this.bufferStartedAt = Date.now();
     }
     if (!this.buffer) return;
 
@@ -299,14 +352,14 @@ export class KoreanChunker {
     let delay: number;
     if (this.detector.looksComplete(this.buffer)) {
       delay = this.cfg.completeMs;
-    } else if (this.direction === 'ko-en' && (endsWithDanglingHead(this.buffer) || endsMidThought(this.buffer))) {
+    } else if (this.detector.holdsForHead?.(this.buffer)) {
       // The head noun this modifier belongs to has not been spoken yet.
       // Shipping now is what produced the church/self-centeredness inversion,
       // so wait harder for it than for a merely abrupt ending.
       delay = this.cfg.incompleteMaxMs * 2;
     } else {
       delay =
-        this.buffer.length < TINY_FRAGMENT_CHARS
+        this.buffer.length < this.detector.tinyChars
           ? this.cfg.incompleteMaxMs * 2 // graded patience: hold tiny shards longer
           : this.cfg.incompleteMaxMs;
     }
@@ -325,8 +378,8 @@ export class KoreanChunker {
    * to the wrong referent.
    */
   private expirePatience(): void {
-    if (this.direction === 'ko-en' && (endsWithDanglingHead(this.buffer) || endsMidThought(this.buffer))) {
-      const split = splitLastKoreanClause(this.buffer);
+    if (this.detector.holdsForHead?.(this.buffer) && this.detector.splitSafe) {
+      const split = this.detector.splitSafe(this.buffer);
       if (split) {
         this.cancelTimer();
         this.dispatchText(split.head);

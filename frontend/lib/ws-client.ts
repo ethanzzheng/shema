@@ -47,7 +47,7 @@ export interface AudioEndMsg {
   seq: number;
 }
 
-export type Direction = 'ko-en' | 'en-ko';
+export type Direction = 'ko-en' | 'en-ko' | 'zh-en';
 
 export interface StatusMsg {
   type: 'status';

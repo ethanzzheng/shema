@@ -112,6 +112,13 @@ input, select, textarea {
   font-family: var(--font-serif, serif);
 }
 
+/* Mandarin text. System Chinese faces rather than another web font: Noto
+   Serif KR does contain Han characters, but draws them in Korean glyph forms,
+   which reads as subtly wrong to a Chinese congregation. */
+.serif-zh {
+  font-family: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif;
+}
+
 .prose-serif {
   font-family: var(--font-display, serif), var(--font-serif, serif);
 }

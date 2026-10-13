@@ -18,7 +18,7 @@
 
 import { WebSocket } from 'ws';
 import { Session } from './session';
-import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS } from './stt';
+import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS, DEFAULT_KEYTERMS_ZH } from './stt';
 import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
@@ -32,6 +32,7 @@ import { ElevenLabsTTS } from './tts';
 import { isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, detectVerseRange, correctVerseAgainstRange, ScriptureRef } from './scripture';
 import { detectReferenceEn } from './scripture-en';
+import { detectReferenceZh } from './scripture-zh';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
 import {
@@ -40,6 +41,7 @@ import {
   normalizeDirection,
   resolveTtsModelId,
   resolveTtsVoiceId,
+  resolveStt,
 } from './direction-config';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
@@ -120,7 +122,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       sourceText: job.korean,
       sermon: job.sermon,
       direct: job.direct,
-      lang: session.direction === 'en-ko' ? 'ko' : 'en',
+      lang: getDirectionConfig(session.direction).targetLang,
       timestampMs: job.chunkStart,
     });
 
@@ -449,22 +451,28 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   /** Tear down THIS connection's pipeline (STT + chunker), draining first. */
   function teardownPipeline(): void {
     const c = chunker;
+    const s = stt;
     chunker = null;
-    if (c) {
-      // Drain queued + in-flight translations before teardown. Destroying
-      // immediately used to clear the pending queue and silently drop the
-      // final chunk(s) whenever two translations were still in flight.
-      c.forceFlush()
-        .catch(() => {})
-        .finally(() => c.destroy());
-    }
-    stt?.disconnect();
     stt = null;
+    // Ask Deepgram for whatever the pastor was still saying BEFORE draining
+    // the chunker, and feed those last finals in by hand: the module-level
+    // chunker is already null (so a fresh start can't collide with this
+    // teardown), which means the normal onTranscript path would drop them.
+    // Then drain queued + in-flight translations — destroying immediately used
+    // to clear the pending queue and drop the final chunk(s).
+    void (async () => {
+      const late = s ? await s.finish().catch(() => [] as string[]) : [];
+      if (!c) return;
+      for (const text of late) await c.feed(text, true).catch(() => {});
+      await c.forceFlush().catch(() => {});
+      c.destroy();
+    })();
   }
 
   // ── Start broadcast session ────────────────────────────────────────────────
   async function startSession(mode: 'fast' | 'smooth', direction: Direction): Promise<void> {
     const cfg = getDirectionConfig(direction);
+    const sttCfg = resolveStt(direction);
     if (!cfg.implemented) {
       throw new Error(`Translation direction "${direction}" is not implemented yet.`);
     }
@@ -514,7 +522,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // Concurrent, not sequential: if the database is unreachable these each
     // wait out a connection timeout, and doing them in turn would double the
     // delay before a service can go on air.
-    const targetLang = direction === 'en-ko' ? 'ko' : 'en';
+    const targetLang = cfg.targetLang;
     const [staged, loaded] = await Promise.all([
       session.broadcastId ? loadSessionTerms(session.broadcastId) : Promise.resolve([]),
       loadChurchGlossary(session.roomId, targetLang),
@@ -540,7 +548,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     transcript = session.demo ? null : await TranscriptWriter.open({
       churchId: session.roomId,
       sessionId: session.broadcastId as string,
-      sourceLang: cfg.sttLanguage,
+      sourceLang: cfg.sourceLang,
       targetLangs: [targetLang],
     });
     if (session.demo) {
@@ -559,7 +567,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       // force for the very next sentence.
       getLiveTerms: () => session.glossaryLive,
     });
-    detectRef = direction === 'en-ko' ? detectReferenceEn : detectReference;
+    // Each source language needs its own detector; the shape they return is
+    // shared, so retrieval and the announced-verse prompt block are reused.
+    detectRef =
+      cfg.sourceLang === 'en' ? detectReferenceEn : cfg.sourceLang === 'zh' ? detectReferenceZh : detectReference;
     currentRef = null;
     refAgeChunks = 0;
     emitter.reset();
@@ -592,7 +603,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // the next broadcast.
     const { keyterms, dropped } = budgetKeyterms(
       session.glossaryAll.map((t) => t.sourceTerm),
-      DEFAULT_STT_KEYTERMS,
+      // Recognition bias must be in the SPOKEN language. Korean keyterms on
+      // Mandarin audio would only bias it toward words nobody is saying.
+      cfg.sourceLang === 'zh' ? DEFAULT_KEYTERMS_ZH : DEFAULT_STT_KEYTERMS,
     );
     if (dropped.length > 0) {
       console.warn(
@@ -602,7 +615,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
 
     stt = new DeepgramSTT({
       apiKey: DEEPGRAM_API_KEY,
-      language: cfg.sttLanguage,
+      language: sttCfg.language,
+      model: sttCfg.model,
+      smartFormat: sttCfg.smartFormat,
       keyterms,
       onTranscript: async ({ text, isFinal, timestamp }) => {
         // Interims arrive many times per second and exist only to tell the

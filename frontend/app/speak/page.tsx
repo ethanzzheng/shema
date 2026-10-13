@@ -41,12 +41,35 @@ const OUTPUT_DEVICE_STORAGE_KEY = 'shema-output-device';
 const LOCAL_VOLUME_STORAGE_KEY = 'shema-local-volume';
 
 type Mode = 'fast' | 'smooth';
-type Direction = 'ko-en' | 'en-ko';
+type Direction = 'ko-en' | 'en-ko' | 'zh-en';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 
 const DIRECTION_LABELS: Record<Direction, string> = {
   'ko-en': '한국어 → EN',
   'en-ko': 'EN → 한국어',
+  'zh-en': '中文 → EN',
+};
+
+/** How each direction's source and translation columns are labelled and typeset. */
+const DIRECTION_META: Record<
+  Direction,
+  { title: string; srcLabel: string; tgtLabel: string; srcClass: string; srcLang: string; tgtClass: string; tgtLang: string }
+> = {
+  'ko-en': {
+    title: 'Korean sermon in, English audio out',
+    srcLabel: '한국어 · Spoken', tgtLabel: 'English · Sent to the pews',
+    srcClass: 'serif-kr', srcLang: 'ko', tgtClass: 'serif-en', tgtLang: 'en',
+  },
+  'en-ko': {
+    title: 'English sermon in, Korean audio out',
+    srcLabel: 'English · Spoken', tgtLabel: '한국어 · Sent to the pews',
+    srcClass: 'serif-en', srcLang: 'en', tgtClass: 'serif-kr', tgtLang: 'ko',
+  },
+  'zh-en': {
+    title: 'Mandarin sermon in, English audio out',
+    srcLabel: '中文 · Spoken', tgtLabel: 'English · Sent to the pews',
+    srcClass: 'serif-zh', srcLang: 'zh-Hans', tgtClass: 'serif-en', tgtLang: 'en',
+  },
 };
 
 interface DebugPanel {
@@ -229,7 +252,7 @@ export default function SpeakPage() {
   // Restore the last-used direction (persists across services).
   useEffect(() => {
     const saved = window.localStorage.getItem(DIRECTION_STORAGE_KEY);
-    if (saved === 'ko-en' || saved === 'en-ko') {
+    if (saved === 'ko-en' || saved === 'en-ko' || saved === 'zh-en') {
       setDirection(saved);
       directionRef.current = saved;
     }
@@ -832,7 +855,7 @@ export default function SpeakPage() {
   };
 
   // ── Derived ──────────────────────────────────────────────────────────────
-  const srcIsKorean = direction === 'ko-en';
+  const meta = DIRECTION_META[direction];
   const hearing = broadcasting && debug.sttConnected;
   const onAir = broadcasting && connState === 'connected';
 
@@ -994,13 +1017,13 @@ export default function SpeakPage() {
           <div style={railCard}>
             <span style={railLabel}>Direction</span>
             <div className="toggle-group">
-              {(['ko-en', 'en-ko'] as const).map((d) => (
+              {(['ko-en', 'en-ko', 'zh-en'] as const).map((d) => (
                 <button
                   key={d}
                   className={`toggle-opt${direction === d ? ' active' : ''}`}
                   onClick={() => handleDirectionChange(d)}
                   disabled={broadcasting}
-                  title={d === 'ko-en' ? 'Korean sermon in, English audio out' : 'English sermon in, Korean audio out'}
+                  title={DIRECTION_META[d].title}
                   style={{ fontFamily: 'var(--font-sans)', fontSize: 12.5, textTransform: 'none', letterSpacing: 0 }}
                 >
                   {DIRECTION_LABELS[d]}
@@ -1375,10 +1398,10 @@ export default function SpeakPage() {
               }}
             >
               <span style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.42)' }}>
-                {srcIsKorean ? '한국어 · Spoken' : 'English · Spoken'}
+                {meta.srcLabel}
               </span>
               <span style={{ ...MONO, fontSize: 9, color: 'var(--gold)' }}>
-                {srcIsKorean ? 'English · Sent to the pews' : '한국어 · Sent to the pews'}
+                {meta.tgtLabel}
               </span>
             </div>
 
@@ -1404,15 +1427,15 @@ export default function SpeakPage() {
                       }}
                     >
                       <span
-                        className={srcIsKorean ? 'serif-kr' : 'serif-en'}
-                        lang={srcIsKorean ? 'ko' : 'en'}
+                        className={meta.srcClass}
+                        lang={meta.srcLang}
                         style={{ fontSize: 15, lineHeight: 1.65, color: 'rgba(244,241,234,0.75)' }}
                       >
                         {entry.korean}
                       </span>
                       <span
-                        className={srcIsKorean ? 'serif-en' : 'serif-kr'}
-                        lang={srcIsKorean ? 'en' : 'ko'}
+                        className={meta.tgtClass}
+                        lang={meta.tgtLang}
                         style={{ fontSize: 19, lineHeight: 1.55, color: 'var(--cream)' }}
                       >
                         {entry.sermon}
@@ -1438,8 +1461,8 @@ export default function SpeakPage() {
                     }}
                   >
                     <span
-                      className={srcIsKorean ? 'serif-kr' : 'serif-en'}
-                      lang={srcIsKorean ? 'ko' : 'en'}
+                      className={meta.srcClass}
+                      lang={meta.srcLang}
                       style={{ fontSize: 15, lineHeight: 1.65, fontStyle: 'italic', color: 'rgba(244,241,234,0.6)' }}
                     >
                       {liveKorean}

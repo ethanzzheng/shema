@@ -76,7 +76,7 @@ export default function ListenerView({ church }: { church: string }) {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
   // Output language of the broadcast (from status messages); ko-en = English.
-  const [direction, setDirection] = useState<'ko-en' | 'en-ko'>('ko-en');
+  const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en'>('ko-en');
   const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
   // Caption size — accessibility for older members. Persisted per device.
   const [textSize, setTextSize] = useState<'s' | 'm' | 'l'>('m');
@@ -383,7 +383,7 @@ export default function ListenerView({ church }: { church: string }) {
       switch (msg.type) {
         case 'status': {
           const s = msg as { type: 'status'; active?: boolean; direction?: string };
-          if (s.direction === 'ko-en' || s.direction === 'en-ko') setDirection(s.direction);
+          if (s.direction === 'ko-en' || s.direction === 'en-ko' || s.direction === 'zh-en') setDirection(s.direction);
           if (typeof s.active === 'boolean') {
             setBroadcastActive(s.active);
             if (s.active) {

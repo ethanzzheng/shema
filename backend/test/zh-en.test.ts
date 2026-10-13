@@ -1,0 +1,256 @@
+import { test, mock } from 'node:test';
+import assert from 'node:assert/strict';
+import { detectReferenceZh, parseChineseNumber } from '../src/scripture-zh';
+import {
+  splitSentencesZh,
+  looksCompleteZh,
+  endsDanglingZh,
+  endsWithIncompleteReferenceZh,
+  splitLastClauseZh,
+} from '../src/text-zh';
+import { KoreanChunker } from '../src/chunker';
+import { getDirectionConfig, normalizeDirection, resolveStt } from '../src/direction-config';
+import { SYSTEM_PROMPT_ZH_EN, SYSTEM_PROMPT_KO_EN, SYSTEM_PROMPT_EN_KO } from '../src/translation';
+
+// ── Direction config ──────────────────────────────────────────────────────
+
+test('zh-en: Mandarin in, English out, and never Cantonese', () => {
+  const cfg = getDirectionConfig('zh-en');
+  assert.equal(cfg.sourceLang, 'zh');
+  assert.equal(cfg.targetLang, 'en');
+  assert.equal(normalizeDirection('zh-en'), 'zh-en');
+  const stt = resolveStt('zh-en', {});
+  assert.equal(stt.model, 'nova-3');
+  // zh-HK is Cantonese; Mandarin must default to a Mandarin code.
+  assert.ok(['zh', 'zh-CN', 'zh-Hans'].includes(stt.language), stt.language);
+  // smart_format mangles Chinese numerals ("罗马书8章二十8节").
+  assert.equal(stt.smartFormat, false);
+  // A Taiwanese congregation can switch to Traditional without a code change.
+  assert.equal(resolveStt('zh-en', { STT_LANGUAGE_ZH: 'zh-TW' }).language, 'zh-TW');
+});
+
+test('adding zh-en left the existing directions alone', () => {
+  assert.equal(resolveStt('ko-en', {}).language, 'ko');
+  assert.equal(resolveStt('ko-en', {}).smartFormat, true);
+  assert.equal(normalizeDirection('anything-else'), 'ko-en');
+  assert.equal(getDirectionConfig('en-ko').targetLang, 'ko');
+});
+
+// ── Scripture ─────────────────────────────────────────────────────────────
+
+test('detectReferenceZh: spoken and digit forms', () => {
+  assert.deepEqual(detectReferenceZh('我们一起来读约翰福音第三章第十六节'), { book: 'John', chapter: 3, verse: 16 });
+  assert.deepEqual(detectReferenceZh('约翰福音3章16节'), { book: 'John', chapter: 3, verse: 16 });
+  assert.deepEqual(detectReferenceZh('罗马书第五章第八节说'), { book: 'Romans', chapter: 5, verse: 8 });
+  assert.deepEqual(detectReferenceZh('以赛亚五十三章五节'), { book: 'Isaiah', chapter: 53, verse: 5 });
+});
+
+test('detectReferenceZh: Psalms are counted in 篇, not 章', () => {
+  assert.deepEqual(detectReferenceZh('诗篇二十三篇'), { book: 'Psalms', chapter: 23 });
+});
+
+test('detectReferenceZh: mixed numerals from the recogniser', () => {
+  // Observed with smart_format on: digits and numerals interleaved.
+  assert.deepEqual(detectReferenceZh('罗马书8章二十8节'), { book: 'Romans', chapter: 8, verse: 28 });
+});
+
+test('detectReferenceZh: a range anchors on its first verse', () => {
+  assert.deepEqual(detectReferenceZh('约翰福音三章十六到十八节'), { book: 'John', chapter: 3, verse: 16 });
+});
+
+test('detectReferenceZh: Traditional input', () => {
+  assert.deepEqual(detectReferenceZh('創世記一章一節'), { book: 'Genesis', chapter: 1, verse: 1 });
+});
+
+test('detectReferenceZh: ordinary words are not references', () => {
+  // The Mandarin twins of the 구절 trap.
+  assert.equal(detectReferenceZh('我们再看一节经文'), null); // "one more verse", not verse 1
+  assert.equal(detectReferenceZh('这节经文'), null);
+  assert.equal(detectReferenceZh('今天是我们的节日'), null); // festival
+  assert.equal(detectReferenceZh('罗马帝国很强大'), null); // Rome, not Romans
+  assert.equal(detectReferenceZh('他来了二十八年'), null);
+});
+
+test('detectReferenceZh: short book names need a chapter to count', () => {
+  assert.deepEqual(detectReferenceZh('马太五章三节'), { book: 'Matthew', chapter: 5, verse: 3 });
+  assert.equal(detectReferenceZh('马太是一个税吏'), null); // Matthew the person
+});
+
+test('parseChineseNumber', () => {
+  assert.equal(parseChineseNumber('十六'), 16);
+  assert.equal(parseChineseNumber('二十八'), 28);
+  assert.equal(parseChineseNumber('一百一十九'), 119);
+  assert.equal(parseChineseNumber('两'), 2);
+  assert.equal(parseChineseNumber('一二'), null); // two words, not a number
+});
+
+// ── Sentence grammar ──────────────────────────────────────────────────────
+
+test('splitSentencesZh: splits with no whitespace after the terminator', () => {
+  // The Korean splitter requires a space after 。 and returned ZERO sentences
+  // for this — which would have held every Mandarin buffer until timeout.
+  const r = splitSentencesZh('弟兄姊妹们，平安。今天我们一起来读约翰福音。神爱世人');
+  assert.deepEqual(r.sentences, ['弟兄姊妹们，平安。', '今天我们一起来读约翰福音。']);
+  assert.equal(r.remainder, '神爱世人');
+});
+
+test('splitSentencesZh: half-width punctuation from the recogniser', () => {
+  const r = splitSentencesZh('你们知道吗?我们来祷告');
+  assert.deepEqual(r.sentences, ['你们知道吗?']);
+});
+
+test('looksCompleteZh / endsDanglingZh', () => {
+  assert.equal(looksCompleteZh('神爱世人。'), true);
+  assert.equal(looksCompleteZh('你们知道吗'), true); // sentence-final particle
+  assert.equal(looksCompleteZh('阿们'), true);
+  // Modifier before its head noun — the meaning-inversion case.
+  assert.equal(endsDanglingZh('这是一种在我们还作罪人的时候就已经临到我们身上的'), true);
+  assert.equal(endsDanglingZh('因为'), true);
+  assert.equal(endsDanglingZh('我们要把'), true);
+  assert.equal(endsDanglingZh('弟兄姊妹，'), true);
+  assert.equal(endsDanglingZh('神爱世人。'), false);
+});
+
+test('endsWithIncompleteReferenceZh: hold a citation until its verse arrives', () => {
+  // Deepgram was observed splitting "约翰福音第" and "3章16节" into SEPARATE finals.
+  assert.equal(endsWithIncompleteReferenceZh('我们一起来读约翰福音第'), true);
+  assert.equal(endsWithIncompleteReferenceZh('约翰福音第三章'), true);
+  assert.equal(endsWithIncompleteReferenceZh('约翰福音第三章第十六节'), false);
+});
+
+test('splitLastClauseZh: ships a safe head, keeps the dangling tail', () => {
+  const s = splitLastClauseZh('我们常常听到这节经文，这是一种临到我们身上的');
+  assert.ok(s);
+  assert.equal(s!.head, '我们常常听到这节经文，');
+  assert.equal(s!.rest, '这是一种临到我们身上的');
+});
+
+// ── Chunker behaviour ─────────────────────────────────────────────────────
+
+const flush = () => new Promise((r) => setImmediate(r));
+
+function makeZh(mode: 'fast' | 'smooth' = 'smooth') {
+  const dispatched: string[] = [];
+  let seq = 0;
+  const chunker = new KoreanChunker({
+    mode,
+    direction: 'zh-en',
+    nextSeq: () => ++seq,
+    onChunk: async (text) => {
+      dispatched.push(text);
+    },
+  });
+  return { chunker, dispatched };
+}
+
+test('zh chunker: complete sentences dispatch immediately and join without spaces', async () => {
+  const { chunker, dispatched } = makeZh();
+  await chunker.feed('弟兄姊妹们，平安。', true);
+  await chunker.feed('今天我们一起来读经。', true);
+  await flush();
+  assert.ok(dispatched.length >= 1);
+  assert.ok(!dispatched.join('').includes(' '), `Chinese must not gain spaces: ${JSON.stringify(dispatched)}`);
+});
+
+test('zh chunker VALIDATION: a scripture reference split across finals ships whole', async () => {
+  // Exactly what Deepgram did: "…约翰福音第" then "3章16节" as separate finals.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeZh();
+  try {
+    await chunker.feed('今天我们一起来读约翰福音第', true);
+    mock.timers.tick(6000); // past the ordinary incomplete timeout
+    await flush();
+    assert.equal(dispatched.length, 0, `shipped a citation with no chapter or verse: ${JSON.stringify(dispatched)}`);
+    await chunker.feed('3章16节。', true);
+    mock.timers.tick(1000);
+    await flush();
+    assert.ok(dispatched.some((d) => d.includes('约翰福音第3章16节')), JSON.stringify(dispatched));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('zh chunker VALIDATION: a 的-modifier is not shipped without its head noun', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeZh();
+  try {
+    await chunker.feed('这是一种在我们还作罪人的时候就已经临到我们身上的', true);
+    mock.timers.tick(6000);
+    await flush();
+    assert.equal(dispatched.length, 0, 'shipped a modifier with nothing to modify');
+    await chunker.feed('爱。', true);
+    mock.timers.tick(1000);
+    await flush();
+    assert.ok(dispatched.some((d) => d.endsWith('身上的爱。')), JSON.stringify(dispatched));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('zh chunker CONTROL: a complete sentence is not delayed', async () => {
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeZh();
+  try {
+    await chunker.feed('我们要彼此相爱', true); // no punctuation, no dangling token
+    mock.timers.tick(5200);
+    await flush();
+    assert.equal(dispatched.length, 1, 'an undangling buffer must ship at the normal timeout');
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+// ── Prompt ────────────────────────────────────────────────────────────────
+
+test('zh-en prompt carries the Mandarin-specific rules', () => {
+  for (const rule of ['弟兄姊妹', '交通', '信息', '慕道友', 'PRONOUNS ARE A GUESS', '一节经文', 'NEVER output Chinese characters', '篇']) {
+    assert.ok(SYSTEM_PROMPT_ZH_EN.includes(rule), `missing: ${rule}`);
+  }
+});
+
+test('no prompt asks for JSON while the parser expects plain text', () => {
+  for (const p of [SYSTEM_PROMPT_ZH_EN, SYSTEM_PROMPT_KO_EN, SYSTEM_PROMPT_EN_KO]) {
+    assert.ok(!p.includes('must be the JSON object'), 'a stale JSON instruction contradicts the plain-text contract');
+  }
+});
+
+test('REGRESSION: a tail left after splitting off sentences gets its own patience', async () => {
+  // Live in the Mandarin run: a comma-chained announcement was held for most
+  // of maxHoldMs, then "…欢迎大家来参加。另外," arrived. The sentence
+  // dispatched, and the leftover "另外," inherited the ORIGINAL buffer's start
+  // time — its budget was already spent, so "Also" was spoken on its own.
+  // The same code path serves Korean.
+  mock.timers.enable({ apis: ['setTimeout', 'Date'] });
+  const { chunker, dispatched } = makeZh();
+  try {
+    await chunker.feed('弟兄姊妹们，平安，欢迎大家今天来到我们的主日崇拜，', true);
+    mock.timers.tick(6000);
+    await chunker.feed('在讲道之前有几个报告，下个礼拜六晚上七点有查经聚会，', true);
+    mock.timers.tick(7300); // ~13.3s held — the log showed the tail then shipping 773ms later
+    await flush();
+    assert.equal(dispatched.length, 0, 'comma-chained speech should still be held');
+    await chunker.feed('欢迎大家来参加。另外，', true);
+    mock.timers.tick(1500);
+    await flush();
+    assert.ok(dispatched.some((d) => d.endsWith('欢迎大家来参加。')), JSON.stringify(dispatched));
+    assert.ok(!dispatched.some((d) => d.trim() === '另外，'), `the dangling tail shipped alone: ${JSON.stringify(dispatched)}`);
+    await chunker.feed('师母这个礼拜在医院里。', true);
+    mock.timers.tick(1000);
+    await flush();
+    assert.ok(dispatched.some((d) => d.startsWith('另外，师母')), JSON.stringify(dispatched));
+  } finally {
+    mock.timers.reset();
+  }
+});
+
+test('splitLastClauseZh: finds a cut in an unpunctuated run-on', () => {
+  // Real recogniser output from a test voice that got almost no punctuation.
+  // It reached the hold cap ending on the coverb 在 with no comma to cut at,
+  // shipped whole, and the translator finished the sentence on its own.
+  const s = splitLastClauseZh(
+    '我们常常听到这节经文听到几乎都可以背出来了可是我想问大家一个问题这份爱是一种什么样子爱这不是一种因为我们做着好才做着爱这是一种在',
+  );
+  assert.ok(s, 'there must be a safe cut');
+  assert.ok(!s!.head.endsWith('在'), s!.head);
+  assert.ok(s!.rest.endsWith('这是一种在'), 'the dangling tail stays buffered');
+});

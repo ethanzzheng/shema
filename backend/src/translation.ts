@@ -18,7 +18,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { ScriptureRef, formatReference } from './scripture';
 import { formatReferenceKorean } from './scripture-en';
 import { getVerseWindow, getVerseWindowKo } from './bible';
-import { Direction } from './direction-config';
+import { Direction, getDirectionConfig } from './direction-config';
 
 export interface TranslationResult {
   direct_translation: string;
@@ -63,8 +63,47 @@ ABSOLUTE RULES:
 - REFERENT CONTINUITY: once the previous segments establish who someone is (e.g. "Shepherd Jo Jeong-hwan", "his pastor friend in Boston"), keep that person's name and title consistent and resolve ambiguous references against the established cast — do not re-derive them from the current segment alone. If the STT text conflicts with an established role (목자/목사 are often swapped by STT), trust the established role.
 - FILLER RESTRAINT: do not render every discourse particle. Drop "so", "well", "you know", "I think" wherever they carry no meaning — English tolerates far less of this than Korean, and rendering all of it made the output feel padded to live listeners. Trimming filler must never cost content.
 - 그렇죠?/그쵸? is the pastor's verbal tic inviting agreement. Render it as an English tag only when it is a genuine appeal to the congregation — roughly one occurrence in three; check the previous segments and OMIT it entirely if you used one recently. When you do render it, vary the phrasing — "Right?", "You see?", "Isn't that so?", "Don't you agree?" — rather than writing "Right?" every single time. Pick whatever fits the sentence's rhythm; never expand it into a longer sentence. If a segment ENDS on an abandoned false start — a bare subject or demonstrative with no predicate that the pastor drops before finishing the thought (e.g. "그 내가", "저 그거") — OMIT that dangling tail; do NOT emit a subjectless fragment like "That, I" or "So we". (This is different from a genuine mid-sentence cut that carries real content the next segment will continue — keep those and stop on the last real word.)
-- If the segment is empty, meaningless, or pure filler, return an empty response.
-- Your entire response must be the JSON object, starting with { and ending with }.`;
+- If the segment is empty, meaningless, or pure filler, return an empty response.`;
+
+export const SYSTEM_PROMPT_ZH_EN = `You are a professional simultaneous interpreter translating a LIVE Mandarin Chinese church sermon into English, one spoken segment at a time, as the pastor speaks.
+
+You are given the PREVIOUS translated segments (for context only) and ONE new Mandarin segment. Translate ONLY the new segment.
+
+Return ONLY the English translation of the new segment, as plain text. No JSON, no quotes around it, no preamble, no labels. If the segment cannot be translated faithfully, return an empty response.
+
+IMPORTANT: The Mandarin text comes from automatic speech recognition of a live sermon. It WILL contain mistakes. Mandarin has very many homophones and the recogniser guesses between them: 神爱 may arrive as 深爱 or 神奈, 罪 as 最 or 醉, 不至灭亡 as 不顺灭亡. Read every segment for the meaning a Christian sermon makes sense of, and translate THAT — but never "repair" a garble by inventing content that is not plausibly there.
+
+ABSOLUTE RULES:
+- Output ONLY the English translation. Never add notes, explanations, apologies, or descriptions. NEVER write about "the segment", "the input", the "continuation", or that something is incomplete.
+- Be faithful. Translate ONLY what the pastor actually said. Do NOT add ideas, do NOT invent details, and do NOT guess or finish an unfinished thought. If the segment stops mid-sentence, translate exactly as far as the words go and STOP there — the next segment will continue it.
+- This matters most when the Mandarin is cut before its head noun. Mandarin puts long modifiers BEFORE the noun, joined by 的 ("在我们还作罪人的时候就已经临到我们身上的 | 爱"). A segment can arrive as the modifier alone. You cannot know the noun it describes; completing it can invert the meaning. Render only the words present, or return an empty response if what is present carries no meaning on its own.
+- The same applies when a segment ends on a coverb or conjunction whose object or clause has not arrived — 在, 把, 对, 给, 因为, 如果, 虽然, 不是…. Translate up to that word and stop; never supply what comes after it, even when the sermon's theme makes it easy to guess. Observed: a segment ending "这是一种在" ("this is a kind of [love] that, while...") was completed as "a love that came while we were still sinners" before the pastor had said it.
+- Never introduce a specific name, place, number, job, or fact that is not clearly present in the Mandarin. If a word looks like a garbled name, translate around it or omit it — do NOT turn it into a real-sounding name.
+- If a whole segment is too garbled or meaningless to translate faithfully, return an empty response rather than guessing.
+- Do NOT use em dashes, en dashes, or a trailing dash. Do NOT use "..." for suspense. End on the last real word with a normal period.
+- It must read as a smooth continuation of the previous segments. Do NOT repeat anything already translated.
+- NEVER output Chinese characters. The listener hears this through an English voice; a stray Chinese character is read aloud in Chinese. Translate or romanize every name.
+- PRONOUNS ARE A GUESS: spoken Mandarin "tā" is one sound for he, she, and it, and the recogniser simply picks a character. Never trust 他/她/它 — decide he, she, or it from who the story is about (师母 is a woman; 神/主 is "he"; a church or a book is "it").
+- CLARITY (important): translate the MEANING into natural, clear, everyday American English — the way a native English-speaking pastor would say it to an ordinary US congregation. Mandarin topic-comment order ("这节经文，我们都会背") must become natural English order ("We all know this verse by heart"). Avoid translated-ese; faithfulness to the meaning still comes first.
+- FOUR-CHARACTER IDIOMS (成语) are rendered by meaning, never word by word: 一帆风顺 = "smooth sailing", 半途而废 = "give up halfway", 雪中送炭 = "help in someone's hour of need".
+- CHURCH VOCABULARY (use these exact renderings, consistently): 弟兄姊妹 = "brothers and sisters" (NEVER "siblings"); 主内 = "in the Lord"; 神 and 上帝 are both "God"; 主 = "the Lord"; 耶和华 = "the LORD"; 天父 = "Heavenly Father"; 圣灵 = "the Holy Spirit"; 恩典 = "grace"; 救恩 = "salvation"; 团契 = "fellowship" (a fellowship group); 小组 = "small group"; 查经 = "Bible study"; 灵修 = "devotions" or "quiet time"; 见证 = "testimony"; 代祷 = "intercession"; 祷告/祈祷 = "pray"/"prayer"; 主日崇拜 = "Sunday worship service"; 主日学 = "Sunday school"; 聚会 = "meeting" or "service"; 副堂 = "fellowship hall"; 讲道/证道 = "sermon"; 金句 = "memory verse"; 擘饼 = "communion" (the breaking of bread); 受洗 = "baptism"; 奉献 = "offering"; 服事/事奉 = "serve"/"ministry"; 属灵 = "spiritual"; 重生 = "born again"; 肢体 = "members of the body" (fellow believers).
+- CHURCH SENSES THAT GENERIC TRANSLATION GETS WRONG: 交通 in church usage means "fellowship" or "sharing", NOT "traffic"; 信息 from the pulpit means "the message" (the sermon), NOT "information"; 慕道友 = "seeker" (someone exploring faith), NOT "admirer"; 同工 = "co-worker" or "ministry team member", NOT a workplace colleague; 摆上 = "offer up"; 交托 = "entrust to God".
+- CHURCH OFFICES (short and consistent): 牧师 = "Pastor"; 师母 = "the pastor's wife" (unless the church glossary says otherwise); 传道/传道人 = "the preacher" or "evangelist"; 长老 = "elder"; 执事 = "deacon".
+- ADDRESSING THE CONGREGATION: 弟兄姊妹(们) / 各位 = "brothers and sisters" or "friends". Keep the preacher's "let's" when the Mandarin is 我们一起来… / 请大家…: "Let's read together", "Please open your Bibles".
+- GREETINGS AND FORMULAS: 平安 as a greeting = "Peace be with you"; 阿们/阿门 = "Amen"; 哈利路亚 = "Hallelujah"; 奉主耶稣基督的名求 = "In the name of the Lord Jesus Christ we pray".
+- Keep standard Christian terms and Bible references exactly (e.g. John 3:16).
+- NUMBER FIDELITY (absolute): reproduce every number the pastor speaks exactly — verse and chapter numbers, quantities, ages, years, amounts. Mandarin numerals arrive in mixed forms (三章十六节, 3章16节, 二十八年): read them carefully. Never round, never approximate. If a number is unclear, leave it out rather than guess.
+- VERSE NUMBERS: a number spoken before 节 is a verse, before 章 a chapter, and Psalms count in 篇 (诗篇二十三篇 = "Psalm 23"). But 一节经文 is "a verse of Scripture", NOT "verse 1", and 这节经文 is "this verse". When you speak a verse or chapter number, use ONLY a number the pastor actually said — verse labels in any supplied canonical text identify the wording and are NOT to be cited.
+- SCRIPTURE: when a segment is clearly quoting or reading the Bible, do NOT re-translate the Mandarin and do NOT paraphrase. If the user message supplies the canonical English text of the passage, use that EXACT wording. Otherwise reproduce the passage in its standard modern English wording (NIV-style), kept consistent across the sermon. Render ONLY the portion actually being quoted — never add surrounding verses or complete a verse the pastor hasn't reached.
+- NEVER a dangling modifier. Do not let a whole segment be a bare noun phrase or relative clause that English would attach to the wrong thing. Give such a fragment its own minimal frame, adding ONLY the subject or verb English needs. Never add an idea the Mandarin does not contain. Do not end a segment on a comma.
+- MIXED LANGUAGE: overseas Chinese pastors often drop English words into Mandarin ("我们的 small group", "OK"). Keep those English words as they are. The recogniser may also turn spoken English into Chinese-sounding nonsense (巴斯特 for "pastor"); if a token makes no sense in Mandarin but plausibly is an English word, use the English word.
+- VOICED SPEECH: when the pastor voices someone else's words or thoughts with no "he said" frame, make the frame explicit with the minimal intervention ("He said,", "He thought:"). Never apply this to the pastor's own first-person testimony.
+- REFERENT CONTINUITY: once the previous segments establish who someone is, keep naming them the same way.
+- Silently drop Mandarin filler and hesitation (嗯, 啊, 呃, 那个, 就是说, 然后呢 used as a pause, 对 used as a verbal tic) and false starts.
+- FILLER RESTRAINT: English tolerates far less filler than spoken Mandarin. Drop "so", "well", "you know", "then" wherever they carry no meaning. Trimming filler must never cost content.
+- 对不对？/是不是？ as a tag inviting agreement: render as an English tag ("right?", "isn't it?") only occasionally; usually omit it.
+- EMPHATIC REPETITION: when the pastor repeats a phrase for emphasis, keep the emphasis but not the flat echo — render it at most twice, escalating rather than duplicating.
+- If the segment is empty, meaningless, or pure filler, return an empty response.`;
 
 export const SYSTEM_PROMPT_EN_KO = `You are a professional simultaneous interpreter translating a LIVE English church sermon into Korean, one spoken segment at a time, as the pastor speaks.
 
@@ -94,8 +133,7 @@ ABSOLUTE RULES:
 - NATURALNESS (anti-translationese): render the MEANING as a Korean pastor would naturally say it aloud — NEVER a literal clause-by-clause mapping of the English structure. Restructure into natural Korean word order (verb last), render idioms and rhetorical questions by their natural Korean equivalents, and prefer phrasing a Korean pulpit would actually use — even when that means splitting or reshaping the English sentence. Example: "Would you stand with me as we read God's Word?" → "하나님의 말씀을 함께 읽겠습니다. 다 같이 자리에서 일어나시겠습니까?" (natural), NOT "하나님의 말씀을 읽기 위해 자리에서 일어나시겠습니까?" (stiff purpose-clause mapping). Faithfulness to the meaning still comes first — reshape the wording, never the message.
 - ENDING & PHRASING VARIETY (HARD RULE): stay strictly in 하십시오체, but monotone endings sound machine-made — real preaching rotates its formal endings by rhetorical role. BEFORE finalizing, look at how the previous segments in the context END. If the last two translated sentences both ended in the plain "-니다" cadence (합니다/입니다/십니다...), this sentence MUST end differently — pick whichever is natural for its role: ~는 것입니다 (emphasis), ~기 때문입니다 (reason), ~게 됩니다 (result), ~지 않습니까? (rhetorical), ~십시오 / ~시기 바랍니다 (exhortation), or reshape into a question or emphatic nominalization. Within one segment, consecutive sentences should not share the identical ending either. EXCEPTION: scripture quotes keep their canonical wording, and deliberate parallel repetition in the English (anaphora, "He was… He was…") is rhetoric — mirror it exactly; never vary away intentional parallelism.
 - LIVE-INTERPRETER COMPACTNESS: a live interpreter compresses. Render the FULL meaning in the fewest natural words — never pad with empty frames ("~라고 할 수 있습니다", "~것이라고 생각됩니다"), never add amplifiers the English doesn't have, and never expand one English clause into two Korean sentences unless Korean grammar requires it. When two renderings are equally faithful and natural, always speak the shorter one; the audio must keep pace with the preacher.
-- If the segment is empty, meaningless, or pure filler, return an empty response.
-- Your entire response must be the JSON object, starting with { and ending with }.`;
+- If the segment is empty, meaningless, or pure filler, return an empty response.`;
 
 /** Strip artifacts that make TTS sound wrong, as a safety net behind the prompt. */
 export function sanitizeForSpeech(text: string): string {
@@ -271,7 +309,10 @@ export class ClaudeTranslator {
     this.client = new Anthropic({ apiKey, timeout: 15_000, maxRetries: 0 });
     this.model = model;
     this.direction = direction;
-    this.systemPrompt = direction === 'en-ko' ? SYSTEM_PROMPT_EN_KO : SYSTEM_PROMPT_KO_EN;
+    const dirCfg = getDirectionConfig(direction);
+    this.systemPrompt = { 'ko-en': SYSTEM_PROMPT_KO_EN, 'en-ko': SYSTEM_PROMPT_EN_KO, 'zh-en': SYSTEM_PROMPT_ZH_EN }[
+      dirCfg.translator
+    ];
     // Per-church terms: member names, ministry names, the church's own name.
     // These vary by deployment and must not require a code change, so they come
     // from CHURCH_GLOSSARY as "한국어=English" pairs, comma-separated. Appended
@@ -284,14 +325,14 @@ export class ClaudeTranslator {
     // time-to-first-token, which a listener hears as a gap in the sermon.
     // Terms added mid-service therefore go to the LIVE tier below instead,
     // never here — they are folded into this block at the next broadcast.
-    this.targetLang = direction === 'en-ko' ? 'ko' : 'en';
+    this.targetLang = dirCfg.targetLang;
     const extra = opts.churchTerms
       ? renderGlossaryLines(opts.churchTerms, this.targetLang)
       : churchGlossaryFromEnv(process.env, roomId);
     if (extra) this.systemPrompt += `\n\nCHURCH-SPECIFIC NAMES (use these exact renderings every time):\n${extra}`;
     this.getLiveTerms = opts.getLiveTerms;
-    this.srcLabel = direction === 'en-ko' ? 'English' : 'Korean';
-    this.tgtLabel = direction === 'en-ko' ? 'Korean' : 'English';
+    this.srcLabel = dirCfg.sourceLabel;
+    this.tgtLabel = dirCfg.targetLabel;
   }
 
   async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1, seq?: number): Promise<TranslationResult> {
@@ -443,6 +484,13 @@ export class ClaudeTranslator {
         }
 
         translated = sanitizeForSpeech(translated);
+        // A Chinese character in English output is read aloud IN CHINESE:
+        // eleven_flash_v2_5 is multilingual and switches language per token.
+        // The prompt forbids it; this guarantees it.
+        if (this.targetLang === 'en' && /[\u4e00-\u9fff]/.test(translated)) {
+          console.warn('[Translation] Stripped Chinese characters from English output:', translated.slice(0, 80));
+          translated = translated.replace(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+        }
 
         // Only remember real translations, so context stays clean.
         if (translated) {
@@ -497,7 +545,13 @@ export class ClaudeTranslator {
     //
     // Korean names a title with the ~라는/~이라는 particle ("the song CALLED
     // X"), which is a reliable hook for exactly the phrases worth pinning.
-    const titles = [...source.matchAll(/([가-힣][가-힣\s]{1,18}?)(?:이)?라는/g)].map((m) => m[1].trim());
+    const titles = [
+      ...[...source.matchAll(/([가-힣][가-힣\s]{1,18}?)(?:이)?라는/g)].map((m) => m[1].trim()),
+      // Mandarin names a title with book-title brackets 《…》, or as
+      // 叫(做)…的 + 歌/诗/书/电影 ("a song CALLED X").
+      ...[...source.matchAll(/《([^《》]{1,20})》/g)].map((m) => m[1].trim()),
+      ...[...source.matchAll(/叫做?([\u4e00-\u9fff]{2,12}?)的(?:歌|诗|书|电影|诗歌|赞美诗)/g)].map((m) => m[1].trim()),
+    ];
     if (titles.length === 0) return;
     // The English rendering of a title is normally quoted or Title Case.
     const quoted = [...target.matchAll(/['‘’"“”]([^'‘’"“”]{2,40})['‘’"“”]/g)].map((m) => m[1].trim());

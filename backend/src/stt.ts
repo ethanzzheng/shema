@@ -40,6 +40,22 @@ export const DEFAULT_KEYTERMS = [
   '큐티', '성령님', '은사',
 ];
 
+/**
+ * Mandarin sermon vocabulary for keyterm prompting. Measured to work on nova-3
+ * zh — keyterm 神爱世人 turned the misheard "神奈世人" back into the verse —
+ * but Chinese terms ONLY: an English keyterm ("Pastor Wang") got inserted into
+ * unrelated Mandarin speech. Kept short and high-value; each term spends
+ * Deepgram's keyterm budget, and the church glossary is merged in ahead of
+ * these.
+ */
+export const DEFAULT_KEYTERMS_ZH = [
+  '弟兄姊妹', '耶稣', '耶稣基督', '圣灵', '天父', '恩典', '救恩', '福音', '祷告', '代祷',
+  '团契', '查经', '灵修', '见证', '讲道', '证道', '牧师', '师母', '传道', '长老', '执事',
+  '主日崇拜', '阿们', '哈利路亚', '十字架', '复活', '悔改', '称义', '成圣', '赎罪', '撒但',
+  '约翰福音', '马太福音', '马可福音', '路加福音', '使徒行传', '罗马书', '哥林多前书',
+  '以弗所书', '腓立比书', '希伯来书', '创世记', '诗篇', '以赛亚书', '启示录',
+];
+
 export interface TranscriptEvent {
   text: string;
   isFinal: boolean;
@@ -68,6 +84,8 @@ export function isDuplicateUtterance(text: string, recent: readonly string[]): b
 export class DeepgramSTT {
   private apiKey: string;
   private language: string;
+  private model: string;
+  private smartFormat: boolean;
   private onTranscript: (event: TranscriptEvent) => void;
   private onError: (err: Error) => void;
   private onStatusChange: (connected: boolean) => void;
@@ -125,12 +143,18 @@ export class DeepgramSTT {
     flushIntervalMs?: number; // unused, kept for interface compat
     /** Explicit keyterm list; omit to use DEEPGRAM_KEYTERMS or the defaults. */
     keyterms?: string[];
+    /** Deepgram model (default nova-3). */
+    model?: string;
+    /** smart_format (default true). Off for Mandarin — it mangles numerals. */
+    smartFormat?: boolean;
     onTranscript: (event: TranscriptEvent) => void;
     onError: (err: Error) => void;
     onStatusChange: (connected: boolean) => void;
   }) {
     this.apiKey = opts.apiKey || process.env.DEEPGRAM_API_KEY || '';
     this.language = opts.language ?? 'ko';
+    this.model = opts.model ?? 'nova-3';
+    this.smartFormat = opts.smartFormat ?? true;
     this.keyterms = opts.keyterms;
     this.onTranscript = opts.onTranscript;
     this.onError = opts.onError;
@@ -152,7 +176,7 @@ export class DeepgramSTT {
 
     // Build Deepgram streaming URL with params
     const params = new URLSearchParams({
-      model: 'nova-3',
+      model: this.model,
       language: this.language,
       // punctuate is redundant with smart_format, but harmless.
       punctuate: 'true',
@@ -170,7 +194,7 @@ export class DeepgramSTT {
       encoding: 'linear16',
       sample_rate: '16000',
       channels: '1',
-      smart_format: 'true',
+      smart_format: this.smartFormat ? 'true' : 'false',
     });
 
     // nova-3 keyterm prompting — bias recognition toward sermon/biblical
@@ -184,7 +208,7 @@ export class DeepgramSTT {
     for (const kt of keyterms) params.append('keyterm', kt);
 
     const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
-    console.log(`[STT] Connecting to Deepgram (nova-3, ${this.language}, ${keyterms.length} keyterms)`);
+    console.log(`[STT] Connecting to Deepgram (${this.model}, ${this.language}, ${keyterms.length} keyterms)`);
 
     this.ws = new WebSocket(url, {
       headers: {
@@ -243,6 +267,8 @@ export class DeepgramSTT {
 
   private handleMessage(msg: any): void {
     if (msg.type !== 'Results') return;
+    // Deepgram marks the result that answers a Finalize request.
+    if (msg.from_finalize === true) this.finalizeWaiter?.();
 
     const transcript = msg.channel?.alternatives?.[0]?.transcript || '';
     const isFinal = msg.is_final === true;
@@ -294,6 +320,7 @@ export class DeepgramSTT {
     this.recentUtterances.push(transcript);
     if (this.recentUtterances.length > 5) this.recentUtterances.shift();
 
+    this.drained?.push(transcript);
     this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now() });
   }
 
@@ -307,6 +334,51 @@ export class DeepgramSTT {
       this.lastAudioSentAt = Date.now();
       this.ws.send(pcm);
     }
+  }
+
+  /** Resolved when Deepgram answers a Finalize, so finish() can stop waiting. */
+  private finalizeWaiter: (() => void) | null = null;
+  /** Finals that arrive while finish() is draining. */
+  private drained: string[] | null = null;
+
+  /**
+   * Flush the utterance in progress and return any finals it produced, then
+   * disconnect.
+   *
+   * Ending a broadcast used to send CloseStream and close the socket in the
+   * same tick, so the results for whatever the pastor was still saying never
+   * arrived — and the chunker had already been torn down to receive them. The
+   * last sentence of the service was dropped every time, and that sentence is
+   * usually the benediction or "in Jesus' name, Amen". Found when a Mandarin
+   * test lost "奉主耶稣基督的名求，阿们" in both runs.
+   *
+   * Bounded: a live operator pressing End should not wait on a slow network.
+   */
+  async finish(timeoutMs = 2000): Promise<string[]> {
+    const ws = this.ws;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.disconnect();
+      return [];
+    }
+    this.drained = [];
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, timeoutMs);
+      this.finalizeWaiter = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+      try {
+        ws.send(JSON.stringify({ type: 'Finalize' }));
+      } catch {
+        clearTimeout(timer);
+        resolve();
+      }
+    });
+    const out = this.drained;
+    this.drained = null;
+    this.finalizeWaiter = null;
+    this.disconnect();
+    return out;
   }
 
   disconnect(): void {
