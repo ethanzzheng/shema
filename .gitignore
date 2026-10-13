@@ -8,7 +8,6 @@ coverage
 *.log
 .DS_Store
 backend/evals/results/
-backend/evals/runs/
 *.tsbuildinfo
 
 # Local test media (sermon recordings)
@@ -19,8 +18,12 @@ backend/evals/runs/
 # Local phone preview (dev tool, not shipped)
 frontend/public/phone-preview.html
 
-# Real service transcripts and design handoff exports. Kept locally, never
+# Real service recordings, transcripts and pilot-run output, by language
+# (recordings/<language>/{audio,transcripts,runs}). Kept locally, never
 # committed: this repository is public and these contain a named church's
-# service content.
-transcripts/
+# service content. Only the README explaining the layout is tracked.
+recordings/*
+!recordings/README.md
+
+# Design handoff exports (same reason).
 design_handoff_shema_redesign/

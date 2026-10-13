@@ -8,13 +8,13 @@
  * finals, so the audio must be streamed at wall-clock speed. Anything faster
  * changes the very thing we are trying to measure.
  *
- * Artifacts land in evals/runs/<label>/ :
+ * Artifacts land in recordings/<language>/runs/<label>/ (see recordings.ts):
  *   messages.jsonl   every listener-visible message, with arrival offsets
  *   clips/seq-N.mp3  each sentence's audio, reassembled from its chunks
  *   summary.json     run metadata (counts, wall time, config)
  *
  * Usage:
- *   npx tsx evals/pilot-run.ts --label baseline [--media ../sermon_test.mp4]
+ *   npx tsx evals/pilot-run.ts --label baseline [--media ../recordings/korean/audio/sermon_test.mp4]
  *                              [--room pilot] [--mode smooth] [--direction ko-en]
  *                              [--start 0] [--duration 0]   (seconds; 0 = whole file)
  *
@@ -24,6 +24,7 @@ import { spawn } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import WebSocket from 'ws';
+import { RECORDINGS_DIR, runsDir } from './recordings';
 
 interface Args {
   label: string;
@@ -44,7 +45,7 @@ function parseArgs(): Args {
   };
   return {
     label: get('--label', 'run'),
-    media: path.resolve(get('--media', path.join(__dirname, '../../sermon_test.mp4'))),
+    media: path.resolve(get('--media', path.join(RECORDINGS_DIR, 'korean/audio/sermon_test.mp4'))),
     room: get('--room', 'pilot'),
     mode: (get('--mode', 'smooth') === 'fast' ? 'fast' : 'smooth') as 'fast' | 'smooth',
     direction: get('--direction', 'ko-en'),
@@ -76,14 +77,13 @@ const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms
 
 async function main(): Promise<void> {
   const args = parseArgs();
-  const runDir = path.join(__dirname, 'runs', args.label);
+  const runDir = path.join(runsDir(args.direction), args.label);
   const clipDir = path.join(runDir, 'clips');
   fs.mkdirSync(clipDir, { recursive: true });
 
   // PCM extraction is deterministic, so cache it across runs of the same slice.
   const pcmPath = path.join(
-    __dirname,
-    'runs',
+    runsDir(args.direction),
     `.pcm-${path.basename(args.media)}-${args.startSec}-${args.durationSec}.raw`,
   );
   if (!fs.existsSync(pcmPath)) {

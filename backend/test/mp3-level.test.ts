@@ -24,7 +24,7 @@ test('mp3Level survives a truncated frame without throwing', () => {
  * something CI can assert — it is the evidence that the threshold means
  * anything, so it is worth keeping runnable.
  */
-const CLIPS = path.join(__dirname, '../evals/runs/service2/clips');
+const CLIPS = path.join(__dirname, '../../recordings/korean/runs/service2/clips');
 const haveClips = fs.existsSync(CLIPS);
 
 test('under-driven clips score below the threshold and normal ones above', { skip: !haveClips }, () => {

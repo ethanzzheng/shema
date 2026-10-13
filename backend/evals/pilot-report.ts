@@ -19,6 +19,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { similarity } from './shared';
+import { findRunDir } from './recordings';
 
 interface Seg {
   seq: number;
@@ -36,7 +37,7 @@ function arg(flag: string, dflt = ''): string {
 }
 
 function loadRun(label: string): { dir: string; segs: Seg[]; summary: Record<string, unknown> } {
-  const dir = path.join(__dirname, 'runs', label);
+  const dir = findRunDir(label);
   const segs: Seg[] = [];
   const bySeq = new Map<number, Seg>();
   for (const line of fs.readFileSync(path.join(dir, 'messages.jsonl'), 'utf8').split('\n')) {
@@ -482,7 +483,7 @@ function report(label: string, stutter: string): Record<string, unknown> {
 const label = arg('--label', 'baseline');
 const against = arg('--against');
 const mine = report(label, arg('--stutter'));
-fs.writeFileSync(path.join(__dirname, 'runs', label, 'report.json'), JSON.stringify(mine, null, 2));
+fs.writeFileSync(path.join(findRunDir(label), 'report.json'), JSON.stringify(mine, null, 2));
 
 if (against) {
   const theirs = report(against, '');
