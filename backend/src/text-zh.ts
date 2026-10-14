@@ -64,6 +64,13 @@ const ZH_DANGLING = [
   '已经', '正在', '曾经', '不断的', '不断地',
   // modal verbs awaiting the verb they govern
   '能够', '可以', '应该', '应当', '愿意', '必须', '想要', '敢',
+  // light verbs whose real content is the object still to come: "…进行了 |
+  // 一个对比" was cut live, the model supplied "contrasted" from nowhere and
+  // the next segment then repeated "a contrast".
+  '进行了', '进行', '作出了', '做出了', '作出', '做出', '发出了', '发出', '给予', '加以',
+  '带来了', '成为了', '成为', '变成了', '变成', '叫做', '称为', '当作', '看作',
+  // a classifier with its noun still to come ("这是一种 | 爱")
+  '一种', '一位', '一些', '这种', '那种', '这样的', '那样的', '一份',
 ];
 
 /**

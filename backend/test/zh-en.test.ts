@@ -398,3 +398,13 @@ test('verse matching: a reading that starts in the same breath as its announceme
   const v = matchSpokenVersesZh('接下来的请应经文来自约翰福音二十一章一到二十五节由讲台念单数节请会众念双数节这些事以后耶稣在提比哩亚', 'John', 21);
   assert.deepEqual(v.map((m) => m.verse), [1]);
 });
+
+test('endsDanglingZh: a light verb or classifier still waiting for its object', () => {
+  // Observed live (cbcgl-1011-v3 #184): cut at 进行了, the object 一个对比 came next.
+  assert.equal(endsDanglingZh('耶稣就把彼得年轻时候和他晚年将面临的捆绑殉道进行了'), true);
+  assert.equal(endsDanglingZh('这是一种'), true);
+  assert.equal(endsDanglingZh('他后来成为'), true);
+  // Complete clauses are not held.
+  assert.equal(endsDanglingZh('我再说一次'), false);
+  assert.equal(endsDanglingZh('他就去打鱼了'), false);
+});

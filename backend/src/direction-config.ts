@@ -53,6 +53,12 @@ export interface DirectionConfig {
   ttsModelId: string;
   /** Which translator prompt this direction uses. */
   translator: Direction;
+  /**
+   * Translation model for this direction when it should differ from the
+   * global TRANSLATION_MODEL; its env var wins over it.
+   */
+  translationModel?: string;
+  translationModelEnvVar?: string;
   /** Which sentence-assembly grammar the chunker uses. */
   chunker: 'korean' | 'english' | 'chinese';
   /** False = the pipeline refuses to start a broadcast in this direction. */
@@ -114,6 +120,10 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     ttsModelEnvVars: ['TTS_MODEL'],
     ttsModelId: 'eleven_flash_v2_5',
     translator: 'zh-en',
+    // Replayed on a real service, Sonnet 5.5 had half the flagged lines of
+    // Sonnet 5 (3-4 vs 7-9 of 240) for ~0.1s more median translation time.
+    translationModel: 'claude-sonnet-5-5',
+    translationModelEnvVar: 'TRANSLATION_MODEL_ZH',
     chunker: 'chinese',
     implemented: true,
   },
@@ -164,4 +174,15 @@ export function resolveStt(
     language: (cfg.sttLanguageEnvVar && env[cfg.sttLanguageEnvVar]) || cfg.sttLanguage,
     smartFormat: cfg.sttSmartFormat,
   };
+}
+
+/** The translation model for this direction: per-direction env, its default, then the global one. */
+export function resolveTranslationModel(direction: Direction, env: NodeJS.ProcessEnv = process.env): string {
+  const cfg = DIRECTION_CONFIGS[direction];
+  return (
+    (cfg.translationModelEnvVar && env[cfg.translationModelEnvVar]) ||
+    cfg.translationModel ||
+    env.TRANSLATION_MODEL ||
+    'claude-sonnet-5'
+  );
 }

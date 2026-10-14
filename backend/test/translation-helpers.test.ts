@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizeForSpeech,
   looksLikeMetaCommentary,
+  stripMetaPreamble,
   extractJsonObject,
   salvageTranslation,
   churchGlossaryFromEnv,
@@ -262,4 +263,17 @@ test('glossaryEnvKey maps a slug to a legal env var name', () => {
   // Slugs are [a-z0-9-]; hyphens are not legal in env var names.
   assert.equal(glossaryEnvKey('grace-church'), 'CHURCH_GLOSSARY_GRACE_CHURCH');
   assert.equal(glossaryEnvKey('default'), 'CHURCH_GLOSSARY_DEFAULT');
+});
+
+test('stripMetaPreamble: cuts a leaked translator preamble and keeps the translation', () => {
+  // Observed live (cbcgl-1011-v3 #123): this would have been spoken aloud.
+  assert.equal(
+    stripMetaPreamble('thinking Translate this segment, stopping where it ends - " " seems cut off mid-sentence.recalling a very similar scene from the past.'),
+    'recalling a very similar scene from the past.',
+  );
+  assert.equal(stripMetaPreamble('Translate only this new segment: he went fishing'), '');
+  // Sermon text without translator vocabulary is untouched.
+  const sermon = 'He was thinking about the boat. Peter said, "I am going fishing."';
+  assert.equal(stripMetaPreamble(sermon), sermon);
+  assert.equal(stripMetaPreamble('Thinking of you, Lord, we pray.'), 'Thinking of you, Lord, we pray.');
 });

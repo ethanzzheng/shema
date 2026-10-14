@@ -20,7 +20,8 @@ import { formatReferenceKorean } from './scripture-en';
 import { getVerse, getVerseWindow, getVerseWindowKo } from './bible';
 import { matchSpokenVersesZh } from './verse-match-zh';
 import { thinTagQuestionsZh } from './text-zh';
-import { Direction, getDirectionConfig } from './direction-config';
+import { SermonBrief } from './sermon-brief';
+import { Direction, getDirectionConfig, resolveTranslationModel } from './direction-config';
 
 export interface TranslationResult {
   direct_translation: string;
@@ -73,7 +74,7 @@ You are given the PREVIOUS translated segments (for context only) and ONE new Ma
 
 Return ONLY the English translation of the new segment, as plain text. No JSON, no quotes around it, no preamble, no labels. If the segment cannot be translated faithfully, return an empty response.
 
-IMPORTANT: The Mandarin text comes from automatic speech recognition of a live sermon. It WILL contain mistakes. Mandarin has very many homophones and the recogniser guesses between them: 神爱 may arrive as 深爱 or 神奈, 罪 as 最 or 醉, 不至灭亡 as 不顺灭亡. Read every segment for the meaning a Christian sermon makes sense of, and translate THAT — but never "repair" a garble by inventing content that is not plausibly there. One the recogniser gets wrong constantly: 之道 ("the way of") arrives as 知道 or 指导, so 爱主之道 ("the way of loving the Lord") can come out as 爱主知道 or 主爱指导 — and a sermon title built on it must be read that way.
+IMPORTANT: The Mandarin text comes from automatic speech recognition of a live sermon. It WILL contain mistakes. Mandarin has very many homophones and the recogniser guesses between them: 神爱 may arrive as 深爱 or 神奈, 罪 as 最 or 醉, 不至灭亡 as 不顺灭亡. Read every segment for the meaning a Christian sermon makes sense of, and translate THAT — but never "repair" a garble by inventing content that is not plausibly there. One the recogniser gets wrong constantly: 之道 ("the way of") arrives as 知道 or 指导, so 爱主之道 ("the way of loving the Lord") can come out as 爱主知道 or 主爱指导 — and a sermon title built on it must be read that way. Read a word as its HOMOPHONE (same or nearly the same pinyin) when the literal word makes no sense in a sermon and a common church word sounds the same: 护照 (hùzhào, "passport") in a sermon about following Jesus is 呼召 (hūzhào, "calling"); 恩点 is 恩典; 见正 is 见证. This is the opposite of guessing from the theme: the replacement must SOUND like what was recognised, never merely fit the topic.
 
 ABSOLUTE RULES:
 - Output ONLY the English translation. Never add notes, explanations, apologies, or descriptions. NEVER write about "the segment", "the input", the "continuation", or that something is incomplete.
@@ -103,12 +104,13 @@ ABSOLUTE RULES:
 - Keep standard Christian terms and Bible references exactly (e.g. John 3:16).
 - NUMBER FIDELITY (absolute): reproduce every number the pastor speaks exactly — verse and chapter numbers, quantities, ages, years, amounts. Mandarin numerals arrive in mixed forms (三章十六节, 3章16节, 二十八年): read them carefully. Never round, never approximate. If a number is unclear, leave it out rather than guess.
 - VERSE NUMBERS: a number spoken before 节 is a verse, before 章 a chapter, and Psalms count in 篇 (诗篇二十三篇 = "Psalm 23"). But 一节经文 is "a verse of Scripture", NOT "verse 1", and 这节经文 is "this verse". When you speak a verse or chapter number, use ONLY a number the pastor actually said — verse labels in any supplied canonical text identify the wording and are NOT to be cited.
-- SCRIPTURE: when a segment is clearly quoting or reading the Bible, use standard English Bible wording (if the user message supplies canonical English text, that exact wording) — but ONLY for the words the pastor actually spoke in THIS segment. Preachers quote loosely: they skip phrases, stop partway through a verse, and paraphrase. Follow HIM, not the verse. Never add a phrase he skipped, never finish a verse he stopped partway through, never add a verse he has not reached. Observed, all wrong: he said others would lead Peter where he did not want to go, and the output added "someone else will dress you" from the verse; he said Jesus took the bread and the fish, and the output added "and gave it to them"; he said "I love you" and the output gave the verse's "you know that I love you".
+- SCRIPTURE: when a segment is clearly quoting or reading the Bible, use standard English Bible wording (if the user message supplies canonical English text, that exact wording) — but ONLY for the words the pastor actually spoke in THIS segment. Preachers quote loosely: they skip phrases, stop partway through a verse, and paraphrase. Follow HIM, not the verse. Never add a phrase he skipped, never finish a verse he stopped partway through, never add a verse he has not reached. Observed, all wrong: he said others would lead Peter where he did not want to go, and the output added "someone else will dress you" from the verse; he said Jesus took the bread and the fish, and the output added "and gave it to them"; he said "I love you" and the output gave the verse's "you know that I love you". The same holds for names and forms of address inside a verse: he said 约翰的儿子，你爱我吗 and the output gave the verse's "Simon son of John, do you love me?" — he never said "Simon", so the English is "Son of John, do you love me?".
 - NEVER a dangling modifier. Do not let a whole segment be a bare noun phrase or relative clause that English would attach to the wrong thing. Give such a fragment its own minimal frame, adding ONLY the subject or verb English needs. Never add an idea the Mandarin does not contain. Do not end a segment on a comma.
 - MIXED LANGUAGE: overseas Chinese pastors often drop English words into Mandarin ("我们的 small group", "OK"). Keep those English words as they are. The recogniser may also turn spoken English into Chinese-sounding nonsense (巴斯特 for "pastor"); if a token makes no sense in Mandarin but plausibly is an English word, use the English word. Spoken English also comes back as the wrong English word — "flow" for "flaw", "freenship" for "friendship" — so use the English word the sentence needs.
 - VOICED SPEECH: when the pastor voices someone else's words or thoughts with no "he said" frame, make the frame explicit with the minimal intervention ("He said,", "He thought:"). Never apply this to the pastor's own first-person testimony.
 - REFERENT CONTINUITY: once the previous segments establish who someone is, keep naming them the same way.
 - NAMES: romanize a Chinese person's name in pinyin in Chinese order, surname first, given name as one word ("Pastor Zhang Mingdao", never "Mingdao Zhang" or "Ming Dao Zhang"), and once a name has been rendered, reuse that exact spelling — check the previous segments. Titles follow English order: 张牧师 = "Pastor Zhang".
+- THINKING ALOUD: 怎么讲, 怎么说, 怎么样 and 什么呢 at the end of a phrase are often the pastor searching for a word ("how shall I put it") or a rhetorical pause before he answers his own question. Do not turn them into content: "他一定就flashback到怎么讲" is "he must have had a flashback to, how shall I put it," and NOT "a flashback to what was said". Never invent the object he has not named yet.
 - ABANDONED FALSE STARTS: if a segment ENDS on a few words the pastor drops before finishing — a bare 爱主什么, 就是说, 那个, 这个 with nothing after it — omit that tail rather than emitting a stranded "what" or "that". This is different from a genuine mid-sentence cut carrying real content (keep those, and stop on the last real word).
 - Silently drop Mandarin filler and hesitation (嗯, 啊, 呃, 那个, 就是说, 然后呢 used as a pause, 对 used as a verbal tic) and false starts.
 - FILLER RESTRAINT: English tolerates far less filler than spoken Mandarin. Drop "so", "well", "you know", "then" wherever they carry no meaning. Trimming filler must never cost content.
@@ -232,6 +234,29 @@ export function looksLikeMetaCommentary(text: string): boolean {
   );
 }
 
+/**
+ * Translator-voice that leaks IN FRONT OF a real translation. Observed live:
+ *   'thinking Translate this segment, stopping where it ends - " " seems cut
+ *    off mid-sentence.recalling a very similar scene from the past, …'
+ * Nothing in looksLikeMetaCommentary matched ("this segment", not "the
+ * segment"), so the whole thing would have been spoken to the congregation.
+ * Dropping the output would lose a correct translation behind the preamble, so
+ * cut through the end of the last sentence that carries a marker instead.
+ */
+const META_PREAMBLE =
+  /\btranslat(?:e|ing) (?:only )?(?:this|the) (?:new )?(?:segment|input)\b|\b(?:this|the) (?:segment|input)\b/gi;
+export function stripMetaPreamble(text: string): string {
+  let last = -1;
+  for (const m of text.matchAll(META_PREAMBLE)) last = (m.index ?? 0) + m[0].length;
+  if (last < 0) return text;
+  // Only a PREAMBLE is stripped: a marker deep inside a long output is left for
+  // looksLikeMetaCommentary to judge as a whole.
+  if (last > Math.max(160, text.length * 0.6)) return text;
+  const end = text.slice(last).search(/[.!?…]/);
+  if (end < 0) return '';
+  return text.slice(last + end + 1).replace(/^[\s"'“”‘’.\-–—]+/, '').trim();
+}
+
 /** Strip code fences and extract the first JSON object from a model response. */
 export function extractJsonObject(raw: string): string {
   let cleaned = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
@@ -295,10 +320,12 @@ export class ClaudeTranslator {
    */
   private readonly getLiveTerms: (() => GlossaryTerm[]) | undefined;
   private readonly targetLang: LangCode;
+  /** Long-range memory of the sermon; null where the direction does not use it. */
+  readonly brief: SermonBrief | null;
 
   constructor(
     apiKey: string,
-    model = process.env.TRANSLATION_MODEL || 'claude-sonnet-5',
+    model?: string,
     direction: Direction = 'ko-en',
     /** Church slug (the room). Selects that church's glossary; see below. */
     roomId?: string,
@@ -320,7 +347,7 @@ export class ClaudeTranslator {
     // bounds). One 15s timeout, one in-loop retry, ~30s absolute worst case
     // against a 1.4s median.
     this.client = new Anthropic({ apiKey, timeout: 15_000, maxRetries: 0 });
-    this.model = model;
+    this.model = model || resolveTranslationModel(direction);
     this.direction = direction;
     const dirCfg = getDirectionConfig(direction);
     this.systemPrompt = { 'ko-en': SYSTEM_PROMPT_KO_EN, 'en-ko': SYSTEM_PROMPT_EN_KO, 'zh-en': SYSTEM_PROMPT_ZH_EN }[
@@ -346,6 +373,11 @@ export class ClaudeTranslator {
     this.getLiveTerms = opts.getLiveTerms;
     this.srcLabel = dirCfg.sourceLabel;
     this.tgtLabel = dirCfg.targetLabel;
+    // On for Mandarin, where it was measured; SERMON_BRIEF=1/0 overrides per
+    // deployment, so the Korean services that run every Sunday only change
+    // when someone chooses to.
+    const briefOn = process.env.SERMON_BRIEF ? process.env.SERMON_BRIEF === '1' : direction === 'zh-en';
+    this.brief = briefOn ? new SermonBrief(apiKey, this.srcLabel, this.tgtLabel) : null;
   }
 
   async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1, seq?: number): Promise<TranslationResult> {
@@ -358,6 +390,13 @@ export class ClaudeTranslator {
         .map((t) => `${this.srcLabel}: ${t.source}\n${this.tgtLabel}: ${t.target}`)
         .join('\n\n');
       contextBlock = `Previous segments already translated (context only — do NOT repeat, do NOT re-translate):\n\n${lines}\n\n---\n\n`;
+    }
+    const brief = this.brief?.current();
+    if (brief) {
+      contextBlock =
+        `THE SERMON SO FAR (background only, NOT part of this segment: use it to resolve mishearings, slips, pronouns, ` +
+        `and to keep names and terms consistent; never translate it and never add anything from it to your output):\n${brief}\n\n---\n\n` +
+        contextBlock;
     }
     if (this.glossary.size > 0) {
       const pinned = [...this.glossary.entries()].map(([k, v]) => `${k} → ${v}`).join('\n');
@@ -509,6 +548,11 @@ export class ClaudeTranslator {
         const wrapped = /^["'`\u201c\u2018]([\s\S]*)["'`\u201d\u2019]$/.exec(translated);
         if (wrapped && !/["\u201c\u201d]/.test(wrapped[1])) translated = wrapped[1].trim();
 
+        const stripped = stripMetaPreamble(translated);
+        if (stripped !== translated) {
+          console.warn('[Translation] Stripped translator-voice preamble:', translated.slice(0, 80));
+          translated = stripped;
+        }
         // Guard: if the model described the input instead of translating, drop it.
         if (translated && looksLikeMetaCommentary(translated)) {
           console.warn('[Translation] Dropped meta-commentary output:', translated.slice(0, 80));
@@ -531,6 +575,7 @@ export class ClaudeTranslator {
           // used to leave the context array reversed and the discourse
           // context subtly wrong for every later segment.
           this.pinTerms(sourceText, translated);
+          this.brief?.note(sourceText, translated);
           this.recentTranslations.push({ source: sourceText, target: translated, seq });
           this.recentTranslations.sort((a, b) => (a.seq ?? 0) - (b.seq ?? 0));
           if (this.recentTranslations.length > this.maxContext) {
@@ -604,6 +649,7 @@ export class ClaudeTranslator {
   resetContext(): void {
     this.recentTranslations = [];
     this.glossary.clear();
+    this.brief?.reset();
   }
 
   /**
