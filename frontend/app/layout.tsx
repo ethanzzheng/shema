@@ -36,7 +36,7 @@ const serifKr = Noto_Serif_KR({
 export const metadata: Metadata = {
   title: 'Shema — Live Sermon Translation',
   description:
-    'Live sermon translation between Korean and English, built for how preaching actually sounds.',
+    'Live sermon translation for Korean, Mandarin and English services, built for how preaching actually sounds.',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: '/icon-192.png',
