@@ -40,6 +40,8 @@ async function main(): Promise<void> {
   const run = arg('--run');
   const name = arg('--replay', 'replay');
   const cols = arg('--cols', 'live,replay').split(',') as ('live' | 'replay')[];
+  // Judging is itself stochastic; --trial lets a replay be judged more than once.
+  const trial = arg('--trial');
   const dir = findRunDir(run);
   const lines: Line[] = fs.readFileSync(path.join(dir, `replay-${name}.jsonl`), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l));
@@ -69,7 +71,7 @@ async function main(): Promise<void> {
   await Promise.all(Array.from({ length: 8 }, async () => { while (idx < jobs.length) await jobs[idx++](); }));
 
   results.sort((a, b) => (a.seq as number) - (b.seq as number));
-  fs.writeFileSync(path.join(dir, `judge-${name}.jsonl`), results.map((r) => JSON.stringify(r)).join('\n') + '\n');
+  fs.writeFileSync(path.join(dir, `judge-${name}${trial ? `-t${trial}` : ''}.jsonl`), results.map((r) => JSON.stringify(r)).join('\n') + '\n');
   for (const col of cols) {
     const rs = results.filter((r) => r.col === col);
     const counts = Object.fromEntries(TYPES.map((t) => [t, rs.filter((r) => (r.issues as string[]).includes(t)).length]));

@@ -33,6 +33,7 @@ import { isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, detectVerseRange, correctVerseAgainstRange, ScriptureRef } from './scripture';
 import { detectReferenceEn } from './scripture-en';
 import { detectReferenceZh } from './scripture-zh';
+import { keepReadingZh } from './verse-match-zh';
 import { OrderedEmitter } from './ordered-emitter';
 import { TtsPipeline } from './tts-pipeline';
 import {
@@ -229,6 +230,9 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         }
       }
       currentRef = mergeReference(currentRef, detected);
+      refAgeChunks = 0;
+    } else if (session.direction === 'zh-en' && keepReadingZh(currentRef, sourceText)) {
+      // Still reading the passage: the spoken words match its verses.
       refAgeChunks = 0;
     } else if (currentRef && ++refAgeChunks > 12) {
       currentRef = null;

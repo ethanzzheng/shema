@@ -33,3 +33,21 @@ produce a JSON file with the same shape and point `BIBLE_DATA_PATH` at it.
 Used by the en-ko direction to anchor quoted scripture to real Korean text.
 To swap in a licensed 개역개정 dataset, produce the same JSON shape and point
 `BIBLE_DATA_PATH_KO` at it.
+
+---
+
+`cuv.json` — 和合本 **Chinese Union Version (CUV, 1919), Simplified script**.
+
+- Source: https://github.com/seven1m/open-bibles (`chi-cuv-simp.usfx.xml`).
+- License: **public domain** — listed as Public Domain by open-bibles; the 1919
+  text is long out of copyright. (The 2010 和合本修订版 / RCUV is copyrighted and
+  is deliberately NOT bundled.)
+- Format: same shape as `bsb.json`, 66 books / 31,100 verses, keyed by the same
+  English book names (USFX books mapped in canonical order). Conversion: markup
+  and whitespace removed; Psalm superscriptions ("（大卫的诗）") stripped from
+  verse 1.
+
+Used by the zh-en direction to recognise WHICH verse the pastor is reading from
+his words (`src/verse-match-zh.ts`) — Mandarin pastors rarely say verse numbers
+mid-reading — so the translator gets that verse's exact Chinese and English
+text. Point `BIBLE_DATA_PATH_ZH` at a same-shape file to swap it.

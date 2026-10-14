@@ -17,7 +17,9 @@ import { GlossaryTerm, LangCode } from './glossary/types';
 import Anthropic from '@anthropic-ai/sdk';
 import { ScriptureRef, formatReference } from './scripture';
 import { formatReferenceKorean } from './scripture-en';
-import { getVerseWindow, getVerseWindowKo } from './bible';
+import { getVerse, getVerseWindow, getVerseWindowKo } from './bible';
+import { matchSpokenVersesZh } from './verse-match-zh';
+import { thinTagQuestionsZh } from './text-zh';
 import { Direction, getDirectionConfig } from './direction-config';
 
 export interface TranslationResult {
@@ -106,9 +108,11 @@ ABSOLUTE RULES:
 - MIXED LANGUAGE: overseas Chinese pastors often drop English words into Mandarin ("我们的 small group", "OK"). Keep those English words as they are. The recogniser may also turn spoken English into Chinese-sounding nonsense (巴斯特 for "pastor"); if a token makes no sense in Mandarin but plausibly is an English word, use the English word. Spoken English also comes back as the wrong English word — "flow" for "flaw", "freenship" for "friendship" — so use the English word the sentence needs.
 - VOICED SPEECH: when the pastor voices someone else's words or thoughts with no "he said" frame, make the frame explicit with the minimal intervention ("He said,", "He thought:"). Never apply this to the pastor's own first-person testimony.
 - REFERENT CONTINUITY: once the previous segments establish who someone is, keep naming them the same way.
+- NAMES: romanize a Chinese person's name in pinyin in Chinese order, surname first, given name as one word ("Pastor Zhang Mingdao", never "Mingdao Zhang" or "Ming Dao Zhang"), and once a name has been rendered, reuse that exact spelling — check the previous segments. Titles follow English order: 张牧师 = "Pastor Zhang".
+- ABANDONED FALSE STARTS: if a segment ENDS on a few words the pastor drops before finishing — a bare 爱主什么, 就是说, 那个, 这个 with nothing after it — omit that tail rather than emitting a stranded "what" or "that". This is different from a genuine mid-sentence cut carrying real content (keep those, and stop on the last real word).
 - Silently drop Mandarin filler and hesitation (嗯, 啊, 呃, 那个, 就是说, 然后呢 used as a pause, 对 used as a verbal tic) and false starts.
 - FILLER RESTRAINT: English tolerates far less filler than spoken Mandarin. Drop "so", "well", "you know", "then" wherever they carry no meaning. Trimming filler must never cost content.
-- 对不对？/是不是？ as a tag inviting agreement: render as an English tag ("right?", "isn't it?") only occasionally; usually omit it.
+- TAG QUESTIONS (是吧 / 对吧 / 对不对 / 是不是 at the end of a clause) are the pastor's verbal tic inviting agreement, and a Mandarin preacher can say one every few sentences. Render one as an English tag only when it is a genuine appeal to the congregation — roughly one occurrence in three; check the previous segments and OMIT it if you used a tag recently. When you do render it, vary it ("Right?", "Isn't it?", "Don't you think?", "You see?") rather than writing "right?" every time. Observed: 27 tags in one sermon came out as 28 "right?"s.
 - EMPHATIC REPETITION: when the pastor repeats a phrase for emphasis, keep the emphasis but not the flat echo — render it at most twice, escalating rather than duplicating.
 - If the segment is empty, meaningless, or pure filler, return an empty response.`;
 
@@ -274,6 +278,8 @@ export class ClaudeTranslator {
    * and injected into every later prompt.
    */
   private glossary = new Map<string, string>();
+  /** Running count of Mandarin tag questions, for thinTagQuestionsZh. */
+  private tagState = { count: 0 };
   private static readonly MAX_GLOSSARY = 24;
   // 8 pairs. A measured A/B put 4 vs 8 at ~80ms of time-to-first-token, inside
   // the noise floor — input volume is NOT the lever it looked like, and the
@@ -343,6 +349,8 @@ export class ClaudeTranslator {
   }
 
   async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1, seq?: number): Promise<TranslationResult> {
+    // Mandarin tag questions are thinned in code; the prompt alone did not.
+    if (this.direction === 'zh-en') sourceText = thinTagQuestionsZh(sourceText, this.tagState);
     // Build context from recent translations.
     let contextBlock = '';
     if (this.recentTranslations.length > 0) {
@@ -382,6 +390,10 @@ export class ClaudeTranslator {
     //  2. reference known but no verse text available → anchor by name only.
     //  3. no reference → nothing.
     let refBlock = '';
+    const zhReading =
+      this.direction === 'zh-en' && reference?.book && reference.chapter !== undefined
+        ? matchSpokenVersesZh(sourceText, reference.book, reference.chapter)
+        : [];
     const refName = formatReference(reference ?? null);
     const window =
       reference?.book && reference.chapter !== undefined && reference.verse !== undefined
@@ -415,6 +427,19 @@ export class ClaudeTranslator {
       } else if (refName) {
         refBlock = `The pastor is currently reading from ${refName}${krName ? ` (${krName})` : ''}. If this segment quotes that passage, reproduce the standard 개역개정 Korean wording of the relevant verse(s); otherwise translate the commentary normally.\n\n`;
       }
+    } else if (zhReading.length > 0) {
+      // Mandarin: the verses actually being read, recognised from the spoken
+      // words rather than from a verse number he may never say. The Chinese
+      // text lets the model see what he skipped or has not reached; the
+      // English is the wording to use for what he DID say.
+      const lines = zhReading
+        .map((m) => `${reference!.book} ${reference!.chapter}:${m.verse}\n  Chinese (和合本): ${m.text}\n  English (BSB): ${getVerse(reference!.book!, reference!.chapter!, m.verse) ?? ''}`)
+        .join('\n');
+      refBlock =
+        `This segment reads from the Bible. The verse(s) it comes from:\n${lines}\n` +
+        `Compare the pastor's words with the Chinese text: translate ONLY the parts he actually spoke, using the English wording above for those parts. ` +
+        `Leave out whatever he skipped or has not reached yet, even if it is in the same verse. Where his words differ because the recogniser misheard (the Chinese text shows the real words), follow the Chinese text. ` +
+        `These verse numbers are for identification only — say a number only if he says it.\n\n`;
     } else if (window.length > 0) {
       // Label the announced verse and quarantine its neighbours. Supplying a
       // flat list of three numbered verses let the model cite whichever it

@@ -2,7 +2,10 @@
  * Local Bible verse lookup — English (Berean Standard Bible, public domain)
  * and Korean (개역한글 KRV, public domain; see data/README.md).
  *
- * Both datasets load once at module init and are keyed by the ENGLISH book
+ * Mandarin uses 和合本 (Chinese Union Version, 1919, public domain; see
+ * data/README.md) to recognise WHICH verse is being read from the spoken words.
+ *
+ * All datasets load once at module init and are keyed by the ENGLISH book
  * names the reference detectors produce (`BOOK_MAP` values), so a detected
  * `ScriptureRef` works against either. Used to inject canonical verse text
  * into the translation prompts so quoted scripture comes from a real source
@@ -37,6 +40,19 @@ const bibleKo = loadBible(
   process.env.BIBLE_DATA_PATH_KO || path.join(__dirname, '..', 'data', 'krv.json'),
   'Korean',
 );
+const bibleZh = loadBible(
+  process.env.BIBLE_DATA_PATH_ZH || path.join(__dirname, '..', 'data', 'cuv.json'),
+  'Chinese',
+);
+
+/** Every verse of one CHINESE (和合本) chapter, in order; [] if absent. */
+export function getChapterZh(book: string, chapter: number): { verse: number; text: string }[] {
+  const ch = bibleZh[book]?.[String(chapter)];
+  if (!ch) return [];
+  return Object.entries(ch)
+    .map(([v, text]) => ({ verse: Number(v), text }))
+    .sort((a, b) => a.verse - b.verse);
+}
 
 /** Exact verse text, or null if the reference doesn't exist in the dataset. */
 export function getVerse(book: string, chapter: number, verse: number): string | null {

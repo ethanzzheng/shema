@@ -20,6 +20,7 @@ import { detectReferenceEn } from '../src/scripture-en';
 import { detectReferenceZh } from '../src/scripture-zh';
 import { getDirectionConfig, normalizeDirection } from '../src/direction-config';
 import { findRunDir } from './recordings';
+import { keepReadingZh } from '../src/verse-match-zh';
 
 function arg(flag: string, dflt = ''): string {
   const a = process.argv.slice(2);
@@ -68,6 +69,7 @@ async function main(): Promise<void> {
     // reference announced before it, exactly as the live pipeline did.
     const detected = detect(c.source);
     if (detected) { currentRef = mergeReference(currentRef, detected); refAge = 0; }
+    else if (direction === 'zh-en' && keepReadingZh(currentRef, c.source)) refAge = 0;
     else if (currentRef && ++refAge > 12) currentRef = null;
     if (c.seq < lo || c.seq > hi) {
       // Outside the window: seed context with what the live run said, so the

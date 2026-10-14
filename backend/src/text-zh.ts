@@ -89,6 +89,15 @@ const ZH_DANGLING_RE = [
  */
 const ZH_QUESTION_WORDS = /什么|怎么|怎样|为什么|为何|谁|哪|多少|几|如何|是不是|有没有|对不对|要不要|会不会|能不能|还是|难道|吗/;
 
+/**
+ * A preacher's ask-then-answer: "第三节说什么？西门彼得对他们说…", "这个时候
+ * 怎么样？…". A bare question word with no particle is the cue, and the answer
+ * follows in the same breath. Cut there and the English is a stranded "what"
+ * ("even at the Last Supper, what") — 8 of 261 segments in the first real
+ * service ended this way.
+ */
+const ZH_RHETORICAL_CUE = /(?:什么|怎么样|怎么讲|怎么说|怎样|为什么|在哪里|是谁)$/;
+
 /** Vocatives in prayer: "主啊" opens a petition, it does not end one. */
 const ZH_VOCATIVE = /(?:主|神|天父|父|上帝|耶稣|圣灵|父神|主耶稣)(?:啊|呀|阿)$/;
 
@@ -147,7 +156,7 @@ export function endsDanglingZh(text: string): boolean {
   if (endsWithStrongTerminatorZh(t)) return false;
   if (endsWithCommaZh(t)) return true;
   if (endsWithIncompleteReferenceZh(t)) return true;
-  if (endsOnTopicMarkerZh(t) || ZH_VOCATIVE.test(t)) return true;
+  if (endsOnTopicMarkerZh(t) || ZH_VOCATIVE.test(t) || ZH_RHETORICAL_CUE.test(t)) return true;
   return ZH_DANGLING.some((w) => t.endsWith(w)) || ZH_DANGLING_RE.some((re) => re.test(t));
 }
 
@@ -240,4 +249,27 @@ export function splitLastClauseZh(text: string, minHead = 6): { head: string; re
     }
   }
   return null;
+}
+
+/**
+ * 是吧 / 对吧 are always tag questions — the pastor's tic inviting a nod — and
+ * a Mandarin preacher can say one every few sentences. Prompt guidance alone
+ * did not thin them: 27 tags in one sermon came out as 25 "right?"s. So they
+ * are thinned before translation: every `keepEvery`-th one survives (as an
+ * appeal the English can render), the rest are removed. `state.count` carries
+ * the running count across segments.
+ */
+export function thinTagQuestionsZh(text: string, state: { count: number }, keepEvery = 3): string {
+  // A segment that is ONLY a tag stays: emptied, the translator was left with
+  // nothing to translate and invented a Bible line from the context instead.
+  if (/^\s*(?:是吧|对吧)[，,。？?！!]?\s*$/.test(text)) {
+    state.count++;
+    return text;
+  }
+  return text.replace(/(是吧|对吧)([，,。？?！!]?)/g, (m, _tag, punct: string) => {
+    state.count++;
+    if (state.count % keepEvery === 1) return m;
+    // Keep a sentence end the tag was carrying; drop a comma.
+    return /[。？?！!]/.test(punct) ? '。' : '';
+  });
 }

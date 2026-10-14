@@ -319,3 +319,82 @@ test('glossary env fallback only reaches rooms that speak the term language', as
   assert.equal(matchesSourceLanguage(term('团契'), 'ko'), false);
   assert.equal(matchesSourceLanguage(term('QT'), 'ko'), true);
 });
+
+// ── Second round: borrowed from the Korean pipeline + rhetorical questions ──
+
+test('VALIDATION (real service): a rhetorical question word holds for its answer', () => {
+  assert.equal(endsDanglingZh('门徒在跟随主的路上他们即使他们在最后的晚餐上什么'), true); // #221 → "…, what"
+  assert.equal(endsDanglingZh('我想他一定就flashback到怎么讲'), true); // #138
+  assert.equal(endsDanglingZh('这个时候怎么样'), true); // #131
+  // CONTROL: a question closed by its particle still ends there.
+  assert.equal(looksCompleteZh('那最后约翰福音以什么为结尾呢'), true);
+});
+
+test('verse matching: recognises which verse is read, with no verse number spoken', async () => {
+  const { matchSpokenVersesZh } = await import('../src/verse-match-zh');
+  const v = (s: string) => matchSpokenVersesZh(s, 'John', 21).map((m) => m.verse);
+  assert.deepEqual(v('耶稣说这话,指彼得要怎样死荣耀神说了这话就对他说:你跟从我吧'), [19]);
+  // Recognition errors (树上袋子 for 束上带子) still match.
+  assert.deepEqual(v('实实在在地告诉你,你年少的时候自己树上袋子'), [18]);
+  // A segment running across two verses gets both.
+  assert.deepEqual(v('耶稣就来拿饼和鱼耶稣从死里复活以后,向门徒显现,这是第三次。'), [13, 14]);
+  // The phrase shared by 15-17: only the verse that also has 第三次.
+  assert.deepEqual(v('第三次对他说约翰的儿子西门你爱我吗'), [17]);
+  // CONTROL: commentary that only mentions the story is not a reading.
+  assert.deepEqual(v('我想弟兄姐妹对这段对话其实也是非常的熟悉就是耶稣连续问了彼得三次你爱我吗'), []);
+  assert.deepEqual(v('这就是讲到了一个爱主的问题那两年前我们在学习罗马书'), []);
+});
+
+test('VALIDATION (real service): a long reading keeps its passage past the timeout', async () => {
+  const { keepReadingZh } = await import('../src/verse-match-zh');
+  const ref = { book: 'John', chapter: 21, verse: 1 };
+  assert.equal(keepReadingZh(ref, '耶稣说这话,指彼得要怎样死荣耀神说了这话就对他说:你跟从我吧'), true);
+  assert.equal(ref.verse, 19);
+  assert.equal(keepReadingZh(ref, '所以弟兄姐妹我们今天要学习爱主之道'), false);
+});
+
+test('translator sends the verse being read — Chinese and English — for a reading', async () => {
+  const { ClaudeTranslator } = await import('../src/translation');
+  const t = new ClaudeTranslator('test-key', 'test-model', 'zh-en', 'replay', { churchTerms: [] });
+  let sent = '';
+  (t as unknown as { client: unknown }).client = {
+    messages: {
+      create: async (req: { messages: { content: string }[] }) => {
+        sent = req.messages[0].content;
+        return { content: [{ type: 'text', text: 'and someone else will lead you.' }] };
+      },
+    },
+  };
+  await t.translate('别人要把你带到你不愿意去的地方', { book: 'John', chapter: 21, verse: 1 });
+  assert.match(sent, /John 21:18/);
+  assert.match(sent, /束上带子/); // the real Chinese text, for what he skipped
+  assert.match(sent, /English \(BSB\)/);
+  assert.match(sent, /ONLY the parts he actually spoke/);
+});
+
+test('VALIDATION (real service): tag questions are thinned to one in three', async () => {
+  const { thinTagQuestionsZh } = await import('../src/text-zh');
+  const state = { count: 0 };
+  const out = [
+    '这些都是应该做的是吧',
+    '他们大部分都是渔夫是吧那后来呢',
+    '我们会有这样的心理对吧',
+    '这就是彼得是吧',
+  ].map((t) => thinTagQuestionsZh(t, state));
+  assert.equal(out.join('').match(/是吧|对吧/g)?.length, 2, JSON.stringify(out)); // 1st and 4th kept
+  assert.equal(out[1], '他们大部分都是渔夫那后来呢');
+  // Never touches 是 / 吧 used normally.
+  assert.equal(thinTagQuestionsZh('我们一起祷告吧', { count: 1 }), '我们一起祷告吧');
+});
+
+test('REGRESSION: a segment that is only a tag question is not emptied', async () => {
+  // Emptied, the translator invented "What is that to you? You follow me."
+  const { thinTagQuestionsZh } = await import('../src/text-zh');
+  assert.equal(thinTagQuestionsZh('是吧', { count: 1 }), '是吧');
+});
+
+test('verse matching: a reading that starts in the same breath as its announcement', async () => {
+  const { matchSpokenVersesZh } = await import('../src/verse-match-zh');
+  const v = matchSpokenVersesZh('接下来的请应经文来自约翰福音二十一章一到二十五节由讲台念单数节请会众念双数节这些事以后耶稣在提比哩亚', 'John', 21);
+  assert.deepEqual(v.map((m) => m.verse), [1]);
+});
