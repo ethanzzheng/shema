@@ -458,6 +458,20 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     const s = stt;
     chunker = null;
     stt = null;
+    if (session.direction !== 'zh-en') {
+      // Korean and English→Korean: the deployed teardown, unchanged until the
+      // last-sentence flush below is tested on those services.
+      if (c) {
+        // Drain queued + in-flight translations before teardown. Destroying
+        // immediately used to clear the pending queue and silently drop the
+        // final chunk(s) whenever two translations were still in flight.
+        c.forceFlush()
+          .catch(() => {})
+          .finally(() => c.destroy());
+      }
+      s?.disconnect();
+      return;
+    }
     // Ask Deepgram for whatever the pastor was still saying BEFORE draining
     // the chunker, and feed those last finals in by hand: the module-level
     // chunker is already null (so a fresh start can't collide with this

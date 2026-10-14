@@ -26,11 +26,11 @@ function arg(flag: string, dflt = ''): string {
   return i >= 0 && a[i + 1] ? a[i + 1] : dflt;
 }
 
-const SYSTEM = `You are an English-speaking churchgoer listening to a live machine interpretation of a Mandarin sermon through earphones. The English below is exactly what you hear, segment after segment, with a short pause between segments. The Mandarin source is shown only so you can tell the interpreter's problems from the pastor's own (a pastor who trails off or jumps topic is not the interpreter's fault).
+const SYSTEM_FOR = (SRC: string) => `You are an English-speaking churchgoer listening to a live machine interpretation of a ${SRC} sermon through earphones. The English below is exactly what you hear, segment after segment, with a short pause between segments. The ${SRC} source is shown only so you can tell the interpreter's problems from the pastor's own (a pastor who trails off or jumps topic is not the interpreter's fault).
 
 Judge how well you can FOLLOW the English. Report problems the interpreter caused:
 - broken: a sentence is split across segments so that a segment ends or begins in a way you cannot follow (a dangling clause that never resolves, a continuation you cannot attach to anything).
-- jump: a segment does not connect to what came before although the Mandarin does.
+- jump: a segment does not connect to what came before although the ${SRC} does.
 - repeat: you hear the same content twice across segments.
 - garble: a phrase that makes no sense in English.
 - filler: verbal tics or filler that make it tiresome to listen to (repeated "right?", "so", "you know").
@@ -48,6 +48,9 @@ async function main(): Promise<void> {
   const size = Number(arg('--window', '10'));
   const trial = arg('--trial');
   const dir = findRunDir(run);
+  // The judge is told the source language; the run's folder names it.
+  const SRC = dir.includes('/korean/') ? 'Korean' : dir.includes('/english/') ? 'English' : 'Mandarin';
+  const SYSTEM = SYSTEM_FOR(SRC);
   const lines: Line[] = fs.readFileSync(path.join(dir, `replay-${name}.jsonl`), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!, maxRetries: 4 });
@@ -60,7 +63,7 @@ async function main(): Promise<void> {
     while (idx < windows.length) {
       const w = windows[idx++];
       const prompt =
-        `Mandarin (reference only):\n${w.map((l) => `[${l.seq}] ${l.source}`).join('\n')}\n\n` +
+        `${SRC} (reference only):\n${w.map((l) => `[${l.seq}] ${l.source}`).join('\n')}\n\n` +
         `English as heard:\n${w.map((l) => `[${l.seq}] ${l[col]}`).join('\n')}`;
       const r = await client.messages.create({ model: JUDGE_MODEL, max_tokens: 1200, system: SYSTEM, messages: [{ role: 'user', content: prompt }] });
       const text = r.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');

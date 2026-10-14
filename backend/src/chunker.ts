@@ -275,7 +275,8 @@ export class KoreanChunker {
       // the long buffer it was split from, found maxHoldMs already spent, and
       // shipped instantly — "另外," was spoken alone as "Also" 773ms after
       // it arrived.
-      if (!group) this.bufferStartedAt = Date.now();
+      // Mandarin only: Korean keeps the deployed timing.
+      if (!group && this.direction === 'zh-en') this.bufferStartedAt = Date.now();
     }
     if (!this.buffer) return;
 
@@ -296,7 +297,9 @@ export class KoreanChunker {
     // Run-on safety: dispatch immediately once we exceed the hard cap —
     // cutting at the best boundary inside it where the language allows.
     if (this.buffer.length >= this.cfg.maxChars) {
-      if (!this.shipSafeHead(true)) this.dispatchBuffer();
+      // Only where the detector asks for it (Mandarin); Korean ships the whole
+      // buffer at the cap, as deployed.
+      if (!(this.detector.splitWhenExpired && this.shipSafeHead(true))) this.dispatchBuffer();
       return;
     }
 

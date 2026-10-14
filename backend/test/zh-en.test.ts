@@ -208,10 +208,12 @@ test('zh-en prompt carries the Mandarin-specific rules', () => {
   }
 });
 
-test('no prompt asks for JSON while the parser expects plain text', () => {
-  for (const p of [SYSTEM_PROMPT_ZH_EN, SYSTEM_PROMPT_KO_EN, SYSTEM_PROMPT_EN_KO]) {
-    assert.ok(!p.includes('must be the JSON object'), 'a stale JSON instruction contradicts the plain-text contract');
-  }
+test('the Mandarin prompt does not ask for JSON while the parser expects plain text', () => {
+  assert.ok(!SYSTEM_PROMPT_ZH_EN.includes('must be the JSON object'), 'a stale JSON instruction contradicts the plain-text contract');
+  // The Korean prompts still end on the stale JSON line, deliberately: they are
+  // kept byte-identical to what the Korean pilot runs until removing it is
+  // tested on Korean services. This pins that, so it is not changed by accident.
+  for (const p of [SYSTEM_PROMPT_KO_EN, SYSTEM_PROMPT_EN_KO]) assert.ok(p.includes('must be the JSON object'));
 });
 
 test('REGRESSION: a tail left after splitting off sentences gets its own patience', async () => {

@@ -47,7 +47,9 @@ export async function loadChurchGlossary(
     }
   }
   const terms = envTerms(churchId, process.env, lang);
-  return { terms: sourceLang ? terms.filter((t) => matchesSourceLanguage(t, sourceLang)) : terms, source: 'env' };
+  // Filtered for Mandarin rooms only: the env list was written for the Korean
+  // churches and is left exactly as deployed for them.
+  return { terms: sourceLang === 'zh' ? terms.filter((t) => matchesSourceLanguage(t, sourceLang)) : terms, source: 'env' };
 }
 
 /**

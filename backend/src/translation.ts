@@ -66,7 +66,8 @@ ABSOLUTE RULES:
 - REFERENT CONTINUITY: once the previous segments establish who someone is (e.g. "Shepherd Jo Jeong-hwan", "his pastor friend in Boston"), keep that person's name and title consistent and resolve ambiguous references against the established cast — do not re-derive them from the current segment alone. If the STT text conflicts with an established role (목자/목사 are often swapped by STT), trust the established role.
 - FILLER RESTRAINT: do not render every discourse particle. Drop "so", "well", "you know", "I think" wherever they carry no meaning — English tolerates far less of this than Korean, and rendering all of it made the output feel padded to live listeners. Trimming filler must never cost content.
 - 그렇죠?/그쵸? is the pastor's verbal tic inviting agreement. Render it as an English tag only when it is a genuine appeal to the congregation — roughly one occurrence in three; check the previous segments and OMIT it entirely if you used one recently. When you do render it, vary the phrasing — "Right?", "You see?", "Isn't that so?", "Don't you agree?" — rather than writing "Right?" every single time. Pick whatever fits the sentence's rhythm; never expand it into a longer sentence. If a segment ENDS on an abandoned false start — a bare subject or demonstrative with no predicate that the pastor drops before finishing the thought (e.g. "그 내가", "저 그거") — OMIT that dangling tail; do NOT emit a subjectless fragment like "That, I" or "So we". (This is different from a genuine mid-sentence cut that carries real content the next segment will continue — keep those and stop on the last real word.)
-- If the segment is empty, meaningless, or pure filler, return an empty response.`;
+- If the segment is empty, meaningless, or pure filler, return an empty response.
+- Your entire response must be the JSON object, starting with { and ending with }.`;
 
 export const SYSTEM_PROMPT_ZH_EN = `You are a professional simultaneous interpreter translating a LIVE Mandarin Chinese church sermon into English, one spoken segment at a time, as the pastor speaks.
 
@@ -146,7 +147,8 @@ ABSOLUTE RULES:
 - NATURALNESS (anti-translationese): render the MEANING as a Korean pastor would naturally say it aloud — NEVER a literal clause-by-clause mapping of the English structure. Restructure into natural Korean word order (verb last), render idioms and rhetorical questions by their natural Korean equivalents, and prefer phrasing a Korean pulpit would actually use — even when that means splitting or reshaping the English sentence. Example: "Would you stand with me as we read God's Word?" → "하나님의 말씀을 함께 읽겠습니다. 다 같이 자리에서 일어나시겠습니까?" (natural), NOT "하나님의 말씀을 읽기 위해 자리에서 일어나시겠습니까?" (stiff purpose-clause mapping). Faithfulness to the meaning still comes first — reshape the wording, never the message.
 - ENDING & PHRASING VARIETY (HARD RULE): stay strictly in 하십시오체, but monotone endings sound machine-made — real preaching rotates its formal endings by rhetorical role. BEFORE finalizing, look at how the previous segments in the context END. If the last two translated sentences both ended in the plain "-니다" cadence (합니다/입니다/십니다...), this sentence MUST end differently — pick whichever is natural for its role: ~는 것입니다 (emphasis), ~기 때문입니다 (reason), ~게 됩니다 (result), ~지 않습니까? (rhetorical), ~십시오 / ~시기 바랍니다 (exhortation), or reshape into a question or emphatic nominalization. Within one segment, consecutive sentences should not share the identical ending either. EXCEPTION: scripture quotes keep their canonical wording, and deliberate parallel repetition in the English (anaphora, "He was… He was…") is rhetoric — mirror it exactly; never vary away intentional parallelism.
 - LIVE-INTERPRETER COMPACTNESS: a live interpreter compresses. Render the FULL meaning in the fewest natural words — never pad with empty frames ("~라고 할 수 있습니다", "~것이라고 생각됩니다"), never add amplifiers the English doesn't have, and never expand one English clause into two Korean sentences unless Korean grammar requires it. When two renderings are equally faithful and natural, always speak the shorter one; the audio must keep pace with the preacher.
-- If the segment is empty, meaningless, or pure filler, return an empty response.`;
+- If the segment is empty, meaningless, or pure filler, return an empty response.
+- Your entire response must be the JSON object, starting with { and ending with }.`;
 
 /** Strip artifacts that make TTS sound wrong, as a safety net behind the prompt. */
 export function sanitizeForSpeech(text: string): string {
@@ -495,7 +497,11 @@ export class ClaudeTranslator {
           : '') +
         `If this segment quotes any portion of the passage, use the EXACT supplied wording for that portion — but render ONLY the words the pastor actually spoke; never add parts of a verse he hasn't reached. Translate his own commentary normally.\n\n`;
     } else if (refName) {
-      refBlock = `The pastor is currently reading from ${refName}. If this segment quotes that passage, use the standard English wording for the words he actually spoke (never the parts of a verse he skipped or has not reached); otherwise translate the commentary normally.\n\n`;
+      // Mandarin gets the stricter wording; Korean keeps the deployed line
+      // until it is re-tested on Korean services.
+      refBlock = this.direction === 'zh-en'
+        ? `The pastor is currently reading from ${refName}. If this segment quotes that passage, use the standard English wording for the words he actually spoke (never the parts of a verse he skipped or has not reached); otherwise translate the commentary normally.\n\n`
+        : `The pastor is currently reading from ${refName}. If this segment quotes that passage, reproduce the standard English wording of the relevant verse(s); otherwise translate the commentary normally.\n\n`;
     }
 
     for (let attempt = 0; attempt <= retries; attempt++) {
@@ -548,7 +554,9 @@ export class ClaudeTranslator {
         const wrapped = /^["'`\u201c\u2018]([\s\S]*)["'`\u201d\u2019]$/.exec(translated);
         if (wrapped && !/["\u201c\u201d]/.test(wrapped[1])) translated = wrapped[1].trim();
 
-        const stripped = stripMetaPreamble(translated);
+        // Mandarin only for now: measured there, and Korean output must stay
+        // exactly as the pilot runs it until this is tested on Korean.
+        const stripped = this.direction === 'zh-en' ? stripMetaPreamble(translated) : translated;
         if (stripped !== translated) {
           console.warn('[Translation] Stripped translator-voice preamble:', translated.slice(0, 80));
           translated = stripped;
@@ -563,7 +571,7 @@ export class ClaudeTranslator {
         // A Chinese character in English output is read aloud IN CHINESE:
         // eleven_flash_v2_5 is multilingual and switches language per token.
         // The prompt forbids it; this guarantees it.
-        if (this.targetLang === 'en' && /[\u4e00-\u9fff]/.test(translated)) {
+        if (this.direction === 'zh-en' && /[\u4e00-\u9fff]/.test(translated)) {
           console.warn('[Translation] Stripped Chinese characters from English output:', translated.slice(0, 80));
           translated = translated.replace(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
         }
@@ -626,8 +634,10 @@ export class ClaudeTranslator {
       ...[...source.matchAll(/([가-힣][가-힣\s]{1,18}?)(?:이)?라는/g)].map((m) => m[1].trim()),
       // Mandarin names a title with book-title brackets 《…》, or as
       // 叫(做)…的 + 歌/诗/书/电影 ("a song CALLED X").
-      ...[...source.matchAll(/《([^《》]{1,20})》/g)].map((m) => m[1].trim()),
-      ...[...source.matchAll(/叫做?([\u4e00-\u9fff]{2,12}?)的(?:歌|诗|书|电影|诗歌|赞美诗)/g)].map((m) => m[1].trim()),
+      ...(this.direction === 'zh-en' ? [...source.matchAll(/《([^《》]{1,20})》/g)].map((m) => m[1].trim()) : []),
+      ...(this.direction === 'zh-en'
+        ? [...source.matchAll(/叫做?([\u4e00-\u9fff]{2,12}?)的(?:歌|诗|书|电影|诗歌|赞美诗)/g)].map((m) => m[1].trim())
+        : []),
     ];
     if (titles.length === 0) return;
     // The English rendering of a title is normally quoted or Title Case.

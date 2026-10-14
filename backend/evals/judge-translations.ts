@@ -23,11 +23,11 @@ function arg(flag: string, dflt = ''): string {
   return i >= 0 && a[i + 1] ? a[i + 1] : dflt;
 }
 
-const SYSTEM = `You audit a live machine interpretation of a Mandarin church sermon into English. The Mandarin came from speech recognition and contains homophone mistakes; judge against what the pastor evidently MEANT, not the literal garble. The sermon was cut into segments at pauses, so a segment may begin or end mid-sentence; that alone is not an error.
+const SYSTEM_FOR = (SRC: string) => `You audit a live machine interpretation of a ${SRC} church sermon into English. The ${SRC} came from speech recognition and contains homophone mistakes; judge against what the pastor evidently MEANT, not the literal garble. The sermon was cut into segments at pauses, so a segment may begin or end mid-sentence; that alone is not an error.
 
 For the TARGET segment only, report these issues:
-- addition: the English says something the Mandarin segment does not contain (e.g. finishes a Bible verse the pastor had not reached, invents a phrase for a garble, completes a thought from the sermon's theme). Rendering a quoted verse in standard Bible wording is NOT an addition if the pastor said that part.
-- omission: a clause with real content in the Mandarin is missing from the English (dropping filler or false starts is fine).
+- addition: the English says something the ${SRC} segment does not contain (e.g. finishes a Bible verse the pastor had not reached, invents a phrase for a garble, completes a thought from the sermon's theme). Rendering a quoted verse in standard Bible wording is NOT an addition if the pastor said that part.
+- omission: a clause with real content in the ${SRC} is missing from the English (dropping filler or false starts is fine).
 - repeat: the English restates content the PREVIOUS English segment already said.
 - meaning: the English states something wrong or opposite to what the pastor meant.
 - fragment: the English is a stand-alone sentence that would mislead a listener because it was cut (e.g. a dangling modifier attaching to the wrong thing, an invented question). A plain clipped clause is not a fragment.
@@ -43,6 +43,9 @@ async function main(): Promise<void> {
   // Judging is itself stochastic; --trial lets a replay be judged more than once.
   const trial = arg('--trial');
   const dir = findRunDir(run);
+  // The judge is told the source language; the run's folder names it.
+  const SRC = dir.includes('/korean/') ? 'Korean' : dir.includes('/english/') ? 'English' : 'Mandarin';
+  const SYSTEM = SYSTEM_FOR(SRC);
   const lines: Line[] = fs.readFileSync(path.join(dir, `replay-${name}.jsonl`), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l));
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY!, maxRetries: 4 });
@@ -56,9 +59,9 @@ async function main(): Promise<void> {
         const next = lines[i + 1];
         const L = lines[i];
         const prompt =
-          prev.map((p) => `PREVIOUS Mandarin: ${p.source}\nPREVIOUS English: ${p[col]}`).join('\n\n') +
-          `\n\nTARGET Mandarin: ${L.source}\nTARGET English: ${L[col]}` +
-          (next ? `\n\n(NEXT Mandarin, for context only: ${next.source})` : '');
+          prev.map((p) => `PREVIOUS ${SRC}: ${p.source}\nPREVIOUS English: ${p[col]}`).join('\n\n') +
+          `\n\nTARGET ${SRC}: ${L.source}\nTARGET English: ${L[col]}` +
+          (next ? `\n\n(NEXT ${SRC}, for context only: ${next.source})` : '');
         const r = await client.messages.create({ model: JUDGE_MODEL, max_tokens: 300, system: SYSTEM, messages: [{ role: 'user', content: prompt }] });
         const text = r.content.filter((b): b is Anthropic.TextBlock => b.type === 'text').map((b) => b.text).join('');
         let parsed: { issues: string[]; note: string } = { issues: [], note: 'unparsed' };
