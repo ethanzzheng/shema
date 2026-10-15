@@ -16,6 +16,7 @@ import {
 } from '@phosphor-icons/react';
 import ShemaMark from '@/components/ShemaMark';
 import { Phone } from './MobileMockups';
+import '@/components/app/app.css';
 
 export const SCREENS = [
   { id: 'login', label: 'Log in' },

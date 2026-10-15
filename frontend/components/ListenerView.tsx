@@ -5,6 +5,10 @@ import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg, TranscriptHisto
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
+import { churchDisplayName } from '@/lib/slug';
+import { CaretDown, CaretRight, Pause, Play, SpeakerHigh } from '@phosphor-icons/react';
+import { Seg } from '@/components/app/chrome';
+import '@/components/app/listener.css';
 
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 type TtsMode = 'elevenlabs' | 'browser' | 'off';
@@ -132,6 +136,8 @@ export default function ListenerView({ church }: { church: string }) {
   // brisk playback distracting). Persisted per device.
   const [autoCatchUp, setAutoCatchUp] = useState(true);
   const autoCatchUpRef = useRef(true);
+  // The voice / catch-up controls are for troubleshooting; folded by default.
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const wsRef = useRef<WsClient | null>(null);
   const streamRef = useRef<AudioStreamPlayer | null>(null); // MSE progressive player (primary)
@@ -509,302 +515,191 @@ export default function ListenerView({ church }: { church: string }) {
   handleMessageRef.current = handleMessage;
 
   // ── Render ─────────────────────────────────────────────────────────────
-  // "Vigil" (redesign screen 1a): a dimmed sanctuary screen where the line
-  // being spoken NOW is the only bright thing. Full transcript preserved —
+  // The line being spoken NOW is the bright one. Full transcript preserved —
   // history dims above, upcoming lines wait faint below.
-  const connColor =
+  const statusClass =
     connState === 'connected'
-      ? broadcastActive ? 'var(--sage)' : 'var(--gold-hover)'
-      : connState === 'connecting' ? 'var(--gold-hover)' : 'var(--alert)';
+      ? broadcastActive ? ' live' : ' ls-status-wait'
+      : connState === 'connecting' ? ' ls-status-wait' : ' ls-status-off';
 
   // What the listener is hearing — label it so nobody wonders which language.
   const outputLang = direction === 'en-ko' ? 'Korean' : 'English';
+  // lang attributes so each script gets its own line breaking and glyph forms
+  // (Korean wraps between words; Chinese must not get Korean glyph shapes).
+  const outLangAttr = direction === 'en-ko' ? 'ko' : 'en';
+  const srcLangAttr = direction === 'en-ko' ? 'en' : direction === 'zh-en' ? 'zh' : 'ko';
 
   const connLabel =
     connState === 'connected'
       ? broadcastActive ? 'Live' : 'Waiting'
       : connState === 'connecting' ? 'Connecting…' : 'Reconnecting…';
 
-  const mono: React.CSSProperties = {
-    fontFamily: 'var(--font-mono, monospace)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.2em',
-  };
-  const baseSize = textSize === 's' ? '0.95rem' : textSize === 'l' ? '1.45rem' : '1.15rem';
-  const sizeBtn: React.CSSProperties = { minWidth: 44, minHeight: 44 };
+  const title = churchDisplayName(church) || church;
 
   return (
-    <div style={{ maxWidth: 700, margin: '0 auto', display: 'flex', flexDirection: 'column', height: '100dvh', boxSizing: 'border-box', background: 'var(--night)' }}>
-
-      {/* Header — church name + breathing status */}
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem', flexShrink: 0, padding: '1.1rem 1.25rem 0.6rem' }}>
-        <h1 className="serif-en" style={{ fontSize: '1.55rem', color: 'rgba(244,241,234,0.92)' }}>{church}</h1>
-        <span
-          style={{
-            ...mono,
-            fontSize: '0.62rem',
-            color: connColor,
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: '0.45rem',
-          }}
-        >
-          <span className={`dot${broadcastActive ? ' dot-pulse' : ''}`} style={{ background: 'currentColor', width: 7, height: 7 }} />
-          {connLabel}
-        </span>
-      </div>
-
-      {/* Audio init — one tap unlocks autoplay for the whole service */}
-      {!audioStarted && (
-        <div style={{ textAlign: 'center', padding: '2rem 1.25rem', flexShrink: 0 }}>
-          <button
-            onClick={initAudio}
-            style={{
-              width: '100%',
-              maxWidth: 380,
-              padding: '1.15rem 1.5rem',
-              fontSize: '1.2rem',
-              fontWeight: 600,
-              borderRadius: 12,
-              background: 'var(--gold)',
-              color: 'var(--night)',
-            }}
-          >
-            🔊 Tap to listen
-          </button>
-          <p style={{ marginTop: '0.9rem', color: 'rgba(244,241,234,0.5)', fontSize: '0.85rem' }}>
-            One tap starts the {outputLang} audio — get your headphones in first.
-          </p>
-        </div>
-      )}
-
-      {/* Behind-live indicator: catch-up handles small drift silently; deep
-          drift gets a one-tap escape (captions keep every line). */}
-      {audioStarted && ttsMode === 'elevenlabs' && behindSec > 30 && (
-        <div
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: '0.75rem',
-            padding: '0.6rem 1rem',
-            margin: '0 1.25rem 0.5rem',
-            border: '1px solid rgba(200,162,94,0.45)',
-            background: 'rgba(200,162,94,0.07)',
-            borderRadius: 10,
-            flexShrink: 0,
-          }}
-        >
-          <span style={{ fontSize: '0.85rem', color: 'rgba(244,241,234,0.6)' }}>
-            Audio is ~{behindSec}s behind live
+    <div className={`v2 ls-root ap-cap-${textSize}`}>
+      <div className="ap-listen ls-listen">
+        {/* Header — church name + status */}
+        <header className="ap-listen-top ls-top">
+          <h1>{title}</h1>
+          <span className={`ap-status${statusClass}`} role="status">
+            <span className="ap-dot" />
+            {connLabel}
           </span>
-          <button
-            onClick={() => streamRef.current?.jumpToLive()}
-            style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', fontWeight: 600, minHeight: 44, borderRadius: 8, background: 'var(--gold)', color: 'var(--night)' }}
-          >
-            Jump to live
-          </button>
-        </div>
-      )}
+        </header>
 
-      {/* The vigil: full transcript, only the spoken line burns bright */}
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="serif-en"
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowY: 'auto',
-          fontSize: baseSize,
-          lineHeight: 1.7,
-          padding: '1rem 1.5rem 2.5rem',
-        }}
-      >
-        {transcript.length > 0 ? (
-          <>
-            {/* Synced to the EAR: lines already heard fade above, the line
-                whose audio is playing NOW is the bright one, and
-                translated-but-not-yet-spoken lines wait faint below. When
-                audio isn't the driver (captions-only), the newest line is
-                the live one. */}
-            {(() => {
-              const lastSeq = transcript[transcript.length - 1].seq;
-              const audioDriven = audioStarted && ttsMode !== 'off' && spokenSeq > 0;
-              const highlightSeq = audioDriven ? Math.min(spokenSeq, lastSeq) : lastSeq;
-              return transcript.map((entry) => {
-                const text = entry.sermon;
-                if (entry.seq === highlightSeq) {
-                  return (
-                    <div key={entry.seq} data-seq={entry.seq} style={{ margin: '1.1em 0' }}>
-                      <span aria-hidden style={{ display: 'block', width: 26, height: 2, background: 'var(--gold)', marginBottom: '0.55em' }} />
-                      <p style={{ color: 'rgba(244,241,234,0.96)', whiteSpace: 'pre-wrap', fontSize: '1.5em', lineHeight: 1.42 }}>
+        {/* Audio init — one tap unlocks autoplay for the whole service */}
+        {!audioStarted && (
+          <section className="ls-tap">
+            <button type="button" className="ap-tap-btn" onClick={initAudio}>
+              <SpeakerHigh weight="fill" aria-hidden /> Tap to listen
+            </button>
+            <p className="ap-muted">
+              One tap starts the {outputLang} audio. Get your headphones in first.
+            </p>
+          </section>
+        )}
+
+        {/* Behind-live indicator: catch-up handles small drift silently; deep
+            drift gets a one-tap escape (captions keep every line). */}
+        {audioStarted && ttsMode === 'elevenlabs' && behindSec > 30 && (
+          <div className="ls-notice">
+            <span>Audio is ~{behindSec}s behind live</span>
+            <button type="button" className="v2-btn v2-btn-ink v2-btn-sm" onClick={() => streamRef.current?.jumpToLive()}>
+              Jump to live
+            </button>
+          </div>
+        )}
+
+        {/* Full transcript; only the spoken line is bright */}
+        <div ref={scrollRef} onScroll={handleScroll} className="ls-scroll">
+          {transcript.length > 0 ? (
+            <>
+              {/* Synced to the EAR: lines already heard fade above, the line
+                  whose audio is playing NOW is the bright one, and
+                  translated-but-not-yet-spoken lines wait faint below. When
+                  audio isn't the driver (captions-only), the newest line is
+                  the live one. */}
+              {(() => {
+                const lastSeq = transcript[transcript.length - 1].seq;
+                const audioDriven = audioStarted && ttsMode !== 'off' && spokenSeq > 0;
+                const highlightSeq = audioDriven ? Math.min(spokenSeq, lastSeq) : lastSeq;
+                return transcript.map((entry) => {
+                  const text = entry.sermon;
+                  if (entry.seq === highlightSeq) {
+                    return (
+                      <p key={entry.seq} data-seq={entry.seq} lang={outLangAttr} className="ap-cap-now ls-line">
                         {text}
                       </p>
-                    </div>
+                    );
+                  }
+                  const upcoming = entry.seq > highlightSeq;
+                  return (
+                    <p
+                      key={entry.seq}
+                      data-seq={entry.seq}
+                      lang={outLangAttr}
+                      className={`ap-cap-heard ls-line${upcoming ? ' ls-upcoming' : ''}`}
+                    >
+                      {text}
+                    </p>
                   );
-                }
-                const upcoming = entry.seq > highlightSeq;
-                return (
-                  <p
-                    key={entry.seq}
-                    data-seq={entry.seq}
-                    style={{
-                      color: 'var(--cream)',
-                      opacity: upcoming ? 0.2 : 0.28,
-                      whiteSpace: 'pre-wrap',
-                      marginBottom: '0.85em',
-                      transition: 'opacity 0.5s var(--ease)',
-                    }}
+                });
+              })()}
+              {/* Tentative live line: raw source-language STT, clearly styled
+                  as provisional; cleared when the confirmed translation lands. */}
+              {partial && (
+                <p className="ap-cap-next ls-line" lang={srcLangAttr}>
+                  {partial}
+                  <span className="ap-caret" aria-hidden />
+                </p>
+              )}
+            </>
+          ) : partial ? (
+            <p className="ap-cap-next ls-line" lang={srcLangAttr}>
+              {partial}
+              <span className="ap-caret" aria-hidden />
+            </p>
+          ) : (
+            <p className="ls-empty">
+              {!broadcastActive ? 'Waiting for broadcast to start…' : 'Translating…'}
+            </p>
+          )}
+        </div>
+
+        {/* Errors */}
+        {errors.length > 0 && (
+          <div className="ls-errors" role="alert">
+            {errors.map((e, i) => <p key={i}>{e}</p>)}
+          </div>
+        )}
+
+        {/* Footer — pause, output language, caption size, audio options.
+            Every control ≥44px: the audience is older congregants on phones. */}
+        {audioStarted && (
+          <footer className="ap-player ls-player">
+            <div className="ap-player-row">
+              <button type="button" className="ap-play" onClick={togglePause} aria-label={paused ? 'Resume audio' : 'Pause audio'}>
+                {paused ? <Play weight="fill" aria-hidden /> : <Pause weight="fill" aria-hidden />}
+              </button>
+              <div className="ap-player-label">
+                <strong>{outputLang} audio</strong>
+                <span className={paused ? 'ap-muted' : 'ap-ok'}>
+                  {paused ? 'Paused' : behindSec > 3 ? `${behindSec}s behind` : 'Live'}
+                </span>
+              </div>
+              <div className="ap-sizes" role="radiogroup" aria-label="Caption text size">
+                {(['s', 'm', 'l'] as const).map((sz) => (
+                  <button
+                    key={sz}
+                    type="button"
+                    role="radio"
+                    aria-checked={textSize === sz}
+                    aria-label={sz === 's' ? 'Small text' : sz === 'm' ? 'Medium text' : 'Large text'}
+                    className={`ap-size-${sz}${textSize === sz ? ' on' : ''}`}
+                    onClick={() => changeTextSize(sz)}
                   >
-                    {text}
-                  </p>
-                );
-              });
-            })()}
-            {/* Tentative live line: raw source-language STT, clearly styled
-                as provisional; cleared when the confirmed translation lands. */}
-            {partial && (
-              <p style={{ color: 'var(--cream)', opacity: 0.16, fontStyle: 'italic', whiteSpace: 'pre-wrap', fontSize: '0.85em' }}>
-                {partial}
-                <span className="caret" aria-hidden>▍</span>
-              </p>
+                    A
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Audio source + catch-up — tucked away; only for troubleshooting */}
+            <button type="button" className="ap-opts-toggle" aria-expanded={optionsOpen} onClick={() => setOptionsOpen((o) => !o)}>
+              {optionsOpen ? <CaretDown aria-hidden /> : <CaretRight aria-hidden />} Audio options
+            </button>
+            {optionsOpen && (
+              <div className="ap-opts">
+                <Seg<TtsMode>
+                  label="Voice"
+                  value={ttsMode}
+                  onChange={(m) => { setTtsMode(m); browserTtsRef.current?.cancel(); }}
+                  options={[
+                    { v: 'browser', l: 'Basic voice', title: "Fallback — your browser's built-in speech" },
+                    { v: 'elevenlabs', l: 'Studio voice', title: 'Studio voice (default)' },
+                    { v: 'off', l: 'Captions only', title: 'Captions only' },
+                  ]}
+                />
+                {/* Catch-up speed: on = quietly play brisk when behind live;
+                    off = always normal speed (the Jump-to-live pill still works). */}
+                <div className="ap-opts-row">
+                  <span>Catch-up speed</span>
+                  <Seg<'auto' | 'off'>
+                    label="Catch-up speed"
+                    value={autoCatchUp ? 'auto' : 'off'}
+                    onChange={(v) => changeAutoCatchUp(v === 'auto')}
+                    options={[
+                      { v: 'auto', l: 'Auto', title: 'Plays slightly faster when behind live so you stay close (default)' },
+                      { v: 'off', l: 'Off', title: 'Always normal speed — you may drift behind live' },
+                    ]}
+                  />
+                </div>
+              </div>
             )}
-          </>
-        ) : partial ? (
-          <p style={{ color: 'var(--cream)', opacity: 0.2, fontStyle: 'italic', fontSize: '0.85em' }}>
-            {partial}
-            <span className="caret" aria-hidden>▍</span>
-          </p>
-        ) : (
-          <p style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', paddingTop: '1rem' }}>
-            {!broadcastActive ? 'Waiting for broadcast to start…' : 'Translating…'}
-          </p>
+          </footer>
         )}
       </div>
-
-      {/* Errors */}
-      {errors.length > 0 && (
-        <div style={{ border: '1px solid rgba(255,138,128,.4)', background: 'rgba(255,138,128,.05)', borderRadius: 10, flexShrink: 0, margin: '0 1.25rem 0.5rem', padding: '0.6rem 1rem' }}>
-          {errors.map((e, i) => (
-            <p key={i} style={{ color: 'var(--alert)', fontSize: '0.85rem', marginTop: i === 0 ? 0 : '0.35rem' }}>{e}</p>
-          ))}
-        </div>
-      )}
-
-      {/* Footer — pause, output language, caption source, text size.
-          Every control ≥44px: the audience is older congregants on phones. */}
-      {audioStarted && (
-        <div
-          style={{
-            flexShrink: 0,
-            padding: '0.9rem 1.25rem calc(0.9rem + env(safe-area-inset-bottom))',
-            background: 'linear-gradient(to top, var(--night) 78%, rgba(19,19,24,0))',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '0.7rem',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.9rem', flexWrap: 'wrap' }}>
-            <button
-              onClick={togglePause}
-              aria-label={paused ? 'Resume audio' : 'Pause audio'}
-              style={{
-                width: 56,
-                height: 56,
-                borderRadius: '50%',
-                background: 'var(--gold)',
-                color: 'var(--night)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                flexShrink: 0,
-              }}
-            >
-              {paused ? (
-                <svg width="15" height="16" viewBox="0 0 11 12" fill="currentColor" aria-hidden>
-                  <path d="M0 0 L11 6 L0 12 Z" />
-                </svg>
-              ) : (
-                <svg width="13" height="16" viewBox="0 0 10 12" fill="currentColor" aria-hidden>
-                  <rect x="0" y="0" width="3.5" height="12" />
-                  <rect x="6.5" y="0" width="3.5" height="12" />
-                </svg>
-              )}
-            </button>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 90 }}>
-              <span style={{ ...mono, fontSize: '0.6rem', color: 'rgba(244,241,234,0.75)' }}>{outputLang} audio</span>
-              <span style={{ ...mono, fontSize: '0.55rem', color: 'rgba(244,241,234,0.4)' }}>
-                {paused ? 'Paused' : behindSec > 3 ? `${behindSec}s behind` : 'Live'}
-              </span>
-            </div>
-
-            {/* Caption size */}
-            <div className="toggle-group" aria-label="Caption text size" style={{ marginLeft: 'auto' }}>
-              <button className={`toggle-opt${textSize === 's' ? ' active' : ''}`} onClick={() => changeTextSize('s')} style={{ ...sizeBtn, fontSize: '0.62rem' }}>A</button>
-              <button className={`toggle-opt${textSize === 'm' ? ' active' : ''}`} onClick={() => changeTextSize('m')} style={{ ...sizeBtn, fontSize: '0.74rem' }}>A</button>
-              <button className={`toggle-opt${textSize === 'l' ? ' active' : ''}`} onClick={() => changeTextSize('l')} style={{ ...sizeBtn, fontSize: '0.88rem' }}>A</button>
-            </div>
-          </div>
-
-          {/* Audio source + catch-up — tucked away; only for troubleshooting */}
-          <details>
-            <summary style={{ ...mono, fontSize: '0.58rem', color: 'rgba(244,241,234,0.42)', cursor: 'pointer', userSelect: 'none', listStyle: 'none' }}>
-              ▸ Audio options
-            </summary>
-            <div className="toggle-group" style={{ marginTop: '0.6rem', maxWidth: 340 }}>
-              <button
-                className={`toggle-opt${ttsMode === 'browser' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('browser'); browserTtsRef.current?.cancel(); }}
-                title="Fallback — your browser's built-in speech"
-                style={{ minHeight: 44 }}
-              >
-                Basic voice
-              </button>
-              <button
-                className={`toggle-opt${ttsMode === 'elevenlabs' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('elevenlabs'); browserTtsRef.current?.cancel(); }}
-                title="Studio voice (default)"
-                style={{ minHeight: 44 }}
-              >
-                Studio voice
-              </button>
-              <button
-                className={`toggle-opt${ttsMode === 'off' ? ' active' : ''}`}
-                onClick={() => { setTtsMode('off'); browserTtsRef.current?.cancel(); }}
-                title="Captions only"
-                style={{ minHeight: 44 }}
-              >
-                Captions only
-              </button>
-            </div>
-            {/* Catch-up speed: on = quietly play brisk when behind live;
-                off = always normal speed (the Jump-to-live pill still works). */}
-            <div style={{ ...mono, fontSize: '0.55rem', color: 'rgba(244,241,234,0.42)', margin: '0.7rem 0 0.35rem' }}>
-              Catch-up speed
-            </div>
-            <div className="toggle-group" style={{ maxWidth: 340 }}>
-              <button
-                className={`toggle-opt${autoCatchUp ? ' active' : ''}`}
-                onClick={() => changeAutoCatchUp(true)}
-                title="Plays slightly faster when behind live so you stay close (default)"
-                style={{ minHeight: 44 }}
-              >
-                Auto
-              </button>
-              <button
-                className={`toggle-opt${!autoCatchUp ? ' active' : ''}`}
-                onClick={() => changeAutoCatchUp(false)}
-                title="Always normal speed — you may drift behind live"
-                style={{ minHeight: 44 }}
-              >
-                Off
-              </button>
-            </div>
-          </details>
-        </div>
-      )}
     </div>
   );
 }

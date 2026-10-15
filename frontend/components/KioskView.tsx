@@ -16,6 +16,11 @@ import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
 import { useRequireAuth } from '@/lib/use-require-auth';
+import { churchDisplayName } from '@/lib/slug';
+import { Play } from '@phosphor-icons/react';
+import '@/components/home/home.css';
+import '@/components/app/app.css';
+import '@/components/app/listener.css';
 
 const VOLUME_STORAGE_KEY = 'shema-kiosk-volume';
 
@@ -267,15 +272,11 @@ export default function KioskView({ church }: { church: string }) {
   }, []);
   handleMessageRef.current = handleMessage;
 
-  // ── Render (redesign screen 1d) ─────────────────────────────────────────
+  // ── Render ──────────────────────────────────────────────────────────────
   // Designed to be read from across the room: one large pill answers the
   // operator's only question — is sound going out?
   const soundOut = started && broadcastActive && connState === 'connected';
-  const pillColor = soundOut
-    ? 'var(--sage)'
-    : connState !== 'connected'
-    ? 'var(--alert)'
-    : 'rgba(244,241,234,0.5)';
+  const pillClass = soundOut ? ' live' : connState !== 'connected' ? ' ls-status-off' : '';
   const pillLabel = soundOut
     ? 'Sound is going out'
     : connState === 'connecting'
@@ -285,102 +286,58 @@ export default function KioskView({ church }: { church: string }) {
     : started
     ? 'Waiting for broadcast'
     : 'Output not started';
-
-  const mono: React.CSSProperties = {
-    fontFamily: 'var(--font-mono, monospace)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.22em',
-  };
+  const outLangAttr = direction === 'en-ko' ? 'ko' : 'en';
 
   // Waiting on the auth check (or being redirected to /login) — render nothing.
   if (gate !== 'ok') return null;
 
   return (
-    <div
-      style={{
-        height: '100dvh',
-        display: 'flex',
-        flexDirection: 'column',
-        padding: 'clamp(1.25rem, 3vw, 2.5rem)',
-        gap: '1.25rem',
-        boxSizing: 'border-box',
-        background: 'var(--night)',
-      }}
-    >
+    <div className="v2 ap-kiosk ks-root">
       {/* ── Top bar: church + the one big answer ─────────────────────── */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', flexShrink: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: '1rem', flexWrap: 'wrap' }}>
-          <h1 className="serif-en" style={{ fontSize: 26, color: 'rgba(244,241,234,0.92)' }}>{church}</h1>
-          <span style={{ ...mono, fontSize: 10, color: 'rgba(244,241,234,0.42)' }}>
-            Receiver output · {direction === 'en-ko' ? 'Korean' : 'English'}
-          </span>
+      <header className="ap-kiosk-top">
+        <div>
+          <h1>{churchDisplayName(church) || church}</h1>
+          <span className="ap-muted">Receiver output · {direction === 'en-ko' ? 'Korean' : 'English'}</span>
         </div>
-        <span
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 12,
-            padding: '10px 22px',
-            borderRadius: 999,
-            border: `1px solid ${pillColor}`,
-            color: pillColor,
-            ...mono,
-            fontSize: 15,
-          }}
-        >
-          <span className={`dot${soundOut ? ' dot-pulse' : ''}`} style={{ width: 10, height: 10 }} />
+        <span className={`ap-status ap-status-lg${pillClass}`} role="status">
+          <span className="ap-dot" />
           {pillLabel}
         </span>
-      </div>
+      </header>
 
       {/* ── Main area ────────────────────────────────────────────────── */}
       {!started ? (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '1.25rem', border: '1px solid rgba(200,162,94,.45)', background: 'rgba(200,162,94,.04)', borderRadius: 12 }}>
-          <button
-            onClick={startOutput}
-            style={{ fontSize: '1.5rem', padding: '1.4rem 3.5rem', fontWeight: 600, borderRadius: 10, background: 'var(--gold)', color: 'var(--night)' }}
-          >
-            ▶ Start output
+        <main className="ap-kiosk-start">
+          <button type="button" className="ap-go ap-go-xl" onClick={startOutput}>
+            <Play weight="fill" aria-hidden /> Start output
           </button>
-          <p style={{ color: 'rgba(244,241,234,0.5)', maxWidth: '46ch', textAlign: 'center', fontSize: '0.95rem' }}>
-            One click unlocks continuous audio out of this laptop&apos;s headphone / line-out.
-            Use the test tone below to verify the church system hears it, then leave this
+          <p>
+            One click unlocks continuous audio out of this laptop&apos;s headphone or line-out.
+            Use the test tone below to check the church system hears it, then leave this
             screen open for the whole service.
           </p>
-        </div>
+        </main>
       ) : (
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: 'clamp(1.5rem, 4vw, 3rem)', gap: '1.6rem', overflow: 'hidden' }}>
+        <main className="ap-kiosk-captions">
           {caption ? (
             <>
-              <p className="serif-en" style={{ color: 'var(--cream)', opacity: 0.24, fontSize: 'clamp(1.2rem, 2.3vw, 1.9rem)', lineHeight: 1.5 }}>
-                {prevCaption}
-              </p>
-              <p className="serif-en" style={{ color: 'rgba(244,241,234,0.96)', fontSize: 'clamp(1.8rem, 5vw, 4rem)', lineHeight: 1.28, maxWidth: '24ch' }}>
-                {caption}
-              </p>
+              <p className="ap-kiosk-prev" lang={outLangAttr}>{prevCaption}</p>
+              <p className="ap-kiosk-cur" lang={outLangAttr}>{caption}</p>
             </>
           ) : (
-            <p className="serif-en" style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', fontSize: 'clamp(1.2rem, 2.2vw, 1.8rem)', textAlign: 'center' }}>
-              {broadcastActive ? 'Translating…' : 'Output armed — waiting for the broadcast to start.'}
+            <p className="ks-empty">
+              {broadcastActive ? 'Translating…' : 'Output armed. Waiting for the broadcast to start.'}
             </p>
           )}
-        </div>
+        </main>
       )}
 
+      {error && <div className="ks-error" role="alert">{error}</div>}
+
       {/* ── Operator bar: volume, test tone, wake lock ───────────────── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: '1.5rem',
-          flexWrap: 'wrap',
-          padding: '1rem 0 0',
-          borderTop: '1px solid rgba(244,241,234,0.08)',
-          flexShrink: 0,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flex: 1, minWidth: 240 }}>
-          <span style={{ ...mono, fontSize: 9.5, color: 'rgba(244,241,234,0.45)' }}>Output</span>
+      <footer className="ap-kiosk-ops">
+        <label className="ap-range">
+          <span>Output</span>
           <input
             type="range"
             min={0}
@@ -388,39 +345,26 @@ export default function KioskView({ church }: { church: string }) {
             step={0.01}
             value={volume}
             onChange={(e) => changeVolume(parseFloat(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--gold)' }}
             aria-label="Output volume"
           />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.8rem', color: 'rgba(244,241,234,0.6)', width: 42, textAlign: 'right' }}>
-            {Math.round(volume * 100)}%
-          </span>
-        </div>
+          <span>{Math.round(volume * 100)}%</span>
+        </label>
 
-        <button className="btn btn-ghost" onClick={playTestTone} disabled={toneBusy} style={{ opacity: toneBusy ? 0.5 : 1 }}>
+        <button type="button" className="v2-btn v2-btn-ghost v2-btn-sm" onClick={playTestTone} disabled={toneBusy}>
           {toneBusy ? 'Playing…' : 'Test tone'}
         </button>
 
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8, ...mono, fontSize: 9.5, color: wakeLockState === 'active' ? 'var(--sage)' : 'rgba(244,241,234,0.42)' }}>
-          <span className="dot" />
+        <span className={`ks-wake${wakeLockState === 'active' ? ' on' : ''}`}>
+          <span className="ap-dot" />
           {wakeLockState === 'active'
             ? 'Screen stays awake'
             : wakeLockState === 'unavailable'
-            ? 'Wake lock unavailable — disable sleep in OS settings'
+            ? 'Wake lock unavailable. Turn off sleep in the computer settings.'
             : 'Screen may sleep'}
         </span>
 
-        {started && (
-          <span style={{ ...mono, fontSize: 9.5, color: 'rgba(244,241,234,0.42)' }}>
-            {segments} segments
-          </span>
-        )}
-      </div>
-
-      {error && (
-        <div style={{ border: '1px solid rgba(255,138,128,.4)', background: 'rgba(255,138,128,.05)', borderRadius: 10, padding: '0.75rem 1.25rem', flexShrink: 0 }}>
-          <span style={{ color: 'var(--alert)', fontSize: '0.9rem' }}>{error}</span>
-        </div>
-      )}
+        {started && <span className="ap-muted">{segments} segments</span>}
+      </footer>
     </div>
   );
 }

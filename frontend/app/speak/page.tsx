@@ -15,8 +15,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import AccountMenu from '@/components/AccountMenu';
-import ShemaMark from '@/components/ShemaMark';
+import { ArrowSquareOut, CaretDown, Check, Copy, Headphones, X } from '@phosphor-icons/react';
+import { AccountMenu, Brand, Seg } from '@/components/app/chrome';
 import {
   addGlossaryTerm,
   deleteGlossaryTerm,
@@ -33,6 +33,7 @@ import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
 import { fetchAllowedDirections, getToken, getUsername } from '@/lib/auth';
 import { useRequireAuth } from '@/lib/use-require-auth';
+import '@/components/app/desk.css';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
 const DEVICE_STORAGE_KEY = 'shema-input-device';
@@ -98,12 +99,6 @@ const DEFAULT_DEBUG: DebugPanel = {
   sttConnected: false,
 };
 
-const MONO: React.CSSProperties = {
-  fontFamily: 'var(--font-mono, monospace)',
-  textTransform: 'uppercase',
-  letterSpacing: '0.18em',
-};
-
 function formatElapsed(ms: number): string {
   const s = Math.max(0, Math.floor(ms / 1000));
   const hh = String(Math.floor(s / 3600)).padStart(2, '0');
@@ -137,23 +132,13 @@ function InputMeter({ levelRef, active }: { levelRef: React.MutableRefObject<num
   const lit = Math.round(Math.min(1, level * 6) * 15);
   const good = active && Date.now() - lastSignalRef.current < 2000;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-      <div style={{ display: 'flex', gap: 3, alignItems: 'flex-end', height: 18, flex: 1 }} aria-hidden>
+    <div className="ap-meter-row">
+      <div className="ap-meter dk-meter" aria-hidden>
         {Array.from({ length: 15 }, (_, i) => (
-          <span
-            key={i}
-            style={{
-              flex: 1,
-              height: `${40 + (i % 4) * 18}%`,
-              borderRadius: 1,
-              background: i < lit ? 'var(--sage)' : 'rgba(244,241,234,0.14)',
-              opacity: i >= 11 ? 0.35 : 1,
-              transition: 'background 0.15s linear',
-            }}
-          />
+          <span key={i} className={i < lit ? 'on' : ''} style={{ height: `${40 + (i % 4) * 18}%` }} />
         ))}
       </div>
-      <span style={{ ...MONO, fontSize: 9, color: good ? 'var(--sage)' : 'rgba(244,241,234,0.35)' }}>
+      <span className={good ? 'ap-ok' : 'ap-muted'}>
         {active ? (good ? 'Signal good' : 'No signal') : 'Idle'}
       </span>
     </div>
@@ -885,41 +870,22 @@ export default function SpeakPage() {
   // Waiting on the auth check (or being redirected to /login) — render nothing.
   if (gate !== 'ok') return null;
 
-  const railCard: React.CSSProperties = {
-    border: '1px solid rgba(244,241,234,0.12)',
-    borderRadius: 10,
-    padding: '14px 16px',
-    display: 'flex',
-    flexDirection: 'column',
-    gap: 10,
-  };
-  const railLabel: React.CSSProperties = { ...MONO, fontSize: 9.5, color: 'rgba(244,241,234,0.45)' };
+  const statusClass = onAir ? ' live' : connState === 'connecting' ? ' dk-connecting' : connState === 'disconnected' ? ' dk-down' : '';
+  const listening = Math.max(0, listenerCount - (localOutput ? 1 : 0));
 
   return (
-    <div className="sp-root">
+    <div className="v2 ap-page ap-desk">
       {/* ── Top bar ─────────────────────────────────────────────────────── */}
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 14,
-          flexWrap: 'wrap',
-          padding: '12px clamp(14px, 2vw, 24px)',
-          borderBottom: '1px solid rgba(244,241,234,0.08)',
-        }}
-      >
+      <header className="ap-bar dk-bar">
         {/* Dashboard, not the marketing site. Everyone who reaches this page is
             signed in, and none of them came here to read the landing page. */}
-        <Link href="/host" style={{ display: 'inline-flex', alignItems: 'center', gap: 8, color: 'var(--gold)', minHeight: 44 }} title="Dashboard">
-          <ShemaMark />
-          <span style={{ ...MONO, fontSize: 11, letterSpacing: '0.24em' }}>Shema</span>
-        </Link>
-        <span style={{ width: 1, height: 18, background: 'rgba(244,241,234,0.12)' }} aria-hidden />
-        <span className="serif-en" style={{ fontSize: 19, color: 'rgba(244,241,234,0.9)' }}>Broadcast desk</span>
+        <Link href="/host" className="ap-bar-brand" title="Dashboard"><Brand /></Link>
+        <span className="ap-bar-rule" aria-hidden />
+        <span className="ap-bar-title">Broadcast desk</span>
 
-        {/* Church slug: chip while live, editable field otherwise */}
+        {/* Church slug: editable while off air, locked while live */}
         <input
-          className="field"
+          className="dk-church"
           value={churchDraft}
           onChange={(e) => setChurchDraft(e.target.value)}
           onBlur={commitChurch}
@@ -927,144 +893,78 @@ export default function SpeakPage() {
           disabled={broadcasting}
           placeholder="church-slug"
           aria-label="Church room"
-          style={{ width: 130, padding: '5px 10px', fontSize: 12.5, fontFamily: 'var(--font-mono, monospace)', borderRadius: 999 }}
         />
 
+        <span className="ap-bar-fill" />
+
         {/* Pacing echo — visible without looking down at the rail */}
-        {broadcasting && (
-          <span
-            style={{
-              ...MONO,
-              fontSize: 9,
-              color: 'var(--night)',
-              background: 'var(--gold)',
-              borderRadius: 999,
-              padding: '4px 10px',
-            }}
-          >
-            {mode} pacing
-          </span>
-        )}
+        {broadcasting && <span className="ap-pill ap-hide-sm">{mode === 'smooth' ? 'Smooth' : 'Fast'} pacing</span>}
 
         {/* A record of the service is being kept. Quiet and outlined rather
             than filled: it must be visible to anyone glancing at the desk
             while a testimony is being given, without competing with the
             on-air state, which is the thing the operator is actually
-            watching. */}
+            watching. Shown at every width for that reason. */}
         {broadcasting && recordingTranscript && (
-          <span
-            style={{
-              ...MONO,
-              fontSize: 9,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              color: 'rgba(244,241,234,0.55)',
-              border: '1px solid rgba(244,241,234,0.18)',
-              borderRadius: 999,
-              padding: '3px 10px',
-            }}
-            title="Every service is saved. Remove one from the transcripts page."
-          >
-            <span
-              aria-hidden
-              style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--sage)' }}
-            />
-            Recording transcript
+          <span className="ap-pill dk-rec" title="Every service is saved. Remove one from the transcripts page.">
+            <span className="ap-dot ap-dot-live" aria-hidden />
+            <span className="dk-rec-long">Recording transcript</span>
+            <span className="dk-rec-short">Recording</span>
           </span>
         )}
 
-        <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-          {broadcasting && (
-            <span style={{ ...MONO, fontSize: 11, color: 'rgba(244,241,234,0.6)' }}>{elapsed}</span>
-          )}
-          <span
-            className="pill"
-            style={{
-              color: onAir ? 'var(--sage)' : connState === 'connecting' ? 'var(--gold-hover)' : connState === 'disconnected' ? 'var(--alert)' : 'rgba(244,241,234,0.5)',
-              borderColor: 'currentColor',
-            }}
-          >
-            <span className={`dot${onAir ? ' dot-pulse' : ''}`} />
-            {onAir ? 'On air' : connState === 'connected' ? 'Ready' : connState === 'connecting' ? 'Connecting…' : 'Disconnected'}
-          </span>
-          {/* Settings sits last, after the status pill: the operator's eye
-              goes to on-air state first, and the one control they must never
-              hit by accident is furthest from it. */}
-          <AccountMenu />
+        {broadcasting && <span className="ap-timer">{elapsed}</span>}
+        <span className={`ap-status${statusClass}`}>
+          <span className="ap-dot" />
+          {onAir ? 'On air' : connState === 'connected' ? 'Ready' : connState === 'connecting' ? 'Connecting…' : 'Disconnected'}
         </span>
-      </div>
+        {/* Account menu sits last, after the status: the operator's eye goes
+            to on-air state first, and the one control they must never hit by
+            accident is furthest from it. */}
+        <AccountMenu />
+      </header>
 
       {/* ── Desk grid ───────────────────────────────────────────────────── */}
-      <div className="sp-grid" style={{ flex: 1, minHeight: 0, padding: 'clamp(12px, 1.6vw, 20px)', gap: 14 }}>
+      <div className="ap-desk-grid">
         {/* ── Left rail ── */}
-        <aside className="sp-rail" style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0 }}>
+        <aside className="ap-rail">
           {/* 1. Start / End broadcast */}
           {!broadcasting ? (
-            <button
-              onClick={startBroadcast}
-              disabled={connState !== 'connected'}
-              style={{
-                width: '100%',
-                padding: '15px 16px',
-                borderRadius: 10,
-                fontSize: 16,
-                fontWeight: 600,
-                background: 'var(--gold)',
-                color: 'var(--night)',
-                opacity: connState !== 'connected' ? 0.5 : 1,
-                transition: 'background 0.3s var(--ease)',
-              }}
-            >
-              ● Start broadcast
+            <button type="button" className="ap-go" onClick={startBroadcast} disabled={connState !== 'connected'}>
+              <span className="ap-go-dot" aria-hidden />Start broadcast
             </button>
           ) : (
-            <button
-              onClick={stopBroadcast}
-              style={{
-                width: '100%',
-                padding: '15px 16px',
-                borderRadius: 10,
-                fontSize: 16,
-                fontWeight: 600,
-                background: 'rgba(255,138,128,0.09)',
-                color: 'var(--alert)',
-                border: '1px solid rgba(255,138,128,0.4)',
-              }}
-            >
-              ■ End broadcast
+            <button type="button" className="ap-go live" onClick={stopBroadcast}>
+              <span className="ap-go-sq" aria-hidden />End broadcast
             </button>
           )}
 
           {/* 2. Direction */}
-          <div style={railCard}>
-            <span style={railLabel}>Direction</span>
-            <div className="toggle-group">
-              {(allowedDirections ?? (['ko-en', 'en-ko', 'zh-en'] as const)).map((d) => (
-                <button
-                  key={d}
-                  className={`toggle-opt${direction === d ? ' active' : ''}`}
-                  onClick={() => handleDirectionChange(d)}
-                  disabled={broadcasting}
-                  title={DIRECTION_META[d].title}
-                  style={{ fontFamily: 'var(--font-sans)', fontSize: 12.5, textTransform: 'none', letterSpacing: 0 }}
-                >
-                  {DIRECTION_LABELS[d]}
-                </button>
-              ))}
-            </div>
-          </div>
+          <section className="ap-panel">
+            <h3>Direction {broadcasting && <small>Locked while live</small>}</h3>
+            <Seg<Direction>
+              label="Direction"
+              value={direction}
+              onChange={handleDirectionChange}
+              disabled={broadcasting}
+              options={(allowedDirections ?? (['ko-en', 'en-ko', 'zh-en'] as const)).map((d) => ({
+                v: d,
+                l: DIRECTION_LABELS[d],
+                title: DIRECTION_META[d].title,
+              }))}
+            />
+          </section>
 
           {/* 3. Sound source */}
-          <div style={railCard}>
-            <span style={railLabel}>Sound source</span>
+          <section className="ap-panel">
+            <h3>Sound source</h3>
             <select
-              className="field"
+              className="v2-input"
               value={deviceId}
               onChange={(e) => selectDevice(e.target.value)}
               disabled={broadcasting}
               title={broadcasting && liveDeviceLabel ? `Live: ${liveDeviceLabel}` : undefined}
-              style={{ width: '100%', fontSize: 13 }}
+              aria-label="Input device"
             >
               <option value="">System default</option>
               {devices
@@ -1077,64 +977,47 @@ export default function SpeakPage() {
             </select>
             {needsPermission && !broadcasting && (
               <button
-                className="btn btn-ghost"
+                type="button"
+                className="v2-btn v2-btn-ghost v2-btn-sm dk-start"
                 onClick={unlockDeviceLabels}
-                style={{ fontSize: '0.72rem', padding: '0.35rem 0.6rem', alignSelf: 'flex-start' }}
                 title="Grant mic access once so device names show up"
               >
                 List devices
               </button>
             )}
             <InputMeter levelRef={levelRef} active={broadcasting || monitoring} />
-          </div>
+          </section>
 
           {/* 4. Pacing */}
-          <div style={railCard}>
-            <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 8 }}>
-              <span style={railLabel}>Pacing</span>
-              <span style={{ ...MONO, fontSize: 8.5, color: 'var(--sage)' }}>Safe to change on air</span>
-            </div>
-            <div className="toggle-group">
-              <button
-                className={`toggle-opt${mode === 'fast' ? ' active-cream' : ''}`}
-                onClick={() => handleModeChange('fast')}
-                title="Lower latency; rougher sentence edges"
-              >
-                Fast
-              </button>
-              <button
-                className={`toggle-opt${mode === 'smooth' ? ' active-cream' : ''}`}
-                onClick={() => handleModeChange('smooth')}
-                title="Waits for natural pauses; cleanest sentences"
-              >
-                Smooth
-              </button>
-            </div>
-          </div>
+          <section className="ap-panel">
+            <h3>Pacing <small className="ap-ok">Safe to change on air</small></h3>
+            <Seg<Mode>
+              label="Pacing"
+              value={mode}
+              onChange={handleModeChange}
+              options={[
+                { v: 'fast', l: 'Fast', title: 'Lower latency; rougher sentence edges' },
+                { v: 'smooth', l: 'Smooth', title: 'Waits for natural pauses; cleanest sentences' },
+              ]}
+            />
+          </section>
 
           {/* 5. Local output — one-laptop mode for soundboard churches */}
-          <div style={railCard}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={railLabel} title="Play translated audio from this device into the church system">
-                Local output
-              </span>
-              <div className="toggle-group" style={{ flex: '0 0 auto' }}>
-                <button className={`toggle-opt${!localOutput ? ' active-cream' : ''}`} onClick={() => localOutput && toggleLocalOutput()}>
-                  Off
-                </button>
-                <button className={`toggle-opt${localOutput ? ' active' : ''}`} onClick={() => !localOutput && toggleLocalOutput()}>
-                  On
-                </button>
-              </div>
-            </div>
+          <section className="ap-panel">
+            <h3 title="Play translated audio from this device into the church system">Local output</h3>
+            <Seg<'off' | 'on'>
+              label="Local output"
+              value={localOutput ? 'on' : 'off'}
+              onChange={(v) => { if ((v === 'on') !== localOutput) toggleLocalOutput(); }}
+              options={[{ v: 'off', l: 'Off' }, { v: 'on', l: 'On' }]}
+            />
             {localOutput && (
-              <>
+              <div className="ap-out">
                 {sinkSupported ? (
                   <select
-                    className="field"
+                    className="v2-input"
                     value={outputDeviceId}
                     onChange={(e) => selectOutputDevice(e.target.value)}
-                    style={{ width: '100%', fontSize: 13 }}
                     aria-label="Output device"
                   >
                     <option value="">System default output</option>
@@ -1147,11 +1030,12 @@ export default function SpeakPage() {
                       ))}
                   </select>
                 ) : (
-                  <span style={{ fontSize: 11.5, color: 'rgba(244,241,234,0.5)' }}>
+                  <p className="ap-hint">
                     This browser can&apos;t pick an output device — audio plays on the system default output.
-                  </span>
+                  </p>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label className="ap-range">
+                  <span>Volume</span>
                   <input
                     type="range"
                     min={0}
@@ -1159,273 +1043,170 @@ export default function SpeakPage() {
                     step={0.01}
                     value={outVolume}
                     onChange={(e) => changeOutVolume(parseFloat(e.target.value))}
-                    style={{ flex: 1, accentColor: 'var(--gold)' }}
                     aria-label="Local output volume"
                   />
-                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'rgba(244,241,234,0.6)', width: 38, textAlign: 'right' }}>
-                    {Math.round(outVolume * 100)}%
-                  </span>
-                  <button
-                    onClick={playTestTone}
-                    disabled={toneBusy}
-                    style={{ ...MONO, fontSize: 9, padding: '6px 10px', borderRadius: 6, border: '1px solid rgba(244,241,234,0.16)', color: 'rgba(244,241,234,0.75)', opacity: toneBusy ? 0.5 : 1 }}
-                  >
-                    {toneBusy ? 'Playing…' : 'Test tone'}
-                  </button>
-                </div>
+                  <span>{Math.round(outVolume * 100)}%</span>
+                </label>
+                <button type="button" className="v2-btn v2-btn-ghost v2-btn-sm" onClick={playTestTone} disabled={toneBusy}>
+                  {toneBusy ? 'Playing…' : 'Test tone'}
+                </button>
                 {feedbackRisk && (
-                  <span style={{ fontSize: 11.5, color: 'var(--alert)' }}>
+                  <p className="dk-alert" role="alert">
                     Output and input are the same device — the translation would feed back into the microphone. Pick a different output.
-                  </span>
+                  </p>
                 )}
-              </>
+              </div>
             )}
-          </div>
+          </section>
 
           {/* 6. Glossary. The input stays visible because adding a term is the
               live action; the list collapses because it is the bulky part and
               is only consulted after the fact. Same name as the management
               page, so the two are obviously the same thing. */}
-          <div style={railCard}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-              <span style={railLabel}>Glossary</span>
+          <section className="ap-panel">
+            <h3>
+              Glossary
               <button
+                type="button"
+                className="dk-expander"
                 onClick={() => setTermsOpen((v) => !v)}
                 aria-expanded={termsOpen}
-                style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.5)', display: 'flex', alignItems: 'center', gap: 5 }}
+                aria-label={`${terms.length} ${terms.length === 1 ? 'term' : 'terms'}, ${termsOpen ? 'hide' : 'show'} list`}
               >
-                {terms.length}
-                <span aria-hidden style={{ display: 'inline-block', transform: termsOpen ? 'rotate(180deg)' : 'none', transition: 'transform 160ms' }}>▾</span>
+                {terms.length} {terms.length === 1 ? 'term' : 'terms'}
+                <CaretDown weight="bold" aria-hidden className={termsOpen ? 'dk-flip' : undefined} />
               </button>
-            </div>
-
+            </h3>
             <input
-              className="field"
+              className="v2-input"
               value={termDraft}
               onChange={(e) => setTermDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitTerm(); }}
               disabled={termsReadOnly || termBusy}
               placeholder="목장=Mokjang"
               aria-label="Add a term"
-              style={{ padding: '7px 10px', fontSize: 12.5 }}
             />
-            <span style={{ fontSize: 10.5, color: 'rgba(244,241,234,0.4)', lineHeight: 1.45 }}>
+            <p className="ap-hint">
               {termsReadOnly
                 ? 'Read-only — this server has no glossary database.'
                 : 'Enter to add. Type a name on its own to keep it unchanged, or 목장=Mokjang to set how it comes out.'}
-            </span>
-
-            <div className="toggle-group">
-              <button
-                className={`toggle-opt${termServiceOnly ? ' active' : ''}`}
-                onClick={() => setTermServiceOnly(true)}
-                style={{ fontFamily: 'var(--font-sans)', fontSize: 11.5, textTransform: 'none', letterSpacing: 0 }}
-              >
-                This service
-              </button>
-              <button
-                className={`toggle-opt${!termServiceOnly ? ' active' : ''}`}
-                onClick={() => setTermServiceOnly(false)}
-                style={{ fontFamily: 'var(--font-sans)', fontSize: 11.5, textTransform: 'none', letterSpacing: 0 }}
-              >
-                Church
-              </button>
-            </div>
-
-            {termError && (
-              <span style={{ fontSize: 11, color: 'var(--alert)' }}>{termError}</span>
-            )}
-
+            </p>
+            <Seg<'service' | 'church'>
+              label="Glossary scope"
+              value={termServiceOnly ? 'service' : 'church'}
+              onChange={(v) => setTermServiceOnly(v === 'service')}
+              options={[{ v: 'service', l: 'This service' }, { v: 'church', l: 'Church' }]}
+            />
+            {termError && <p className="dk-alert" role="alert">{termError}</p>}
             {termsOpen && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 2, maxHeight: 190, overflowY: 'auto' }}>
-                {terms.length === 0 && (
-                  <span style={{ fontSize: 11.5, color: 'rgba(244,241,234,0.4)' }}>No terms yet.</span>
-                )}
-                {terms.map((t) => (
-                  <div
-                    key={t.id}
-                    style={{ display: 'flex', alignItems: 'baseline', gap: 8, padding: '5px 0', borderTop: '1px solid rgba(244,241,234,0.07)' }}
-                  >
-                    <span style={{ fontSize: 12.5, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {t.sourceTerm}
-                    </span>
-                    <span style={{ flex: 1, fontSize: 11, color: 'rgba(244,241,234,0.45)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {describeTerm(t)}
-                    </span>
-                    {/* Church terms outlive the service, so they are marked. */}
-                    {t.sessionId === null && (
-                      <span style={{ ...MONO, fontSize: 8, color: 'var(--gold)', opacity: 0.75 }}>CHURCH</span>
-                    )}
-                    <button
-                      onClick={() => removeTerm(t.id)}
-                      disabled={termsReadOnly}
-                      aria-label={`Remove ${t.sourceTerm}`}
-                      style={{ ...MONO, fontSize: 11, color: 'rgba(244,241,234,0.35)', padding: '0 2px' }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                ))}
-              </div>
+              terms.length === 0 ? (
+                <p className="ap-hint">No terms yet.</p>
+              ) : (
+                <ul className="ap-terms dk-terms">
+                  {terms.map((t) => (
+                    <li key={t.id}>
+                      <span className="dk-term-k">{t.sourceTerm}</span>
+                      <span className="ap-terms-to">{describeTerm(t)}</span>
+                      {/* Church terms outlive the service, so they are marked. */}
+                      {t.sessionId === null && <span className="ap-tag">Church</span>}
+                      <button
+                        type="button"
+                        onClick={() => removeTerm(t.id)}
+                        disabled={termsReadOnly}
+                        aria-label={`Remove ${t.sourceTerm}`}
+                      >
+                        <X aria-hidden />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )
             )}
-          </div>
+          </section>
 
           {/* 7. Congregation link — pinned to the rail's bottom */}
           {church && (
-            <div style={{ ...railCard, marginTop: 'auto', borderColor: 'rgba(200,162,94,0.45)', background: 'rgba(200,162,94,0.05)' }}>
-              <span style={{ ...railLabel, color: 'var(--gold)' }}>Congregation link</span>
-              <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-                {qrDataUrl && (
+            <section className="ap-panel ap-link-panel">
+              <h3>Congregation link</h3>
+              <div className="ap-link">
+                {qrDataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={qrDataUrl}
-                    alt={`QR code for ${listenUrl}`}
-                    width={78}
-                    height={78}
-                    style={{ borderRadius: 4, background: '#fff', padding: 3, flexShrink: 0 }}
-                  />
+                  <img src={qrDataUrl} alt={`QR code for ${listenUrl}`} width={88} height={88} />
+                ) : (
+                  <span className="ap-qr-ph" aria-hidden />
                 )}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, minWidth: 0 }}>
-                  <code style={{ fontSize: 11.5, wordBreak: 'break-all', color: 'rgba(244,241,234,0.75)' }}>
-                    {listenUrl.replace(/^https?:\/\//, '')}
-                  </code>
-                  <button
-                    onClick={copyLink}
-                    style={{
-                      ...MONO,
-                      fontSize: 9,
-                      alignSelf: 'flex-start',
-                      padding: '5px 12px',
-                      borderRadius: 6,
-                      border: '1px solid rgba(244,241,234,0.16)',
-                      color: 'rgba(244,241,234,0.75)',
-                    }}
-                  >
-                    {copied ? 'Copied ✓' : 'Copy'}
+                <div>
+                  <code>{listenUrl.replace(/^https?:\/\//, '')}</code>
+                  <button type="button" className="v2-btn v2-btn-ghost v2-btn-sm" onClick={copyLink}>
+                    {copied ? <Check weight="bold" aria-hidden /> : <Copy aria-hidden />}
+                    {copied ? 'Copied' : 'Copy'}
                   </button>
                 </div>
               </div>
-            </div>
+            </section>
           )}
         </aside>
 
         {/* ── Right pane ── */}
-        <main style={{ display: 'flex', flexDirection: 'column', gap: 12, minHeight: 0, minWidth: 0 }}>
+        <main className="ap-desk-main">
           {/* Health strip */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 'clamp(14px, 2.4vw, 34px)',
-              flexWrap: 'wrap',
-              border: '1px solid rgba(244,241,234,0.12)',
-              borderRadius: 10,
-              padding: '12px 18px',
-            }}
-          >
+          <div className="ap-health">
             <div>
-              <div style={railLabel}>Hearing the pastor</div>
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8, marginTop: 4 }}>
-                <span className={`dot${hearing ? ' dot-pulse' : ''}`} style={{ color: hearing ? 'var(--sage)' : 'rgba(244,241,234,0.3)' }} />
-                <span style={{ fontSize: 15, fontWeight: 600, color: hearing ? 'var(--sage)' : 'rgba(244,241,234,0.5)' }}>
-                  {hearing ? 'Yes' : broadcasting ? 'Waiting' : '—'}
-                </span>
-              </div>
+              <span className="ap-health-k">Hearing the pastor</span>
+              <span className={`ap-health-v${hearing ? ' ap-ok' : ''}`}>
+                {hearing ? <><span className="ap-dot ap-dot-live" />Yes</> : broadcasting ? 'Waiting' : '—'}
+              </span>
             </div>
             <div>
-              <div style={railLabel}>Delay to the pews</div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}>
+              <span className="ap-health-k">Delay to the pews</span>
+              <span className="ap-health-v">
                 {debug.e2eLatencyMs > 0 ? `${(debug.e2eLatencyMs / 1000).toFixed(1)} seconds` : '—'}
-              </div>
+              </span>
             </div>
             <div>
-              <div style={railLabel}>Listening now</div>
-              <div
-                style={{ fontSize: 15, fontWeight: 600, color: 'rgba(244,241,234,0.9)', marginTop: 4 }}
-                title={localOutput ? "Excludes this device's own local output" : undefined}
-              >
-                {(() => {
-                  const n = Math.max(0, listenerCount - (localOutput ? 1 : 0));
-                  return `${n} ${n === 1 ? 'person' : 'people'}`;
-                })()}
-              </div>
+              <span className="ap-health-k">Listening now</span>
+              <span className="ap-health-v" title={localOutput ? "Excludes this device's own local output" : undefined}>
+                {`${listening} ${listening === 1 ? 'person' : 'people'}`}
+              </span>
             </div>
-            <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 10, flexWrap: 'wrap' }}>
-              <button
-                onClick={() => setShowDiag((v) => !v)}
-                style={{
-                  ...MONO,
-                  fontSize: 9,
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  border: '1px solid rgba(244,241,234,0.16)',
-                  color: showDiag ? 'var(--night)' : 'rgba(244,241,234,0.6)',
-                  background: showDiag ? 'rgba(244,241,234,0.9)' : 'transparent',
-                }}
-              >
+            <div className="ap-health-actions">
+              <button type="button" className="ap-link-btn" aria-pressed={showDiag} onClick={() => setShowDiag((v) => !v)}>
                 Diagnostics
               </button>
               <a
+                className="ap-link-btn"
                 href={church ? `/listen/${church}` : '/listen'}
                 target="_blank"
                 rel="noopener noreferrer"
-                style={{ ...MONO, fontSize: 9, padding: '6px 12px', borderRadius: 6, border: '1px solid rgba(244,241,234,0.16)', color: 'rgba(244,241,234,0.6)' }}
               >
-                Open listener ↗
+                Open listener <ArrowSquareOut aria-hidden />
               </a>
-            </span>
+            </div>
           </div>
 
-          {/* Diagnostics disclosure — the old raw figures */}
+          {/* Diagnostics disclosure — the raw figures */}
           {showDiag && (
-            <div className="debug-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))' }}>
+            <dl className="ap-diag">
               {[
-                [`${debug.chunkSize}`, 'last chunk (chars)'],
-                [`${debug.chunkerWaitMs}ms`, 'chunker wait'],
-                [`${debug.translationLatencyMs}ms`, 'translation'],
-                [`${debug.ttsFirstByteMs}ms`, 'tts first byte'],
-                [`${debug.ttsLatencyMs}ms`, 'tts total'],
-                [`${debug.e2eLatencyMs}ms`, 'end-to-end'],
-                [debug.sttConnected ? 'yes' : 'no', 'stt connected'],
-                [`${listenerCount}`, 'listeners'],
-              ].map(([val, key]) => (
-                <div key={key} className="debug-item">
-                  <div className="debug-val" style={{ fontSize: '1rem' }}>{val}</div>
-                  <div className="debug-key">{key}</div>
-                </div>
+                ['Last chunk', `${debug.chunkSize} chars`],
+                ['Chunker wait', `${debug.chunkerWaitMs}ms`],
+                ['Translation', `${debug.translationLatencyMs}ms`],
+                ['TTS first byte', `${debug.ttsFirstByteMs}ms`],
+                ['TTS total', `${debug.ttsLatencyMs}ms`],
+                ['End-to-end', `${debug.e2eLatencyMs}ms`],
+                ['STT connected', debug.sttConnected ? 'yes' : 'no'],
+                ['Listeners', `${listenerCount}`],
+              ].map(([key, val]) => (
+                <div key={key}><dt>{key}</dt><dd>{val}</dd></div>
               ))}
-            </div>
+            </dl>
           )}
 
           {/* Transcript */}
-          <div
-            ref={scrollRef}
-            onScroll={handleScroll}
-            style={{
-              flex: 1,
-              minHeight: 200,
-              overflowY: 'auto',
-              border: '1px solid rgba(244,241,234,0.12)',
-              borderRadius: 10,
-              padding: 'clamp(14px, 1.8vw, 22px)',
-            }}
-          >
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
-                gap: '0 clamp(14px, 2vw, 28px)',
-                paddingBottom: 8,
-                borderBottom: '1px solid rgba(244,241,234,0.12)',
-                marginBottom: 4,
-              }}
-            >
-              <span style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.42)' }}>
-                {meta.srcLabel}
-              </span>
-              <span style={{ ...MONO, fontSize: 9, color: 'var(--gold)' }}>
-                {meta.tgtLabel}
-              </span>
+          <div className="ap-feed" ref={scrollRef} onScroll={handleScroll}>
+            <div className="ap-feed-head">
+              <span>{meta.srcLabel}</span>
+              <span className="dk-feed-out">{meta.tgtLabel}</span>
             </div>
 
             {script.length > 0 || liveKorean ? (
@@ -1433,93 +1214,39 @@ export default function SpeakPage() {
                 {script.map((entry, i) => {
                   const fromEnd = script.length - 1 - i;
                   const inPews = entry.seq === pewsSeq && listenerCount > 0;
-                  const opacity = inPews ? 1 : fromEnd === 0 ? 1 : fromEnd === 1 ? 0.42 : 0.32;
+                  const opacity = inPews ? 1 : fromEnd === 0 ? 1 : fromEnd === 1 ? 0.6 : 0.45;
                   return (
-                    <div
-                      key={entry.seq}
-                      style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
-                        gap: '0 clamp(14px, 2vw, 28px)',
-                        padding: inPews ? '12px 0 12px 12px' : '12px 0',
-                        borderTop: i === 0 ? 'none' : '1px solid rgba(244,241,234,0.08)',
-                        borderLeft: inPews ? '2px solid var(--gold)' : '2px solid transparent',
-                        background: inPews ? 'rgba(200,162,94,0.05)' : 'transparent',
-                        opacity,
-                        transition: 'opacity 0.5s var(--ease), background 0.5s var(--ease), border-color 0.5s var(--ease)',
-                      }}
-                    >
-                      <span
-                        className={meta.srcClass}
-                        lang={meta.srcLang}
-                        style={{ fontSize: 15, lineHeight: 1.65, color: 'rgba(244,241,234,0.75)' }}
-                      >
-                        {entry.korean}
-                      </span>
-                      <span
-                        className={meta.tgtClass}
-                        lang={meta.tgtLang}
-                        style={{ fontSize: 19, lineHeight: 1.55, color: 'var(--cream)' }}
-                      >
+                    <div key={entry.seq} className={`ap-feed-row${inPews ? ' playing' : ''}`} style={{ opacity }}>
+                      <p className={meta.srcClass} lang={meta.srcLang}>{entry.korean}</p>
+                      <p className={meta.tgtClass} lang={meta.tgtLang}>
                         {entry.sermon}
-                        {inPews && (
-                          <span style={{ ...MONO, display: 'block', fontSize: 8.5, color: 'var(--gold)', marginTop: 5 }}>
-                            ♪ In the pews
-                          </span>
-                        )}
-                      </span>
+                        {inPews && <span className="ap-inpews"><Headphones weight="bold" aria-hidden /> In the pews</span>}
+                      </p>
                     </div>
                   );
                 })}
 
                 {/* In-progress source line */}
                 {liveKorean && (
-                  <div
-                    style={{
-                      display: 'grid',
-                      gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1.2fr)',
-                      gap: '0 clamp(14px, 2vw, 28px)',
-                      padding: '12px 0',
-                      borderTop: '1px solid rgba(244,241,234,0.08)',
-                    }}
-                  >
-                    <span
-                      className={meta.srcClass}
-                      lang={meta.srcLang}
-                      style={{ fontSize: 15, lineHeight: 1.65, fontStyle: 'italic', color: 'rgba(244,241,234,0.6)' }}
-                    >
+                  <div className="ap-feed-row holding">
+                    <p className={meta.srcClass} lang={meta.srcLang}>
                       {liveKorean}
-                      <span className="caret" aria-hidden>▍</span>
-                    </span>
-                    <span style={{ ...MONO, fontSize: 9, color: 'rgba(244,241,234,0.35)', alignSelf: 'center' }}>
-                      Holding for the sentence…
-                    </span>
+                      <span className="ap-caret" aria-hidden />
+                    </p>
+                    <p className="ap-muted">Holding for the sentence…</p>
                   </div>
                 )}
               </>
             ) : (
-              <p className="serif-en" style={{ color: 'rgba(244,241,234,0.4)', fontStyle: 'italic', padding: '18px 0' }}>
-                {broadcasting ? 'Listening…' : 'Start a broadcast to begin translating.'}
-              </p>
+              <p className="ap-empty">{broadcasting ? 'Listening…' : 'Start a broadcast to begin translating.'}</p>
             )}
           </div>
 
           {/* Errors */}
           {errors.length > 0 && (
-            <div
-              style={{
-                border: '1px solid rgba(255,138,128,0.4)',
-                background: 'rgba(255,138,128,0.05)',
-                borderRadius: 10,
-                padding: '10px 16px',
-              }}
-            >
-              <div style={{ ...MONO, fontSize: 9, color: 'var(--alert)', marginBottom: 4 }}>Errors</div>
-              {errors.map((e, i) => (
-                <p key={i} style={{ color: 'var(--alert)', fontSize: '0.85rem', marginTop: '0.25rem' }}>
-                  {e}
-                </p>
-              ))}
+            <div className="dk-errors" role="alert">
+              <strong>Errors</strong>
+              {errors.map((e, i) => <p key={i}>{e}</p>)}
             </div>
           )}
         </main>

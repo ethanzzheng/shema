@@ -10,7 +10,8 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import StaffHeader from '@/components/StaffHeader';
+import { CaretRight } from '@phosphor-icons/react';
+import { StaffBar } from '@/components/app/chrome';
 import { useRequireAuth } from '@/lib/use-require-auth';
 import { getUsername } from '@/lib/auth';
 import { normalizeChurchSlug } from '@/lib/slug';
@@ -21,7 +22,10 @@ import {
   serviceYear,
   type TranscriptSummary,
 } from '@/lib/transcripts';
-import './transcripts.css';
+import '@/components/app/docs.css';
+
+const LANG_NAMES: Record<string, string> = { ko: 'Korean', en: 'English', zh: 'Mandarin' };
+const langName = (code: string) => LANG_NAMES[code] ?? code.toUpperCase();
 
 export default function TranscriptsPage() {
   const gate = useRequireAuth();
@@ -52,67 +56,53 @@ export default function TranscriptsPage() {
   if (gate !== 'ok') return null;
 
   return (
-    <div className="tr-root">
-      <StaffHeader title="Transcripts" church={church} />
+    <div className="v2 ap-page">
+      <StaffBar title="Transcripts" church={church} />
 
-      <main className="tr-main tr-main-list">
-        <div className="tr-head">
-          <div>
-            <span className="tr-head-title">Services</span>
-            {items && <span className="tr-count">{items.length}</span>}
-            <p className="tr-head-note">What was said, and what Shema rendered it as.</p>
-          </div>
-        </div>
+      <main className="ap-doc">
+        <section className="ap-sec">
+          <h2>Services {items && <span className="ap-count">{items.length}</span>}</h2>
+          <p className="ap-muted">What was said, and what Shema rendered it as.</p>
 
-        {items === null && (
-          <div className="tr-list" aria-busy="true" aria-label="Loading services">
-            {[0, 1, 2].map((i) => (
-              <div className="tr-item" key={i}>
-                <div>
-                  <div className="tr-skel" style={{ width: '42%', height: '1.05rem' }} />
-                  <div className="tr-skel" style={{ width: '28%', marginTop: 10, height: '0.84rem' }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+          {items === null && (
+            <ul className="ap-services" aria-busy="true" aria-label="Loading services">
+              {[0, 1, 2].map((i) => (
+                <li key={i} className="ap-services-skel">
+                  <div className="ap-skel" style={{ width: '42%', height: 20 }} />
+                  <div className="ap-skel" style={{ width: '28%', height: 14 }} />
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {items?.length === 0 && !error && (
-          <p className="tr-empty">
-            No services recorded yet. Transcripts are kept automatically from the next broadcast.
-          </p>
-        )}
+          {items?.length === 0 && !error && (
+            <p className="ap-empty-row">
+              No services recorded yet. Transcripts are kept automatically from the next broadcast.
+            </p>
+          )}
 
-        {items && items.length > 0 && (
-          <div className="tr-list">
-            {items.map((t) => (
-              <Link key={t.id} href={`/transcripts/${t.id}`} className="tr-item">
-                <div>
-                  <div className="tr-item-date">
-                    {serviceDate(t.startedAt)}
-                    <span className="tr-item-year">{serviceYear(t.startedAt)}</span>
-                  </div>
-                  <div className="tr-item-meta">
-                    <span>{durationLabel(t.durationSec)}</span>
-                    <span className="tr-num">{t.segmentCount} segments</span>
-                    <span className="tr-num">
-                      {t.sourceLang.toUpperCase()} to {t.targetLangs.map((l) => l.toUpperCase()).join(', ')}
+          {items && items.length > 0 && (
+            <ul className="ap-services">
+              {items.map((t) => (
+                <li key={t.id}>
+                  <Link href={`/transcripts/${t.id}`}>
+                    <span className="ap-services-date">
+                      {serviceDate(t.startedAt)} <span>{serviceYear(t.startedAt)}</span>
                     </span>
-                    {t.status === 'live' && (
-                      <span className="tr-live">
-                        <span className="tr-live-dot" aria-hidden />
-                        Recording
-                      </span>
-                    )}
-                  </div>
-                </div>
-                <span className="tr-go" aria-hidden>→</span>
-              </Link>
-            ))}
-          </div>
-        )}
+                    <span className="ap-services-meta">
+                      {durationLabel(t.durationSec)} · {t.segmentCount} segments · {langName(t.sourceLang)} to{' '}
+                      {t.targetLangs.map(langName).join(', ')}
+                      {t.status === 'live' && <span className="ap-rec"><span className="ap-dot" />Recording</span>}
+                    </span>
+                    <CaretRight className="ap-services-go" aria-hidden />
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
 
-        {error && <p className="tr-error">{error}</p>}
+          {error && <p className="ap-error" role="alert">{error}</p>}
+        </section>
       </main>
     </div>
   );

@@ -1,0 +1,113 @@
+/*
+ * /speak, the broadcast desk. Base layout comes from app.css (.ap-desk-*);
+ * this adds what the real desk has beyond the mockup and the app-frame
+ * behaviour: on a desktop-sized window the desk locks to the viewport so the
+ * rail (and the QR at its foot) never scrolls away, and the transcript
+ * scrolls inside its own pane.
+ */
+
+/* Church room: editable chip in the bar. */
+.dk-church {
+  width: 140px;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-mono, monospace);
+  font-size: 13px;
+}
+.dk-church:focus { outline: none; border-color: var(--accent); }
+.dk-church:disabled { color: var(--muted); border-style: dashed; }
+@media (pointer: coarse) { .dk-church { min-height: 44px; } }
+
+.dk-rec-short { display: none; }
+
+.ap-status.dk-connecting { color: var(--accent); background: var(--accent-soft); }
+.ap-status.dk-down { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
+
+.ap-go:disabled { opacity: 0.5; cursor: not-allowed; }
+.dk-start { align-self: flex-start; }
+
+.dk-meter span { transition: background 0.15s linear; }
+.dk-meter span:nth-child(n + 12) { opacity: 0.45; }
+
+.dk-alert { font-size: 14px; line-height: 1.5; color: var(--danger); }
+
+.dk-expander {
+  display: inline-flex; align-items: center; gap: 6px;
+  min-height: 44px; margin: -12px -8px -12px 0; padding: 0 8px;
+  border: 0; border-radius: 8px; background: none;
+  color: var(--faint); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.dk-expander:hover { color: var(--ink); background: color-mix(in srgb, var(--ink) 6%, transparent); }
+.dk-expander:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.dk-expander svg { transition: transform 0.16s ease; }
+.dk-expander svg.dk-flip { transform: rotate(180deg); }
+
+/* Terms list: flex rather than the mockup's grid, since the Church tag is optional. */
+.ap-desk .dk-terms { max-height: 240px; overflow-y: auto; }
+.ap-desk .dk-terms li { display: flex; gap: 10px; }
+.dk-term-k { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dk-terms .ap-terms-to { flex: 1; min-width: 0; font-size: 14px; }
+.dk-terms li button { flex: none; }
+.dk-terms li button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.dk-feed-out { color: var(--accent); }
+.ap-desk .ap-feed-row { transition: opacity 0.5s ease, border-color 0.5s ease; }
+.ap-desk .ap-feed-row.playing { background: var(--accent-soft); }
+.ap-desk .ap-feed-row p:last-child { color: var(--ink); }
+
+.dk-errors {
+  margin: 0 var(--gutter) 16px;
+  padding: 12px 16px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 50%, transparent);
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+.dk-errors strong { display: block; font-size: 13px; margin-bottom: 2px; }
+
+/* The transcript always scrolls in its own pane so the auto-follow works and
+   an hour of sermon never pushes the settings out of reach. */
+.ap-desk .ap-feed { overflow-y: auto; max-height: 70dvh; min-height: 200px; }
+
+/* App frame: a desktop-sized window, tall enough for it. */
+@media (min-width: 861px) and (min-height: 600px) {
+  .ap-desk { height: 100dvh; min-height: 0; overflow: hidden; }
+  .ap-desk .ap-desk-grid { min-height: 0; }
+  .ap-desk .ap-rail { overflow-y: auto; min-height: 0; }
+  .ap-desk .ap-desk-main { min-height: 0; }
+  .ap-desk .ap-feed { max-height: none; min-height: 0; }
+}
+
+@media (max-width: 860px) {
+  .ap-desk .ap-feed { max-height: 60dvh; }
+}
+
+/* Phone: the church room drops to its own row under the bar. */
+@media (max-width: 560px) {
+  .dk-bar { flex-wrap: wrap; row-gap: 6px; }
+  .dk-church { order: 99; width: 100%; min-height: 44px; }
+  .dk-rec-long { display: none; }
+  .dk-rec-short { display: inline; }
+  .dk-errors { margin: 0 var(--gutter) 16px; }
+}
+
+/* .v2 a { color: inherit } outranks the link-button colour. */
+.ap-desk a.ap-link-btn { color: var(--muted); }
+.ap-desk a.ap-link-btn:hover { color: var(--ink); }
+
+/* A phone on its side (~932x430) gets the two-column desk, but Start / End
+   still belongs in the thumb zone rather than scrolling away with the rail. */
+@media (min-width: 861px) and (max-height: 500px) {
+  .ap-desk .ap-rail .ap-go {
+    position: fixed; left: 18px; bottom: calc(12px + env(safe-area-inset-bottom)); z-index: 30;
+    width: 264px; min-height: 52px; box-shadow: 0 12px 32px -12px rgba(0, 0, 0, 0.6);
+  }
+  .ap-desk .ap-rail .ap-go.live { background: var(--bg); }
+  .ap-desk .ap-rail { padding-bottom: 84px; }
+}

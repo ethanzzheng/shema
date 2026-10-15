@@ -1,0 +1,95 @@
+/*
+ * Glossary and transcripts: additions to app.css for the real pages (states
+ * the mockups did not draw: loading, empty, errors, read-only, the selection
+ * action) and the print stylesheet behind Save as PDF.
+ */
+
+/* Shared */
+.ap-error { color: var(--danger); font-size: 15px; line-height: 1.5; }
+.ap-empty-row { padding: 28px 0; font-size: 16px; line-height: 1.55; color: var(--muted); border-bottom: 1px solid var(--line); }
+.ap-banner { padding: 14px 16px; border-radius: 14px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); background: var(--accent-soft); font-size: 15px; line-height: 1.55; color: var(--muted); }
+.ap-banner code { font-family: var(--font-mono, monospace); font-size: 13px; color: var(--ink); }
+.ap-doc .v2-btn:disabled, .ap-rows-actions > button:disabled { opacity: 0.45; cursor: not-allowed; }
+.ap-doc .v2-btn:disabled:active { transform: none; }
+.ap-doc .v2-input { min-height: 48px; }
+.ap-skel { height: 1em; border-radius: 6px; background: color-mix(in srgb, var(--ink) 8%, transparent); animation: v2-pulse 1.4s ease-in-out infinite; }
+
+/* Glossary */
+.ap-rows li > .ap-rows-k { overflow-wrap: anywhere; }
+.ap-rows-v { overflow-wrap: anywhere; min-width: 0; }
+.ap-rows-actions > button:disabled:hover { background: none; color: var(--faint); }
+.ap-text-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ap-text-btn:disabled:hover { background: none; }
+.ap-rows-actions .ap-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--danger) 10%, transparent); }
+/* A row with no rendering still keeps the actions in the last column. */
+.ap-rows li .ap-rows-actions { grid-column: -2 / -1; }
+
+/* Transcripts list */
+.ap-services a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+.ap-services-skel { padding: 18px 0; border-bottom: 1px solid var(--line); display: flex; flex-direction: column; gap: 10px; }
+
+/* Transcript detail */
+.ap-sub { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 15px; color: var(--muted); }
+.ap-tools .ap-seg { flex: none; }
+.ap-read li { scroll-margin-top: 90px; }
+.ap-read p:not(.ap-read-src) { color: var(--ink); }
+.ap-read p.ap-read-src { color: var(--muted); }
+.ap-detail-head { display: flex; flex-direction: column; gap: 6px; }
+.ap-read p { overflow-wrap: anywhere; }
+.ap-read-single li { grid-template-columns: 56px minmax(0, 1fr); }
+.ap-read-single p { max-width: 68ch; }
+/* Interleaved rather than side by side: two narrow columns of source and
+   English are unreadable on a phone. */
+@media (max-width: 860px) {
+  .ap-read li, .ap-read-single li { grid-template-columns: 1fr; gap: 6px; }
+}
+.ap-confirm p { color: var(--ink); }
+/* The selection action floats over the text at the selection. */
+.ap-sel-pop { position: fixed; z-index: 60; transform: translate(-50%, -100%); }
+.ap-sel-pop .ap-float { position: static; }
+
+@media (max-width: 560px) {
+  .ap-tools .ap-seg { width: 100%; }
+  .ap-confirm div .v2-btn { flex: 1; }
+  .ap-rows li .ap-rows-actions { grid-column: 4; }
+}
+
+/* ── Print / Save as PDF ──────────────────────────────────────────────────
+ * The browser's print pipeline, not a JS PDF library: none ship Hangul or Han
+ * glyphs, and print already typesets both languages with the page's fonts. */
+.ap-print-head { display: none; }
+
+@media print {
+  :root { color-scheme: light; }
+  html, body, .v2 { background: #fff !important; color: #111 !important; }
+
+  .ap-bar, .ap-tools, .ap-back, .ap-sel-pop, .ap-confirm, .ap-detail-head, .ap-error,
+  .ap-hint { display: none !important; }
+
+  .ap-page, .ap-doc { display: block; min-height: 0; padding: 0; margin: 0; max-width: none; }
+
+  .ap-print-head { display: block; margin-bottom: 20pt; padding-bottom: 10pt; border-bottom: 0.5pt solid #bbb; }
+  .ap-print-title { font-size: 16pt; font-weight: 600; color: #111; }
+  .ap-print-meta { font-size: 9pt; color: #555; margin-top: 3pt; }
+
+  .ap-read { margin: 0; }
+  /* A segment is one thought; splitting it across a page break makes the
+     bilingual pair unreadable. */
+  .ap-read li {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: grid;
+    grid-template-columns: 38pt 1fr 1fr;
+    gap: 0 14pt;
+    padding: 0;
+    margin-bottom: 11pt;
+    border: 0;
+  }
+  .ap-read-single li { grid-template-columns: 38pt 1fr; }
+  .ap-read time { color: #999 !important; font-size: 7.5pt; padding: 0; }
+  .ap-read p { color: #111 !important; font-size: 10pt; line-height: 1.45; max-width: none; }
+  .ap-read p.ap-read-src { color: #444 !important; font-size: 9.5pt; }
+  .ap-read mark { background: none !important; box-shadow: none !important; color: inherit !important; padding: 0; }
+
+  @page { margin: 16mm 14mm; }
+}

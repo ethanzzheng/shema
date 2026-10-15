@@ -10,6 +10,9 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ListenerView from '@/components/ListenerView';
 import { normalizeChurchSlug } from '@/lib/slug';
+import { ArrowRight } from '@phosphor-icons/react';
+import { Brand } from '@/components/app/chrome';
+import '@/components/app/listener.css';
 
 export default function ListenEntryPage() {
   const router = useRouter();
@@ -32,26 +35,31 @@ export default function ListenEntryPage() {
   };
 
   return (
-    <div style={{ maxWidth: 460, margin: '0 auto', padding: '4rem 1rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-      <h1 style={{ fontSize: '1.65rem', fontWeight: 600 }}>Join your church</h1>
-
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '0.9rem', padding: '1.5rem' }}>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.95rem' }}>
-          Enter the church code from your bulletin or QR sign.
-        </p>
+    <div className="v2">
+      <main className="ap-listen ap-join ls-join">
+        <Brand />
+        <h1>Join your church</h1>
+        <p className="ap-muted">Enter the church code from your bulletin or the QR sign.</p>
         <input
-          className="field"
+          className="v2-input"
           autoFocus
           placeholder="e.g. grace-church"
+          aria-label="Church code"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={code}
           onChange={(e) => setCode(e.target.value)}
           onKeyDown={(e) => { if (e.key === 'Enter' && code.trim()) join(); }}
-          style={{ padding: '0.7rem 0.9rem', fontSize: '1rem' }}
         />
-        <button className="btn btn-primary btn-lg" onClick={join} disabled={!code.trim()} style={{ opacity: code.trim() ? 1 : 0.5 }}>
-          Listen
+        <button type="button" className="v2-btn v2-btn-ink v2-form-submit" onClick={join} disabled={!code.trim()}>
+          Listen <ArrowRight weight="bold" aria-hidden />
         </button>
-      </div>
+        <figure className="v2-plate ap-join-plate" aria-hidden>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/pulpit.svg" alt="" />
+        </figure>
+      </main>
     </div>
   );
 }
