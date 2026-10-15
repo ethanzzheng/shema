@@ -44,7 +44,7 @@ async function main(): Promise<void> {
   const trial = arg('--trial');
   const dir = findRunDir(run);
   // The judge is told the source language; the run's folder names it.
-  const SRC = dir.includes('/korean/') ? 'Korean' : dir.includes('/english/') ? 'English' : 'Mandarin';
+  const SRC = dir.includes('/korean/') ? 'Korean' : dir.includes('/english/') ? 'English' : dir.includes('/cantonese/') ? 'Cantonese' : 'Mandarin';
   const SYSTEM = SYSTEM_FOR(SRC);
   const lines: Line[] = fs.readFileSync(path.join(dir, `replay-${name}.jsonl`), 'utf8')
     .split('\n').filter(Boolean).map((l) => JSON.parse(l));
