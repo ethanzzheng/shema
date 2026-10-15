@@ -1,4 +1,3 @@
-import { PAD_SEC, silencePad } from '../lib/silence-mp3';
 /**
  * A minimal but faithful model of the browser media stack, enough to exercise
  * AudioStreamPlayer's buffering/resume state machine headlessly.
@@ -71,9 +70,7 @@ export class FakeSourceBuffer extends Emitter {
     this.updating = true;
     // Appends land on the next clock tick, like a real async append.
     this.ms.clock.schedule(0, () => {
-      // A silence pad is a real MP3, so it plays for its real length; only
-      // the synthetic speech chunks use the bytes-to-seconds convention.
-      this.bufferedEndSec += bytes === silencePad() ? PAD_SEC : bytes.length * SECONDS_PER_BYTE;
+      this.bufferedEndSec += bytes.length * SECONDS_PER_BYTE;
       this.updating = false;
       this.emit('updateend');
       this.ms.el?.maybeAutoResume();

@@ -104,16 +104,10 @@ test('silence fill keeps the element fed through translation gaps', async () => 
 
 test('silence fill yields to real audio and never delays speech', async () => {
   const sim = await makePlayer();
-  const p = sim.player as unknown as { padsAppended: number };
-  // The opening sentence gets its runway on purpose (see the cold-start test);
-  // what must never happen is silence inserted once speech is flowing.
-  sim.player.appendChunk(new Uint8Array(1000), 1);
-  sim.clock.advance(20, 10, () => sim.el.tick(0.01));
-  const before = p.padsAppended;
   // Queue a backlog of real audio; no pad should be appended while it drains.
-  for (let i = 1; i < 10; i++) sim.player.appendChunk(new Uint8Array(1000), i + 1);
+  for (let i = 0; i < 10; i++) sim.player.appendChunk(new Uint8Array(1000), i + 1);
   sim.clock.advance(2000, 20, () => sim.el.tick(0.02));
-  const pads = p.padsAppended - before;
+  const pads = (sim.player as unknown as { padsAppended: number }).padsAppended;
   assert.equal(pads, 0, `padded while ${10} real chunks were queued — speech would be delayed`);
 });
 
@@ -146,12 +140,8 @@ test('silence is never spliced into the middle of a sentence', async () => {
   // while the buffer is deliberately kept thin.
   p.noteClipStart();
   sim.player.appendChunk(new Uint8Array(300), 1); // 0.3s, under the 0.4s fill target
-  // Let the opening runway and the first chunk land: silence BEFORE the
-  // sentence is the cold-start fix, not the bug under test.
-  sim.clock.advance(20, 10, () => sim.el.tick(0.01));
-  const padsAtOnset = p.padsAppended;
   sim.clock.advance(3000, 20, () => sim.el.tick(0.02)); // stall mid-sentence
-  const padsMidClip = p.padsAppended - padsAtOnset;
+  const padsMidClip = p.padsAppended;
   assert.equal(padsMidClip, 0, `padded ${padsMidClip} time(s) mid-sentence — this is the mid-word dropout`);
 
   // Once the sentence finishes, padding the gap before the next one is fine.
@@ -261,32 +251,4 @@ test('a backlog is never delayed to insert a runway', async () => {
   for (let i = 0; i < 10; i++) sim.player.appendChunk(new Uint8Array(1000), i + 1);
   sim.clock.advance(2000, 20, () => sim.el.tick(0.02));
   assert.equal(p.leadIns, 0, 'padded ahead of a backlog — speech would be delayed');
-});
-
-test('the first sentence never lands on an output that has not run', async () => {
-  // Reported from the demo: the first word of the first sentence was cut off.
-  // Every later sentence got a silent runway, but the first one was appended
-  // as the stream's opening bytes, onto an output that had never produced
-  // sound, and the cold start ate its onset. The fill now starts when the
-  // listener taps play, so speech always arrives behind silence.
-  const sim = await makePlayer();
-  const p = sim.player as unknown as { padsAppended: number; bufferedEnd(): number | null };
-  assert.ok(p.padsAppended > 0, 'nothing was playing before the first sentence arrived');
-
-  // Speech already queued when the source opens (a listener tapping while a
-  // sentence is in flight) must get the runway too, not anchor the timeline.
-  const clock = new VirtualClock();
-  const created = installFakeDom(clock);
-  setSecondsPerByte(SEC_PER_BYTE);
-  const mod = await import(`../lib/audio-stream?t=${Date.now()}`);
-  const late = new mod.AudioStreamPlayer();
-  late.start();
-  late.appendChunk(new Uint8Array(1000), 1);
-  clock.advance(10, 10);
-  created.ms.el = created.el;
-  created.el.ms = created.ms;
-  created.ms.open();
-  clock.advance(10, 10);
-  const lp = late as unknown as { leadIns: number };
-  assert.equal(lp.leadIns, 1, 'a sentence queued before the source opened went in with no runway');
 });

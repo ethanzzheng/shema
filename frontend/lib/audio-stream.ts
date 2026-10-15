@@ -108,8 +108,6 @@ export class AudioStreamPlayer {
   /** The seq a lead-in pad has already been laid down for. */
   private leadInSeq: number | null = null;
   private leadIns = 0;
-  /** Pads laid before any speech, so the output is running when it arrives. */
-  private warmups = 0;
   private starved = true; // diagnostics only now: nothing seeks on it
 
   // ── Stall watchdog ────────────────────────────────────────────────────────
@@ -442,10 +440,9 @@ export class AudioStreamPlayer {
     ) {
       const end = this.bufferedEnd();
       const lead = end === null ? null : (end - this.audioEl.currentTime) / (this.audioEl.playbackRate || 1);
-      // end === null is the very first clip of the stream. It needs the
-      // runway most: the output has never run. Sequence mode lets the pad
-      // anchor the timeline instead.
-      if (lead === null || lead < AudioStreamPlayer.LEAD_IN_MIN_SEC) {
+      // end === null is the very first clip of the stream, which anchors the
+      // timeline and must be appended as-is.
+      if (lead !== null && lead < AudioStreamPlayer.LEAD_IN_MIN_SEC) {
         try {
           sb.appendBuffer(silencePad() as BufferSource);
           this.padsAppended++;
@@ -514,23 +511,7 @@ export class AudioStreamPlayer {
       console.warn('[AudioStream] clip never ended; resuming the silence fill');
     }
     const end = this.bufferedEnd();
-    // Nothing buffered yet: start the fill now rather than at the first
-    // sentence. Waiting left that sentence as the one clip with no runway,
-    // landing on an output that had never run — and the cold start ate its
-    // first word, heard most in the demo, where every listen is a first one.
-    // Sequence mode makes the pad, not the speech, the timeline's anchor.
-    if (end === null) {
-      if (!this.wantPlaying) return;
-      try {
-        sb.appendBuffer(silencePad() as BufferSource);
-        this.padsAppended++;
-        this.warmups++;
-      } catch (e) {
-        console.warn('[AudioStream] silence pad rejected; disabling fill for this session:', e);
-        this.padSupported = false;
-      }
-      return;
-    }
+    if (end === null) return; // nothing buffered yet; the first clip anchors the timeline
 
     // Buffered lead is in MEDIA seconds but is consumed at playbackRate, so
     // during catch-up (up to 1.15x) it is worth less wall-clock time.
