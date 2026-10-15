@@ -256,7 +256,6 @@ html:has(.v2), body:has(.v2) { overflow-x: clip; }
 .v2-live { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--live); }
 .v2-live::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: currentColor; animation: v2-pulse 2s ease-in-out infinite; }
 @keyframes v2-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.v2-card-lat { font-variant-numeric: tabular-nums; }
 .v2-card-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -627,7 +626,7 @@ select.v2-input { appearance: none; background-image: linear-gradient(45deg, tra
   .v2-foot { padding-block: 40px 48px; gap: 24px; }
 
   /* small type floor */
-  .v2-eyebrow, .v2-row-lang, .v2-card-label, .v2-pause-head, .v2-ref, .v2-live, .v2-card-lat, .v2-setup-tag { font-size: 13.5px; }
+  .v2-eyebrow, .v2-row-lang, .v2-card-label, .v2-pause-head, .v2-ref, .v2-live, .v2-setup-tag { font-size: 13.5px; }
   .v2-pause-note, .v2-cta-note, .v2-try-note, .v2-form-note, .v2-plate-cap, .v2-row-miss, .v2-foot-small { font-size: 14px; }
   .v2-vocab-lang { font-size: 12px; }
 }
@@ -642,7 +641,7 @@ select.v2-input { appearance: none; background-image: linear-gradient(45deg, tra
 }
 /* Landscape phones: same small-type floor as portrait. */
 @media (max-height: 500px) {
-  .v2-eyebrow, .v2-row-lang, .v2-card-label, .v2-pause-head, .v2-ref, .v2-live, .v2-card-lat, .v2-setup-tag { font-size: 13.5px; }
+  .v2-eyebrow, .v2-row-lang, .v2-card-label, .v2-pause-head, .v2-ref, .v2-live, .v2-setup-tag { font-size: 13.5px; }
   .v2-pause-note, .v2-cta-note, .v2-try-note, .v2-form-note, .v2-plate-cap, .v2-row-miss, .v2-foot-small { font-size: 14px; }
   .v2-vocab-lang { font-size: 12px; }
   .v2-nav { min-height: 56px; padding-block: 6px; }

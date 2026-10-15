@@ -42,7 +42,6 @@ function HeroCard({ hero, selected, onSelect, flip, setFlip }: Pick<VersionProps
       <div className="v2-card" aria-label="Example of what a listener hears and reads">
         <div className="v2-card-top">
           <span className="v2-live">Live</span>
-          <span className="v2-card-lat">~2s behind</span>
         </div>
 
         <div className="v2-card-tabs" role="tablist" aria-label="Language">
