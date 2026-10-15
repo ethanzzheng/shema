@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { WsClient, ServerMessage, AudioChunkMsg, TranslationMsg, TranscriptHistoryMsg } from '@/lib/ws-client';
 import { AudioPlaybackQueue } from '@/lib/audio-playback';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
@@ -150,8 +150,7 @@ export default function ListenerView({ church }: { church: string }) {
   const autoScrollRef = useRef(true);
   const programmaticScrollRef = useRef(false);
 
-  // Keep the SPOKEN line in view (unless the user scrolled away to read).
-  useEffect(() => {
+  const followLive = useCallback(() => {
     if (!autoScrollRef.current || !scrollRef.current) return;
     const container = scrollRef.current;
     programmaticScrollRef.current = true;
@@ -163,7 +162,23 @@ export default function ListenerView({ church }: { church: string }) {
     }
     // scrollIntoView fires the scroll handler asynchronously
     setTimeout(() => { programmaticScrollRef.current = false; }, 50);
-  }, [transcript, spokenSeq]);
+  }, [spokenSeq]);
+
+  // Keep the SPOKEN line in view (unless the user scrolled away to read).
+  useEffect(followLive, [transcript, followLive]);
+
+  // A new caption size reflows every line while scrollTop stays put, which
+  // left the view drifting up the page mid-sermon. Re-anchor before paint,
+  // if the reader was following the live line when they tapped.
+  const followingAtResizeRef = useRef(false);
+  useLayoutEffect(() => {
+    if (!followingAtResizeRef.current) return;
+    followingAtResizeRef.current = false;
+    autoScrollRef.current = true;
+    followLive();
+    // followLive is read fresh on purpose; only a size change re-anchors.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [textSize]);
 
   const handleScroll = () => {
     if (!scrollRef.current || programmaticScrollRef.current) return;
@@ -206,6 +221,7 @@ export default function ListenerView({ church }: { church: string }) {
   }, [audioStarted]);
 
   const changeTextSize = (size: 's' | 'm' | 'l') => {
+    followingAtResizeRef.current = autoScrollRef.current;
     setTextSize(size);
     try { window.localStorage.setItem('shema-caption-size', size); } catch {}
   };

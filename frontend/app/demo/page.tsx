@@ -170,6 +170,41 @@ function Demo({ auth }: { auth: DemoAuth }) {
   const startedAtRef = useRef(0);
   const roomRef = useRef<string | null>(null);
 
+  /**
+   * Whether Deepgram is listening yet. The server drops audio that arrives
+   * before its speech-to-text socket opens, which in production takes the
+   * better part of a second after `start` — and the sample opens mid-word, so
+   * the first word or two never reached the translator. The server announces
+   * the open as `status.sttConnected`; until then audio is held, not sent.
+   */
+  const sttReadyRef = useRef(false);
+  const sttWaitersRef = useRef<(() => void)[]>([]);
+  /** Microphone audio captured before the pipeline could take it. */
+  const heldAudioRef = useRef<ArrayBuffer[]>([]);
+
+  const sendAudio = useCallback((pcm: ArrayBuffer) => {
+    const ws = wsRef.current;
+    if (sttReadyRef.current && ws?.isConnected) {
+      ws.sendBinary(pcm);
+      return;
+    }
+    // Ten seconds at most: past that the opening is stale anyway.
+    heldAudioRef.current.push(pcm);
+    if (heldAudioRef.current.length > 50) heldAudioRef.current.shift();
+  }, []);
+
+  const resetStt = useCallback(() => {
+    sttReadyRef.current = false;
+    heldAudioRef.current = [];
+  }, []);
+
+  /** Resolves once Deepgram is listening, or after `timeoutMs` regardless. */
+  const waitForStt = useCallback((timeoutMs: number) => new Promise<void>((resolve) => {
+    if (sttReadyRef.current) return resolve();
+    const timer = setTimeout(resolve, timeoutMs);
+    sttWaitersRef.current.push(() => { clearTimeout(timer); resolve(); });
+  }), []);
+
   useEffect(() => {
     fetchDemoConfig()
       .then((c) => {
@@ -203,7 +238,8 @@ function Demo({ auth }: { auth: DemoAuth }) {
     listenWsRef.current = null;
     playerRef.current?.stop();
     playerRef.current = null;
-  }, []);
+    resetStt();
+  }, [resetStt]);
 
   /** Deliberately not part of teardown: unmounting to sign in must not forget. */
   const endDemo = useCallback(() => {
@@ -308,6 +344,18 @@ function Demo({ auth }: { auth: DemoAuth }) {
           if (cfg && next.length >= cfg.anonSegments && !ttsAllowed) setTimeout(hitWall, 400);
           return next.slice(-40);
         });
+      } else if (msg.type === 'status' && typeof msg.sttConnected === 'boolean') {
+        // A drop mid-demo (the server reconnects Deepgram itself) holds audio
+        // again rather than losing it into a closed socket.
+        sttReadyRef.current = msg.sttConnected;
+        if (msg.sttConnected) {
+          const held = heldAudioRef.current;
+          heldAudioRef.current = [];
+          for (const pcm of held) wsRef.current?.sendBinary(pcm);
+          const waiters = sttWaitersRef.current;
+          sttWaitersRef.current = [];
+          waiters.forEach((w) => w());
+        }
       } else if (msg.type === 'demo_tts_stopped') {
         setTtsAllowed(false);
         setTtsNote(String(msg.message ?? 'Voice preview finished.'));
@@ -361,6 +409,9 @@ function Demo({ auth }: { auth: DemoAuth }) {
         reconnectDelayMs: 0,
       });
       wsRef.current = ws;
+      // Not resetStt(): the microphone starts first, and what it heard while
+      // this socket opened is exactly what must not be thrown away.
+      sttReadyRef.current = false;
 
       // Prepared inside the click that started the demo: iOS will not let
       // speech begin outside a user gesture.
@@ -425,7 +476,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
       const capture = new AudioCapture({
         chunkIntervalMs: 200,
         onChunk: (pcm) => {
-          wsRef.current?.sendBinary(pcm);
+          sendAudio(pcm);
           const view = new Int16Array(pcm);
           let sum = 0;
           for (let i = 0; i < view.length; i += 8) sum += view[i] * view[i];
@@ -463,30 +514,54 @@ function Demo({ auth }: { auth: DemoAuth }) {
   const startWithSample = async () => {
     setBusy(true);
     setError('');
+
+    // Play it aloud as well as sending it. "Play a sample" plainly means
+    // the listener should hear the sermon being translated; without this the
+    // page translates in silence and looks broken.
+    // Attached to the document rather than left detached. A bare `new Audio`
+    // held only by a ref has been seen collected mid-playback, which is the
+    // same fragility the listener player had to fix; attaching it also lets
+    // the element be inspected when something sounds wrong.
+    // Created and started (muted) here, still inside the tap: the clip must
+    // wait for Deepgram below, and Safari only lets an element play later if
+    // it was first played during the gesture.
+    const audio = document.createElement('audio');
+    audio.src = SAMPLE_URL;
+    audio.volume = 0.9;
+    audio.setAttribute('data-demo-sample', 'true');
+    audio.style.display = 'none';
+    document.body.appendChild(audio);
+    audio.muted = true;
+    // Never awaited: a play() promise can sit unsettled while the clip loads,
+    // and the demo must not hang on it. It only pauses if the real start has
+    // not already happened.
+    let released = false;
+    void audio.play().then(() => { if (!released) audio.pause(); }, () => {});
+
     try {
       const s = session ?? (await beginSession());
       rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'sample', direction: 'ko-en' });
       const pcm = await decodeSampleToPcm(SAMPLE_URL);
       await connect(s.room, 'ko-en'); // the clip is Korean
+      const ws = wsRef.current;
       setDirection('ko-en');
       setUsingSample(true);
       setStage('live');
       reportDemoEvent('sample_played', { room: s.room });
 
-      // Play it aloud as well as sending it. "Play a sample" plainly means
-      // the listener should hear the sermon being translated; without this the
-      // page translates in silence and looks broken.
-      // Attached to the document rather than left detached. A bare `new Audio`
-      // held only by a ref has been seen collected mid-playback, which is the
-      // same fragility the listener player had to fix; attaching it also lets
-      // the element be inspected when something sounds wrong.
-      const audio = document.createElement('audio');
-      audio.src = SAMPLE_URL;
-      audio.volume = 0.9;
-      audio.setAttribute('data-demo-sample', 'true');
-      audio.style.display = 'none';
-      document.body.appendChild(audio);
+      // The clip opens mid-sentence, so anything sent before Deepgram is
+      // listening is lost. Start the sound and the stream together once it
+      // is, so the visitor hears exactly what gets translated.
+      await waitForStt(6000);
+      // "Start over" while waiting tears the socket down; leave nothing behind.
+      if (wsRef.current !== ws) {
+        audio.remove();
+        return;
+      }
       sampleAudioRef.current = audio;
+      released = true;
+      audio.currentTime = 0;
+      audio.muted = false;
       // Autoplay is refused unless the browser counts this as a user gesture.
       // It normally does, since a button was pressed, but when it does not the
       // page would translate in silence with no explanation — so check whether
@@ -522,7 +597,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
         // Copy rather than view: sendBinary wants a plain ArrayBuffer, and the
         // underlying buffer is shared with the rest of the clip.
         const chunk = new Int16Array(slice);
-        wsRef.current?.sendBinary(chunk.buffer as ArrayBuffer);
+        sendAudio(chunk.buffer as ArrayBuffer);
         let sum = 0;
         for (let i = 0; i < slice.length; i += 8) sum += slice[i] * slice[i];
         levelRef.current = Math.sqrt(sum / Math.max(1, slice.length / 8)) / 32768;
@@ -530,6 +605,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
       };
       pump();
     } catch (err) {
+      if (sampleAudioRef.current !== audio) audio.remove();
       setError(`Could not play the sample: ${(err as Error).message}`);
     } finally {
       setBusy(false);
