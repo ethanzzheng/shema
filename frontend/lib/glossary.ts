@@ -109,3 +109,11 @@ export function describeTerm(term: GlossaryTerm): string {
   const target = Object.values(term.targets)[0];
   return target ? `→ ${target}` : '—';
 }
+
+/**
+ * The example term the glossary inputs show. A Mandarin church should never
+ * see a Korean example, so the account's spoken language picks it.
+ */
+export function glossaryExample(source: 'ko' | 'zh'): { term: string; rendering: string } {
+  return source === 'zh' ? { term: '团契', rendering: 'Fellowship' } : { term: '목장', rendering: 'Mokjang' };
+}

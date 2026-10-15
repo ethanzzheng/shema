@@ -24,6 +24,7 @@ import {
   fetchGlossary,
   parseTermEntry,
   type GlossaryTerm,
+  glossaryExample,
 } from '@/lib/glossary';
 import QRCode from 'qrcode';
 import { WsClient, ServerMessage, DebugMsg, TranslationMsg, AudioChunkMsg } from '@/lib/ws-client';
@@ -864,6 +865,7 @@ export default function SpeakPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const meta = DIRECTION_META[direction];
+  const termExample = glossaryExample(direction === 'zh-en' ? 'zh' : 'ko');
   const hearing = broadcasting && debug.sttConnected;
   const onAir = broadcasting && connState === 'connected';
 
@@ -1083,13 +1085,13 @@ export default function SpeakPage() {
               onChange={(e) => setTermDraft(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') submitTerm(); }}
               disabled={termsReadOnly || termBusy}
-              placeholder="목장=Mokjang"
+              placeholder={`${termExample.term}=${termExample.rendering}`}
               aria-label="Add a term"
             />
             <p className="ap-hint">
               {termsReadOnly
                 ? 'Read-only — this server has no glossary database.'
-                : 'Enter to add. Type a name on its own to keep it unchanged, or 목장=Mokjang to set how it comes out.'}
+                : `Enter to add. Type a name on its own to keep it unchanged, or ${termExample.term}=${termExample.rendering} to set how it comes out.`}
             </p>
             <Seg<'service' | 'church'>
               label="Glossary scope"

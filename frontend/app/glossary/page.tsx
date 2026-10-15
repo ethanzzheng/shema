@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, ArrowUp, MagnifyingGlass, PencilSimple, Plus, Trash } from '@phosphor-icons/react';
 import { StaffBar } from '@/components/app/chrome';
 import { useRequireAuth } from '@/lib/use-require-auth';
-import { getUsername } from '@/lib/auth';
+import { fetchAllowedDirections, getUsername } from '@/lib/auth';
 import { normalizeChurchSlug } from '@/lib/slug';
 import {
   addGlossaryTerm,
@@ -24,6 +24,7 @@ import {
   updateGlossaryTerm,
   type GlossarySnapshot,
   type GlossaryTerm,
+  glossaryExample,
 } from '@/lib/glossary';
 import '@/components/app/docs.css';
 
@@ -58,6 +59,17 @@ export default function GlossaryPage() {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [query, setQuery] = useState('');
+  // A church whose every direction is Mandarin sees Mandarin examples.
+  const [source, setSource] = useState<'ko' | 'zh'>('ko');
+  useEffect(() => {
+    if (gate !== 'ok') return;
+    let cancelled = false;
+    fetchAllowedDirections().then((list) => {
+      if (!cancelled && list && list.length > 0 && list.every((d) => d === 'zh-en')) setSource('zh');
+    });
+    return () => { cancelled = true; };
+  }, [gate]);
+  const example = glossaryExample(source);
 
   const [newTerm, setNewTerm] = useState('');
   const [newTarget, setNewTarget] = useState('');
@@ -202,14 +214,14 @@ export default function GlossaryPage() {
                   className="v2-input"
                   value={newTerm}
                   onChange={(e) => setNewTerm(e.target.value)}
-                  placeholder="As spoken, e.g. 목장"
+                  placeholder={`As spoken, e.g. ${example.term}`}
                   aria-label="Term as spoken"
                 />
                 <input
                   className="v2-input"
                   value={newTarget}
                   onChange={(e) => setNewTarget(e.target.value)}
-                  placeholder="Comes out as, e.g. Mokjang"
+                  placeholder={`Comes out as, e.g. ${example.rendering}`}
                   aria-label="Comes out as"
                 />
                 <button type="submit" className="v2-btn v2-btn-ink" disabled={busy || !newTerm.trim()}>
