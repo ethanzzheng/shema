@@ -649,7 +649,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       model: sttCfg.model,
       smartFormat: sttCfg.smartFormat,
       keyterms,
-      onTranscript: async ({ text, isFinal, timestamp }) => {
+      onTranscript: async ({ text, isFinal, timestamp, audioEndSec, audioStartSec }) => {
         // Interims arrive many times per second and exist only to tell the
         // chunker that speech is still flowing — logging them would bury the
         // finals that actually matter.
@@ -663,7 +663,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         // socket traffic starved the audio sender badly enough to lose a
         // third of a test run. A live desk on church wi-fi would fare worse.
         if (isFinal) {
-          send(ws, { type: 'transcript', korean: text, isFinal, timestamp });
+          send(ws, { type: 'transcript', korean: text, isFinal, timestamp, audioStartSec, audioEndSec });
         } else if (text.trim()) {
           const now = Date.now();
           if (now - lastPartialSentAt >= 350) {

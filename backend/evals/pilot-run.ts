@@ -21,6 +21,7 @@
  * Requires: a backend on ws://localhost:3001 with auth disabled, and ffmpeg.
  */
 import { spawn } from 'child_process';
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import WebSocket from 'ws';
@@ -82,9 +83,16 @@ async function main(): Promise<void> {
   fs.mkdirSync(clipDir, { recursive: true });
 
   // PCM extraction is deterministic, so cache it across runs of the same slice.
+  // Keyed on the full path and modification time, not just the file name:
+  // two test sermons can share a name (ting.aiff), and the name alone once
+  // replayed a stale clip without any sign of it.
+  const mediaKey = createHash('sha1')
+    .update(`${args.media}:${fs.statSync(args.media).mtimeMs}`)
+    .digest('hex')
+    .slice(0, 10);
   const pcmPath = path.join(
     runsDir(args.direction),
-    `.pcm-${path.basename(args.media)}-${args.startSec}-${args.durationSec}.raw`,
+    `.pcm-${path.basename(args.media)}-${mediaKey}-${args.startSec}-${args.durationSec}.raw`,
   );
   if (!fs.existsSync(pcmPath)) {
     console.log('[pilot] extracting PCM (first run only)...');
@@ -185,6 +193,9 @@ async function main(): Promise<void> {
   // than sleeping a flat 200ms (which would slowly fall behind real time and
   // change Deepgram's endpointing behaviour over a 47-minute run).
   const started = Date.now();
+  // Deepgram's clock starts at the first audio byte, so a final's audioEndSec
+  // plus this offset is when that speech ended on the run's own clock.
+  const audioStartT = +((started - t0) / 1000).toFixed(3);
   let sent = 0;
   for (let off = 0; off < pcm.length; off += CHUNK_BYTES) {
     if (bc.readyState !== WebSocket.OPEN) {
@@ -223,6 +234,7 @@ async function main(): Promise<void> {
     mode: args.mode,
     direction: args.direction,
     audioSeconds: +(totalMs / 1000).toFixed(1),
+    audioStartT,
     wallSeconds: +((Date.now() - t0) / 1000).toFixed(1),
     ...counts,
     finishedAt: new Date().toISOString(),

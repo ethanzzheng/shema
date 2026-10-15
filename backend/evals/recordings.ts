@@ -20,6 +20,7 @@ const SOURCE_LANGUAGE: Record<string, string> = {
   'ko-en': 'korean',
   'en-ko': 'english',
   'zh-en': 'mandarin',
+  'yue-en': 'cantonese',
 };
 
 export function languageFor(direction: string): string {

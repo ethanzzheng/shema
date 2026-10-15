@@ -60,6 +60,14 @@ export interface TranscriptEvent {
   text: string;
   isFinal: boolean;
   timestamp: number;
+  /**
+   * Where this final's speech ends, in seconds of audio sent on the current
+   * Deepgram connection (finals only). Restarts at 0 after a reconnect.
+   * Measurement only: the replay harness uses it to time speech-end → heard.
+   */
+  audioEndSec?: number;
+  /** Where this final's speech starts, on the same clock as audioEndSec. */
+  audioStartSec?: number;
 }
 
 /**
@@ -330,6 +338,7 @@ export class DeepgramSTT {
     // Drop finals whose audio we have already forwarded.
     const startSec = typeof msg.start === 'number' ? msg.start : null;
     const durSec = typeof msg.duration === 'number' ? msg.duration : null;
+    const audioEndSec = startSec !== null && durSec !== null ? startSec + durSec : undefined;
     if (startSec !== null && durSec !== null) {
       const endSec = startSec + durSec;
       if (endSec <= this.consumedEndSec + 0.05) {
@@ -352,7 +361,7 @@ export class DeepgramSTT {
     if (this.recentUtterances.length > 5) this.recentUtterances.shift();
 
     this.drained?.push(transcript);
-    this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now() });
+    this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now(), audioEndSec, audioStartSec: startSec ?? undefined });
   }
 
   private isDuplicate(text: string): boolean {
