@@ -127,6 +127,30 @@ export class DeepgramSTT {
    */
   private consumedEndSec = 0;
 
+  // ── Audio continuity across reconnects ────────────────────────────────────
+  // Audio that reaches us while Deepgram's socket is not open used to be
+  // dropped: the handshake at the start of a broadcast, and the 2s back-off
+  // plus handshake of every reconnect mid-sermon, which took whole words and
+  // sometimes the start of a sentence with them. It is held now, and sent
+  // the moment a socket opens.
+  //
+  // A dropped socket also loses the speech Deepgram had heard but not yet
+  // finalized. consumedEndSec says exactly where its finals stopped, so on a
+  // reconnect the audio sent after that point is sent again. Nothing already
+  // transcribed is repeated, and nothing heard is lost.
+  /** Audio waiting for a socket to open, oldest first. */
+  private held: Buffer[] = [];
+  /** Audio sent on the current socket, tagged with its stream-clock span. */
+  private sentLog: { pcm: Buffer; startSec: number }[] = [];
+  /** Seconds of audio sent on the current socket (Deepgram's stream clock). */
+  private sentSec = 0;
+  /** Replays and holds are bounded: past this, the opening is stale anyway. */
+  private static readonly CONTINUITY_MAX_SEC = 20;
+  /** linear16 mono at 16 kHz. */
+  private static readonly BYTES_PER_SEC = 32_000;
+  /** Test seam: where to connect. Production always uses Deepgram. */
+  private readonly baseUrl: string;
+
   /**
    * Recognition bias for this connection. Deepgram bakes keyterms into the
    * connection URL, so these are fixed for the life of the socket — a term
@@ -147,6 +171,8 @@ export class DeepgramSTT {
     model?: string;
     /** smart_format (default true). Off for Mandarin — it mangles numerals. */
     smartFormat?: boolean;
+    /** Test seam only: a stand-in for wss://api.deepgram.com/v1/listen. */
+    baseUrl?: string;
     onTranscript: (event: TranscriptEvent) => void;
     onError: (err: Error) => void;
     onStatusChange: (connected: boolean) => void;
@@ -156,6 +182,7 @@ export class DeepgramSTT {
     this.model = opts.model ?? 'nova-3';
     this.smartFormat = opts.smartFormat ?? true;
     this.keyterms = opts.keyterms;
+    this.baseUrl = opts.baseUrl ?? 'wss://api.deepgram.com/v1/listen';
     this.onTranscript = opts.onTranscript;
     this.onError = opts.onError;
     this.onStatusChange = opts.onStatusChange;
@@ -207,7 +234,7 @@ export class DeepgramSTT {
     const keyterms = source.map((k) => k.trim()).filter(Boolean);
     for (const kt of keyterms) params.append('keyterm', kt);
 
-    const url = `wss://api.deepgram.com/v1/listen?${params.toString()}`;
+    const url = `${this.baseUrl}?${params.toString()}`;
     console.log(`[STT] Connecting to Deepgram (${this.model}, ${this.language}, ${keyterms.length} keyterms)`);
 
     this.ws = new WebSocket(url, {
@@ -222,6 +249,9 @@ export class DeepgramSTT {
       // watermark here would silently suppress the first minutes after the
       // watchdog reconnects mid-sermon.
       this.consumedEndSec = 0;
+      this.sentLog = [];
+      this.sentSec = 0;
+      this.flushHeld();
       this.onStatusChange(true);
       this.startKeepAlive();
       this.startWatchdog();
@@ -253,6 +283,7 @@ export class DeepgramSTT {
       this.stopKeepAlive();
       this.stopWatchdog();
       if (this.running) {
+        this.holdUnfinalized();
         this.scheduleReconnect();
       }
     });
@@ -331,9 +362,68 @@ export class DeepgramSTT {
 
   sendAudio(pcm: Buffer): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.lastAudioSentAt = Date.now();
-      this.ws.send(pcm);
+      this.forward(pcm);
+    } else if (this.running) {
+      this.held.push(pcm);
+      this.trimHeld();
     }
+  }
+
+  private forward(pcm: Buffer): void {
+    this.lastAudioSentAt = Date.now();
+    this.ws!.send(pcm);
+    this.sentLog.push({ pcm, startSec: this.sentSec });
+    this.sentSec += pcm.length / DeepgramSTT.BYTES_PER_SEC;
+    // Keep only what a reconnect could need to replay.
+    while (this.sentLog.length > 1) {
+      const first = this.sentLog[0];
+      const firstEnd = first.startSec + first.pcm.length / DeepgramSTT.BYTES_PER_SEC;
+      if (this.sentSec - firstEnd <= DeepgramSTT.CONTINUITY_MAX_SEC) break;
+      this.sentLog.shift();
+    }
+  }
+
+  /** The socket died: queue what Deepgram heard but never finalized. */
+  private holdUnfinalized(): void {
+    const from = this.consumedEndSec;
+    const replay: Buffer[] = [];
+    for (const { pcm, startSec } of this.sentLog) {
+      const endSec = startSec + pcm.length / DeepgramSTT.BYTES_PER_SEC;
+      if (endSec <= from) continue;
+      if (startSec >= from) {
+        replay.push(pcm);
+      } else {
+        // Cut inside this chunk, on a sample boundary, so the last finalized
+        // word is not heard twice.
+        const cut = Math.round(((from - startSec) * DeepgramSTT.BYTES_PER_SEC) / 2) * 2;
+        replay.push(pcm.subarray(cut));
+      }
+    }
+    this.sentLog = [];
+    this.sentSec = 0;
+    this.held = [...replay, ...this.held];
+    this.trimHeld();
+    const sec = this.heldSec();
+    if (sec > 0) console.log(`[STT] holding ${sec.toFixed(1)}s of unfinalized audio for the reconnect`);
+  }
+
+  private flushHeld(): void {
+    if (this.held.length === 0) return;
+    const held = this.held;
+    const sec = this.heldSec();
+    this.held = [];
+    for (const pcm of held) this.forward(pcm);
+    console.log(`[STT] sent ${sec.toFixed(1)}s of audio held while Deepgram was not connected`);
+  }
+
+  private heldSec(): number {
+    return this.held.reduce((n, b) => n + b.length, 0) / DeepgramSTT.BYTES_PER_SEC;
+  }
+
+  private trimHeld(): void {
+    const max = DeepgramSTT.CONTINUITY_MAX_SEC * DeepgramSTT.BYTES_PER_SEC;
+    let total = this.held.reduce((n, b) => n + b.length, 0);
+    while (total > max && this.held.length > 0) total -= this.held.shift()!.length;
   }
 
   /** Resolved when Deepgram answers a Finalize, so finish() can stop waiting. */
@@ -392,6 +482,9 @@ export class DeepgramSTT {
     }
 
     this.recentUtterances = [];
+    this.held = [];
+    this.sentLog = [];
+    this.sentSec = 0;
 
     if (this.ws) {
       // Send CloseStream message for clean shutdown
