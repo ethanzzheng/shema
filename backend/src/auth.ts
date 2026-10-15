@@ -13,13 +13,17 @@
 
 import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
+import { DIRECTION_CONFIGS, Direction } from './direction-config';
 
 const TOKEN_TTL = '12h';
 
 interface AuthEnv {
   AUTH_USERS?: string;
   AUTH_SECRET?: string;
+  AUTH_DIRECTIONS?: string;
 }
+
+const ALL_DIRECTIONS = Object.keys(DIRECTION_CONFIGS) as Direction[];
 
 function parseUsers(raw: string | undefined): Map<string, string> {
   const map = new Map<string, string>();
@@ -86,4 +90,27 @@ export function isStartAuthorized(
     return { ok: false, reason: 'Session invalid or expired — log in again to broadcast.' };
   }
   return { ok: true, username };
+}
+
+/**
+ * The directions an account may broadcast, in the desk's display order.
+ * null (open dev mode, demo rooms) and accounts AUTH_DIRECTIONS doesn't list
+ * get every direction. A listed account gets exactly its list; unknown names
+ * in it are ignored, and a list with none left fails closed to nothing.
+ */
+export function allowedDirections(username: string | null, env: AuthEnv = process.env): Direction[] {
+  if (!username || !env.AUTH_DIRECTIONS) return ALL_DIRECTIONS;
+  let obj: unknown;
+  try {
+    obj = JSON.parse(env.AUTH_DIRECTIONS);
+  } catch {
+    console.error('[Auth] AUTH_DIRECTIONS is not valid JSON — every account keeps every direction');
+    return ALL_DIRECTIONS;
+  }
+  if (!obj || typeof obj !== 'object' || !Object.prototype.hasOwnProperty.call(obj, username)) {
+    return ALL_DIRECTIONS;
+  }
+  const list = (obj as Record<string, unknown>)[username];
+  if (!Array.isArray(list)) return [];
+  return ALL_DIRECTIONS.filter((d) => list.includes(d));
 }

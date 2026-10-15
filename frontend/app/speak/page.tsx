@@ -31,7 +31,7 @@ import { AudioCapture } from '@/lib/audio-capture';
 import { AudioStreamPlayer, base64ToBytes } from '@/lib/audio-stream';
 import { getBackendWsUrl } from '@/lib/backend-config';
 import { normalizeChurchSlug } from '@/lib/slug';
-import { getToken, getUsername } from '@/lib/auth';
+import { fetchAllowedDirections, getToken, getUsername } from '@/lib/auth';
 import { useRequireAuth } from '@/lib/use-require-auth';
 
 const CHURCH_STORAGE_KEY = 'shema-church';
@@ -167,6 +167,9 @@ export default function SpeakPage() {
   const [broadcasting, setBroadcasting] = useState(false);
   const [mode, setMode] = useState<Mode>('smooth');
   const [direction, setDirection] = useState<Direction>('ko-en');
+  // The directions this church account is set up for; null until known (or
+  // if the server can't say), which shows them all.
+  const [allowedDirections, setAllowedDirections] = useState<Direction[] | null>(null);
   const [script, setScript] = useState<ScriptEntry[]>([]);
   const [liveKorean, setLiveKorean] = useState('');
   const [debug, setDebug] = useState<DebugPanel>(DEFAULT_DEBUG);
@@ -257,6 +260,26 @@ export default function SpeakPage() {
       directionRef.current = saved;
     }
   }, []);
+
+  // Show only the languages this account has. If the last-used direction
+  // isn't one of them (another account used this browser), fall back to the
+  // account's first without overwriting the saved choice.
+  useEffect(() => {
+    if (gate !== 'ok') return;
+    let cancelled = false;
+    fetchAllowedDirections().then((list) => {
+      if (cancelled || !list) return;
+      const allowed = (['ko-en', 'en-ko', 'zh-en'] as const).filter((d) => list.includes(d));
+      setAllowedDirections(allowed);
+      if (allowed.length > 0 && !allowed.includes(directionRef.current)) {
+        setDirection(allowed[0]);
+        directionRef.current = allowed[0];
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [gate]);
 
   const handleDirectionChange = (d: Direction) => {
     setDirection(d);
@@ -1017,7 +1040,7 @@ export default function SpeakPage() {
           <div style={railCard}>
             <span style={railLabel}>Direction</span>
             <div className="toggle-group">
-              {(['ko-en', 'en-ko', 'zh-en'] as const).map((d) => (
+              {(allowedDirections ?? (['ko-en', 'en-ko', 'zh-en'] as const)).map((d) => (
                 <button
                   key={d}
                   className={`toggle-opt${direction === d ? ' active' : ''}`}

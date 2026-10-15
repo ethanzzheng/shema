@@ -84,3 +84,23 @@ export async function loginRequest(
     return { ok: false, error: 'Could not reach the server — check your connection.' };
   }
 }
+
+/**
+ * The directions this account may broadcast (AUTH_DIRECTIONS on the backend),
+ * or null when the server can't say — the desk then shows every direction
+ * and the backend's own check on start still applies.
+ */
+export async function fetchAllowedDirections(): Promise<string[] | null> {
+  try {
+    const token = getToken();
+    const res = await fetch(`${getBackendHttpUrl()}/me`, {
+      cache: 'no-store',
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return null;
+    const body = await res.json();
+    return Array.isArray(body.directions) ? body.directions : null;
+  } catch {
+    return null;
+  }
+}

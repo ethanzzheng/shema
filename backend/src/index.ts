@@ -16,7 +16,7 @@ import cors from 'cors';
 import { SessionManager, normalizeRoomId } from './session-manager';
 import { handleBroadcasterConnection } from './broadcaster';
 import { handleListenerConnection } from './listener';
-import { login, authEnabled } from './auth';
+import { login, authEnabled, verifyToken, allowedDirections } from './auth';
 import { createGlossaryRouter } from './routes/glossary';
 import { createTranscriptRouter } from './routes/transcripts';
 import { createDemoRouter } from './routes/demo';
@@ -126,7 +126,24 @@ app.post('/login', (req, res) => {
     return;
   }
   console.log('[Auth] Login OK:', username);
-  res.json({ token, username });
+  res.json({ token, username, directions: allowedDirections(username.trim()) });
+});
+
+// Which directions the signed-in account may broadcast, so the desk shows
+// only those. Read fresh from AUTH_DIRECTIONS on every call, so changing an
+// account's languages needs no new login. Open mode: every direction.
+app.get('/me', (req, res) => {
+  if (!authEnabled()) {
+    res.json({ username: null, directions: allowedDirections(null) });
+    return;
+  }
+  const header = req.headers.authorization ?? '';
+  const username = verifyToken(header.startsWith('Bearer ') ? header.slice(7) : '');
+  if (!username) {
+    res.status(401).json({ error: 'Session invalid or expired.' });
+    return;
+  }
+  res.json({ username, directions: allowedDirections(username) });
 });
 
 app.use(createGlossaryRouter(sessions));

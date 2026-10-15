@@ -29,7 +29,7 @@ import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
 import { ClaudeTranslator } from './translation';
 import { ElevenLabsTTS } from './tts';
-import { isStartAuthorized } from './auth';
+import { allowedDirections, isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, detectVerseRange, correctVerseAgainstRange, ScriptureRef } from './scripture';
 import { detectReferenceEn } from './scripture-en';
 import { detectReferenceZh } from './scripture-zh';
@@ -746,6 +746,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
             console.log(`[Broadcaster] Start authorized for "${auth.username}" in room "${session.roomId}"`);
           }
           const direction = normalizeDirection(msg.direction);
+          // Each church account broadcasts only the languages it is set up
+          // for (AUTH_DIRECTIONS). The desk hides the others; this is the
+          // check that actually holds.
+          if (!allowedDirections(auth.username).includes(direction)) {
+            const label = `${getDirectionConfig(direction).sourceLabel} → ${getDirectionConfig(direction).targetLabel}`;
+            console.warn(`[Broadcaster] Refused ${direction} for "${auth.username}" in room "${session.roomId}"`);
+            send(ws, { type: 'error', message: `This account isn't set up for ${label}.` });
+            break;
+          }
           try {
             // Awaited: the glossary must be loaded before the translator and
             // the STT connection are built, since both bake it in at construction.

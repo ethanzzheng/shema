@@ -6,7 +6,7 @@ import { test, describe } from 'node:test';
 import assert from 'node:assert';
 import * as bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
-import { login, verifyToken, authEnabled, isStartAuthorized } from '../src/auth';
+import { login, verifyToken, authEnabled, isStartAuthorized, allowedDirections } from '../src/auth';
 
 const HASH = bcrypt.hashSync('correct-horse', 10);
 const ENV = {
@@ -85,5 +85,40 @@ describe('isStartAuthorized (broadcast gate)', () => {
     const token = login('hanmaum', 'correct-horse', ENV);
     const result = isStartAuthorized(token, ENV);
     assert.deepEqual(result, { ok: true, username: 'hanmaum' });
+  });
+});
+
+describe('allowedDirections', () => {
+  const ALL = ['ko-en', 'en-ko', 'zh-en'];
+  const DIRS = JSON.stringify({ hanmaum: ['ko-en', 'en-ko'], mandarin: ['zh-en'], broken: 'ko-en', none: ['xx'] });
+
+  test('no AUTH_DIRECTIONS → every account keeps every direction', () => {
+    assert.deepEqual(allowedDirections('hanmaum', {}), ALL);
+  });
+
+  test('open mode / demo (no username) → every direction', () => {
+    assert.deepEqual(allowedDirections(null, { AUTH_DIRECTIONS: DIRS }), ALL);
+  });
+
+  test('a listed account gets exactly its list', () => {
+    assert.deepEqual(allowedDirections('hanmaum', { AUTH_DIRECTIONS: DIRS }), ['ko-en', 'en-ko']);
+    assert.deepEqual(allowedDirections('mandarin', { AUTH_DIRECTIONS: DIRS }), ['zh-en']);
+  });
+
+  test('an unlisted account is not locked out', () => {
+    assert.deepEqual(allowedDirections('newchurch', { AUTH_DIRECTIONS: DIRS }), ALL);
+  });
+
+  test('a malformed or unknown-only entry fails closed for that account', () => {
+    assert.deepEqual(allowedDirections('broken', { AUTH_DIRECTIONS: DIRS }), []);
+    assert.deepEqual(allowedDirections('none', { AUTH_DIRECTIONS: DIRS }), []);
+  });
+
+  test('malformed JSON → nobody is locked out', () => {
+    assert.deepEqual(allowedDirections('hanmaum', { AUTH_DIRECTIONS: '{nope' }), ALL);
+  });
+
+  test('inherited object keys are not accounts', () => {
+    assert.deepEqual(allowedDirections('toString', { AUTH_DIRECTIONS: DIRS }), ALL);
   });
 });
