@@ -452,12 +452,24 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // nor kill it by disconnecting.
   let ownsSession = false;
 
+  /**
+   * Audio that arrives after `start` but before the STT exists. Starting
+   * awaits the database (glossary, transcript record) before building the
+   * STT, and audio in that window used to be dropped — the first word or two
+   * of a service, and of every automatic resume after a network blip.
+   * Handed to the STT the moment it is built; it holds its own until
+   * Deepgram's socket opens. Bounded like the STT's own hold.
+   */
+  let preSttAudio: Buffer[] = [];
+  const PRE_STT_MAX_BYTES = 20 * 32_000;
+
   /** Tear down THIS connection's pipeline (STT + chunker), draining first. */
   function teardownPipeline(): void {
     const c = chunker;
     const s = stt;
     chunker = null;
     stt = null;
+    preSttAudio = [];
     if (session.direction !== 'zh-en') {
       // Korean and English→Korean: the deployed teardown, unchanged until the
       // last-sentence flush below is tested on those services.
@@ -674,6 +686,13 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     });
 
     stt.connect();
+    if (preSttAudio.length > 0) {
+      const held = preSttAudio;
+      preSttAudio = [];
+      for (const pcm of held) stt.sendAudio(pcm);
+      const sec = held.reduce((n, b) => n + b.length, 0) / 32_000;
+      console.log(`[Broadcaster] Handed ${sec.toFixed(1)}s of audio from session start to STT`);
+    }
     console.log(`[Broadcaster] Session started, mode = ${mode}, direction = ${direction}`);
   }
 
@@ -714,6 +733,11 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       }
       if (stt && session.isActive) {
         stt.sendAudio(data as Buffer);
+      } else if (ownsSession && session.isActive) {
+        // This connection's start is still awaiting the database.
+        preSttAudio.push(data as Buffer);
+        let total = preSttAudio.reduce((n, b) => n + b.length, 0);
+        while (total > PRE_STT_MAX_BYTES && preSttAudio.length > 0) total -= preSttAudio.shift()!.length;
       }
       return;
     }
