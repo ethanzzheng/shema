@@ -91,7 +91,7 @@ export function createBoundaryOracle(
   // decided by then.
   const client = new Anthropic({ apiKey, timeout: opts.timeoutMs ?? 2500, maxRetries: 0 });
   const system = oraclePrompt(language);
-  const model = opts.model ?? process.env.BOUNDARY_ORACLE_MODEL ?? ORACLE_MODEL;
+  const model = process.env.BOUNDARY_ORACLE_MODEL ?? opts.model ?? ORACLE_MODEL;
   return async (buffer, ctx) => {
     try {
       const pause = ctx.pauseMs !== undefined ? `\nThe pastor then paused for ${(ctx.pauseMs / 1000).toFixed(1)}s.` : '';

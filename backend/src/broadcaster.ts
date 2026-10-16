@@ -656,7 +656,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       // Chinese has no grammatical sentence ending; a fast model stands in.
       oracle:
         cfg.boundaryOracle && process.env.BOUNDARY_ORACLE !== '0'
-          ? createBoundaryOracle(ANTHROPIC_API_KEY, cfg.sourceLabel)
+          ? createBoundaryOracle(ANTHROPIC_API_KEY, cfg.sourceLabel, { model: cfg.oracleModel })
           : undefined,
     });
     listenerPlayEnd = 0;

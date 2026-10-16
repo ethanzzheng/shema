@@ -127,7 +127,7 @@ async function main(): Promise<void> {
   const oracleMs: number[] = [];
   let oracle: BoundaryOracle | undefined;
   if (cfgDir.boundaryOracle && !has('--no-oracle')) {
-    const model = arg('--oracle-model', ORACLE_MODEL);
+    const model = arg('--oracle-model', cfgDir.oracleModel ?? ORACLE_MODEL);
     const real = createBoundaryOracle(process.env.ANTHROPIC_API_KEY!, cfgDir.sourceLabel, { model, timeoutMs: 2500 });
     const cachePath = path.join(path.dirname(path.dirname(path.dirname(srcDir))), '.oracle-cache.jsonl');
     const cache = new Map<string, { v: OracleVerdict | null; ms: number }>();

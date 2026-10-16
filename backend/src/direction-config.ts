@@ -67,6 +67,8 @@ export interface DirectionConfig {
    * chunker to read, so this stands in for one. BOUNDARY_ORACLE=0 turns it off.
    */
   boundaryOracle?: boolean;
+  /** Model for that check; BOUNDARY_ORACLE_MODEL wins. Default Haiku 5.5. */
+  oracleModel?: string;
   /** Default ElevenLabs speaking rate for this direction; TTS_SPEED_<X> wins. */
   ttsSpeed?: number;
   ttsSpeedEnvVar?: string;
@@ -160,6 +162,10 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     translationModelEnvVar: 'TRANSLATION_MODEL_YUE',
     chunker: 'chinese',
     boundaryOracle: true,
+    // Haiku cut garbled Cantonese mid-thought (45 broken cuts on four
+    // sermons against 31 before); Sonnet 5.5 kept it at 31 and still took a
+    // third off the delay. Mandarin stays on Haiku: none of its cuts broke.
+    oracleModel: 'claude-sonnet-5-5',
     ttsSpeedEnvVar: 'TTS_SPEED_YUE',
     implemented: true,
   },
