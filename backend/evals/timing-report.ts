@@ -156,7 +156,8 @@ function analyse(label: string) {
       sttFinal: last ? last.t : null,
       translated: tr.t,
       firstByte: firstByte.get(seq) ?? null,
-      clipSec: fs.existsSync(clip) ? clipDuration(clip) : null,
+      // A chunk-replay run has no audio; it carries a modelled clip length instead.
+      clipSec: fs.existsSync(clip) ? clipDuration(clip) : typeof tr.clipSec === 'number' ? (tr.clipSec as number) : null,
       playStart: null,
       playEnd: null,
       lag: null,
@@ -175,10 +176,16 @@ function analyse(label: string) {
     if (c.speechEnd !== null) c.lag = +(c.playStart - c.speechEnd).toFixed(2);
   }
 
-  const lags = chunks.map((c) => c.lag).filter((x): x is number => x !== null);
-  const backlogs = chunks.map((c) => c.backlogAtArrival).filter((x): x is number => x !== null);
+  // The run ends by stopping the broadcast ~30s after the audio, and the
+  // finals that stop flushes out are a test artifact, not service behaviour:
+  // counted, they showed up as 40-second delays. Keep them in the
+  // side-by-side, but out of the timing statistics.
+  const audioEnd = audioStartT !== undefined ? audioStartT + Number(summary.audioSeconds) : Infinity;
+  const timed = chunks.filter((c) => c.sttFinal === null || c.sttFinal <= audioEnd + 2);
+  const lags = timed.map((c) => c.lag).filter((x): x is number => x !== null);
+  const backlogs = timed.map((c) => c.backlogAtArrival).filter((x): x is number => x !== null);
   const stage = (f: (c: ChunkTiming) => number | null) => {
-    const xs = chunks.map(f).filter((x): x is number => x !== null);
+    const xs = timed.map(f).filter((x): x is number => x !== null);
     const r = (x: number | null) => (x === null ? null : +x.toFixed(2));
     return { p50: r(pct(xs, 50)), p95: r(pct(xs, 95)) };
   };
@@ -191,6 +198,7 @@ function analyse(label: string) {
     label,
     direction: summary.direction,
     chunks: chunks.length,
+    endOfRunChunks: chunks.length - timed.length,
     matchedToSpeech: chunks.filter((c) => c.speechEnd !== null).length,
     sttClockResets: clockResets,
     lag: { p50: pct(lags, 50), p95: pct(lags, 95), max: lags.length ? Math.max(...lags) : null },
