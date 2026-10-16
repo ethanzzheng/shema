@@ -29,7 +29,7 @@ import { ANON_LEDGER_KEY, mayUseAnonTts, mayUseTts, recordTtsSpend } from './dem
 import { recordEvent } from './demo/events';
 import { KoreanChunker } from './chunker';
 import { isPureRestart } from './text';
-import { ClaudeTranslator } from './translation';
+import { ClaudeTranslator, pacesSpeaker } from './translation';
 import { ElevenLabsTTS } from './tts';
 import { allowedDirections, isStartAuthorized } from './auth';
 import { detectReference, mergeReference, formatReference, detectVerseRange, correctVerseAgainstRange, ScriptureRef } from './scripture';
@@ -253,9 +253,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // emission. Failures park a skip marker so the emitter never stalls.
     let translation;
     try {
-      // Chinese only: tell the translator how far behind the listeners are,
-      // so it condenses while they catch up. Korean is called as deployed.
-      translation = isChinese(session.direction)
+      // Chinese and English→Korean: tell the translator how far behind the
+      // listeners are, so it condenses while they catch up. Korean→English
+      // is called exactly as deployed.
+      translation = pacesSpeaker(session.direction)
         ? await translator.translate(sourceText, currentRef, 1, seq, { behindSec: listenerBehindSec() })
         : await translator.translate(sourceText, currentRef, 1, seq);
     } catch (err) {
@@ -324,7 +325,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   const clipBytes = new Map<number, number>();
   function listenerBehindSec(): number {
     const playing = Math.max(0, listenerPlayEnd - Date.now()) / 1000;
-    return playing + queuedSpeechChars * 0.065;
+    // Seconds per character of queued text: an English letter or a Korean
+    // syllable block, which takes far longer to say (~6-7 a second).
+    const perChar = getDirectionConfig(session.direction).targetLang === 'ko' ? 0.15 : 0.065;
+    return playing + queuedSpeechChars * perChar;
   }
 
   /** Previous sentence sent to TTS, for prosody continuity across clips. */

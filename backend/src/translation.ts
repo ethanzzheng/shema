@@ -334,16 +334,36 @@ export function salvageTranslation(raw: string): string | null {
 export const PACE_RULE = `- PACE (live interpretation): your English is spoken aloud while the pastor keeps preaching, and it must keep up with him. Aim for English that takes about four-fifths of the time his words took. Say each idea once, in the fewest words natural spoken English allows; prefer short plain words and short sentences ("We must forgive", not "It is necessary for us to be people who forgive"). Drop filler, hedges, false starts, and the restatements and repetitions a preacher uses for rhythm; merge clauses that say the same thing. Never drop or shorten a claim, a Bible reference, quoted Scripture wording, a name, a number, or a church term, and never change the meaning.`;
 
 /**
+ * English → Korean. Korean renderings ran about 1.2x as long as the English
+ * they translate (a fast preacher measured 1.23x), so the listener fell
+ * steadily behind and only speeding the voice up kept pace, which Korean
+ * listeners found too fast. Aim for the same length as the English instead.
+ */
+export const PACE_RULE_KO = `- PACE (live interpretation, this overrides the REDUNDANT MARKERS rule where they conflict): the Korean is spoken while the pastor keeps preaching, and Korean takes longer to say than English, so it falls behind unless it is lean. Aim for Korean that takes NO longer to say than the English did. Say each idea once: when the pastor repeats a phrase or a whole sentence for emphasis, say it once (twice only when the repetition itself is the point, as in a refrain the congregation answers). Drop filler, hedges, restatements and asides that add nothing; merge clauses that say the same thing; prefer short common words; keep 하십시오체 but use its shortest natural endings. Never drop a claim, a Bible reference, quoted Scripture, a name, a number, or a church term, and never change the meaning. Shortening never changes WHO is speaking or their register: God's own words keep the 개역개정 voice (나는 아브라함과 이삭과 야곱의 하나님이니라, never 저는).`;
+
+/** Directions whose translator is told to keep pace with the speaker. */
+export function pacesSpeaker(direction: Direction): boolean {
+  return isChinese(direction) || direction === 'en-ko';
+}
+
+/**
  * How far behind the listeners are, as a per-segment instruction. It rides the
  * USER message: the system prompt is cached and must not change mid-service.
  */
+/**
+ * Lines with no content of their own cost a whole clip of catch-up time.
+ * Behind, they are skipped: an empty response is never spoken, and the
+ * captions still carry the source.
+ */
+const SKIP_FILLER = `If the segment is ONLY a call to the congregation or a filler ("Amen?", "Right?", "You know what?", "Come on!"), or only repeats what was just said, return an empty response.`;
+
 export function backlogHint(behindSec: number | undefined): string {
   if (behindSec === undefined || behindSec < 6) return '';
   const n = Math.round(behindSec);
   if (behindSec < 12) {
-    return `PACE NOW: the listeners are about ${n} seconds behind the pastor. Give this segment its shortest faithful rendering: keep every claim, Scripture wording, name and number; drop repetition, asides, filler and restatement.\n\n`;
+    return `PACE NOW: the listeners are about ${n} seconds behind the pastor. Give this segment its shortest faithful rendering: keep every claim, Scripture wording, name and number; drop repetition, asides, filler and restatement. ${SKIP_FILLER}\n\n`;
   }
-  return `PACE NOW: the listeners are about ${n} seconds behind the pastor and must catch up. Condense this segment hard, the way a live interpreter does when far behind: one or two short sentences carrying its main point. Keep Scripture wording, names and numbers that carry the point; drop examples' extra detail, repetition, asides and filler. Never add anything.\n\n`;
+  return `PACE NOW: the listeners are about ${n} seconds behind the pastor and must catch up. Condense this segment hard, the way a live interpreter does when far behind: one or two short sentences carrying its main point. Keep Scripture wording, names and numbers that carry the point; drop examples' extra detail, repetition, asides and filler. Never add anything. ${SKIP_FILLER}\n\n`;
 }
 
 export class ClaudeTranslator {
@@ -427,6 +447,7 @@ export class ClaudeTranslator {
       dirCfg.translator
     ];
     if (isChinese(direction)) this.systemPrompt += `\n${PACE_RULE}`;
+    if (direction === 'en-ko') this.systemPrompt += `\n${PACE_RULE_KO}`;
     if (opts.promptAddendum) this.systemPrompt += `\n\n${opts.promptAddendum}`;
     // Per-church terms: member names, ministry names, the church's own name.
     // These vary by deployment and must not require a code change, so they come
@@ -460,7 +481,7 @@ export class ClaudeTranslator {
     reference?: ScriptureRef | null,
     retries = 1,
     seq?: number,
-    /** Chinese only: seconds of English the listeners still have queued. */
+    /** Chinese and en-ko: seconds of speech the listeners still have queued. */
     pacing?: { behindSec?: number },
   ): Promise<TranslationResult> {
     // Mandarin tag questions are thinned in code; the prompt alone did not.
@@ -600,7 +621,7 @@ export class ClaudeTranslator {
           messages: [
             {
               role: 'user',
-              content: `${contextBlock}${refBlock}${isChinese(this.direction) ? backlogHint(pacing?.behindSec) : ''}Translate ONLY this new ${this.srcLabel} segment:\n\n${sourceText}`,
+              content: `${contextBlock}${refBlock}${pacesSpeaker(this.direction) ? backlogHint(pacing?.behindSec) : ''}Translate ONLY this new ${this.srcLabel} segment:\n\n${sourceText}`,
             },
           ],
         });

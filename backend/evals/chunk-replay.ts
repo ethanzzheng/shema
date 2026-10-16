@@ -44,7 +44,7 @@ import { foldToSimplified } from '../src/zh-script';
 import { findRunDir } from './recordings';
 import crypto from 'crypto';
 import { createBoundaryOracle, ORACLE_MODEL, oraclePrompt, type BoundaryOracle, type OracleVerdict } from '../src/boundary-oracle';
-import { PACE_RULE } from '../src/translation';
+import { PACE_RULE, PACE_RULE_KO } from '../src/translation';
 
 function arg(flag: string, dflt = ''): string {
   const a = process.argv.slice(2);
@@ -219,7 +219,7 @@ async function main(): Promise<void> {
   if (!pace) {
     // Baseline: the prompt as it was before the pacing rule.
     const t = translator as unknown as { systemPrompt: string };
-    t.systemPrompt = t.systemPrompt.replace(`\n${PACE_RULE}`, '');
+    t.systemPrompt = t.systemPrompt.replace(`\n${PACE_RULE}`, '').replace(`\n${PACE_RULE_KO}`, '');
   }
   const speed = parseFloat(arg('--speed', '1')) || 1;
   // Listener playback, as the broadcaster estimates it: clips play back to
@@ -249,6 +249,8 @@ async function main(): Promise<void> {
       const behindSec = behindAt(c.at);
       behind.push(behindSec);
       english = (await translator.translate(c.text, currentRef, 1, c.seq, pace ? { behindSec } : undefined)).sermon_translation;
+      // An empty or failed translation is not spoken, as in the broadcaster.
+      if (english === '[Translation error]') english = '';
       ms = Date.now() - t;
       process.stdout.write(`\r[chunk-replay] translated ${c.seq}/${cut.length}`);
     }
