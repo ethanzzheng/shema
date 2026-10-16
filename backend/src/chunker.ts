@@ -227,6 +227,8 @@ interface ChunkerOptions {
    * (Chinese). Absent = rules and timers only, as before.
    */
   oracle?: BoundaryOracle;
+  /** Evaluation only: why each piece was cut. Production never passes it. */
+  onCut?: (seq: number, reason: string) => void;
 }
 
 // Class name is historical (it began Korean-only) — direction-aware since
@@ -281,7 +283,14 @@ export class KoreanChunker {
     this.tuning = opts.tuning;
     this.cfg = { ...MODE_CONFIG[this.direction][opts.mode], ...this.tuning };
     this.oracle = opts.oracle;
+    this.onCut = opts.onCut;
   }
+
+  private readonly onCut: ((seq: number, reason: string) => void) | undefined;
+  /** Why the next dispatch happens, for onCut. */
+  private cutReason = '';
+  /** What the pending timer was armed for, for onCut. */
+  private armedAs = '';
 
   private readonly tuning: Partial<ModeConfig> | undefined;
 
@@ -326,6 +335,7 @@ export class KoreanChunker {
       for (const s of sentences) {
         group += (group ? this.detector.joiner : '') + s;
         if (group.length >= MIN_DISPATCH_CHARS) {
+          this.cutReason = 'punct';
           this.dispatchText(group);
           group = '';
         }
@@ -350,6 +360,7 @@ export class KoreanChunker {
       while (this.buffer.length >= this.cfg.softChars) {
         const relief = this.detector.clauseRelief(this.buffer);
         if (!relief) break;
+        this.cutReason = 'relief';
         this.dispatchText(relief.head);
         this.buffer = relief.rest;
       }
@@ -361,6 +372,7 @@ export class KoreanChunker {
     if (this.buffer.length >= this.cfg.maxChars) {
       // Only where the detector asks for it (Mandarin); Korean ships the whole
       // buffer at the cap, as deployed.
+      this.cutReason = 'cap';
       if (!(this.detector.splitWhenExpired && this.shipSafeHead(true))) this.dispatchBuffer();
       return;
     }
@@ -378,6 +390,7 @@ export class KoreanChunker {
   /** Flush + dispatch everything, then wait for in-flight translations to finish. */
   async forceFlush(): Promise<void> {
     this.cancelTimer();
+    this.cutReason = 'flush';
     this.dispatchBuffer();
     while (this.inFlight > 0 || this.pending.length > 0) {
       await new Promise((r) => setTimeout(r, 50));
@@ -433,13 +446,16 @@ export class KoreanChunker {
       this.buffer.length >= this.detector.tinyChars &&
       !this.detector.holdsForHead?.(this.buffer);
     if (this.detector.looksComplete(this.buffer) || pausedHere || this.oracleComplete === this.buffer) {
+      this.armedAs = this.detector.looksComplete(this.buffer) ? 'rules-complete' : pausedHere ? 'pause' : 'oracle-complete';
       delay = this.cfg.completeMs;
     } else if (this.detector.holdsForHead?.(this.buffer)) {
       // The head noun this modifier belongs to has not been spoken yet.
       // Shipping now is what produced the church/self-centeredness inversion,
       // so wait harder for it than for a merely abrupt ending.
+      this.armedAs = 'dangling';
       delay = this.cfg.incompleteMaxMs * 2;
     } else {
+      this.armedAs = 'incomplete';
       delay =
         this.buffer.length < this.detector.tinyChars
           ? this.cfg.incompleteMaxMs * 2 // graded patience: hold tiny shards longer
@@ -448,6 +464,7 @@ export class KoreanChunker {
     // Never hold one buffer past the ceiling, however incomplete it looks.
     if (this.bufferStartedAt >= 0) {
       const held = Date.now() - this.bufferStartedAt;
+      if (this.cfg.maxHoldMs - held < delay) this.armedAs += '/maxhold';
       delay = Math.max(0, Math.min(delay, this.cfg.maxHoldMs - held));
     }
     this.timer = setTimeout(() => this.expirePatience(), delay);
@@ -460,6 +477,13 @@ export class KoreanChunker {
    * to the wrong referent.
    */
   private expirePatience(): void {
+    this.cutReason = `timer:${this.armedAs}`;
+    // A buffer the oracle judged complete ships whole; splitting it again
+    // here cut sentences the oracle had just said were finished.
+    if (this.armedAs.startsWith('oracle-complete')) {
+      this.dispatchBuffer();
+      return;
+    }
     if (!this.shipSafeHead(false)) this.dispatchBuffer();
   }
 
@@ -479,6 +503,7 @@ export class KoreanChunker {
     // Keeping a tail longer than the head would just defer the problem.
     if (!dangling && !oversized && split.rest.length > split.head.length) return false;
     this.cancelTimer();
+    this.cutReason += '+split';
     this.dispatchText(split.head);
     this.buffer = split.rest;
     this.bufferStartedAt = Date.now(); // the tail gets its own budget
@@ -507,7 +532,8 @@ export class KoreanChunker {
         if (v.complete) {
           // Only for the very buffer it judged: words that arrived since may
           // be the same sentence continuing. They get their own verdict.
-          if (this.buffer === snap) {
+          // The rules still veto an ending that plainly dangles (的, 因为).
+          if (this.buffer === snap && !this.detector.holdsForHead?.(snap)) {
             this.oracleComplete = snap;
             this.armTimer();
           }
@@ -519,6 +545,7 @@ export class KoreanChunker {
         const head = snap.slice(0, v.headLen).trim();
         if (head.length < ORACLE_MIN_HEAD || this.detector.holdsForHead?.(head)) return;
         this.cancelTimer();
+        this.cutReason = 'oracle-head';
         this.dispatchText(head);
         this.buffer = this.buffer.slice(v.headLen).trim();
         this.bufferStartedAt = this.buffer ? Date.now() : -1;
@@ -539,6 +566,7 @@ export class KoreanChunker {
     this.dispatchedTail = text.slice(-DISPATCHED_TAIL_CHARS);
     this.dispatchedAt = Date.now();
     const seq = this.nextSeq();
+    this.onCut?.(seq, this.cutReason);
     const waitMs = this.lastFinalAt ? Date.now() - this.lastFinalAt : 0;
     this.pending.push({ text, seq, waitMs });
     this.pump();

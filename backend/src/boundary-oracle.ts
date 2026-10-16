@@ -42,6 +42,15 @@ COMPLETE means the buffer ends where a sentence or self-contained thought ends, 
 
 If NOT complete, find the LAST point inside the buffer where a complete thought ends and everything after it belongs to the next thought. Copy the 4 to 8 characters immediately BEFORE that point exactly as they appear in the buffer.
 
+A cut is only right if the text before it makes a whole English sentence on its own, with its subject, its verb and the verb's object, and the text after it starts a new sentence. These are all WRONG cuts:
+- ending on a subject whose verb has not come: 因為咁嘅緣故我哋 | 仲誤以為...
+- ending on a number or measure word before its noun: 一個人不能事奉兩個 | 主
+- ending on "with/to/for someone" before the verb: 呢啲經文同你 | 有一個好大嘅距離
+- ending on a time phrase that the next words complete: 我間公司一年 | 之後就執咗
+- ending on a topic that the next words comment on: 呢三章聖經 | 係非常寶貴嘅
+- the next words continuing the same clause: 你行錯咗一步 | 唔代表你去唔到
+When unsure, answer {"complete":false} with no cut: waiting one more second costs little, a wrong cut costs the listener the meaning.
+
 Reply with ONE line of JSON and nothing else:
 {"complete":true}
 {"complete":false,"cut_after":"<characters>"}
@@ -89,7 +98,10 @@ export function createBoundaryOracle(
       const res = await client.messages.create({
         model,
         max_tokens: 40,
-        temperature: 0,
+        // The 5.5 models think by default; a one-line verdict needs none, and
+        // the thinking alone used up the token budget. Sonnet spells "off"
+        // differently from Haiku.
+        thinking: (/haiku/.test(model) ? { type: 'disabled' } : { type: 'between_tools' }) as never,
         system,
         messages: [
           {
@@ -102,7 +114,9 @@ export function createBoundaryOracle(
         .filter((b): b is Anthropic.TextBlock => b.type === 'text')
         .map((b) => b.text)
         .join('');
-      return parseVerdict(text, buffer);
+      const v = parseVerdict(text, buffer);
+      if (!v) console.warn('[Oracle] unreadable verdict:', text.slice(0, 120));
+      return v;
     } catch (err) {
       console.warn('[Oracle] no verdict:', (err as Error).message);
       return null;

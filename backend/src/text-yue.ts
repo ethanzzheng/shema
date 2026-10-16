@@ -62,7 +62,10 @@ const YUE_DANGLING = folded([
  * 同 but not 唔同 (different), 係 but not 關係 (relationship), 話 but not
  * 說話/講話 (speech), 令 but not 命令 (command).
  */
-const YUE_DANGLING_RE = [/(?<![有不])可能$/, /(?<![唔共相不])同$/, /(?<![关联体])系$/, /(?<![说讲电笑神])话$/, /(?<![命法指口])令$/];
+const YUE_DANGLING_RE = [
+  // a number or demonstrative + measure word, its noun still to come: 兩個 | 主
+  /(?:[一二两三四五六七八九十几每呢嗰这那哪某]|\d)(?:个|位|种|只|件|条|间|本|句|段|次|样)$/,
+  /(?<![有不])可能$/, /(?<![唔共相不])同$/, /(?<![关联体])系$/, /(?<![说讲电笑神])话$/, /(?<![命法指口])令$/];
 
 /**
  * Words that open a new sentence. 咁 alone is too common mid-clause (咁多,

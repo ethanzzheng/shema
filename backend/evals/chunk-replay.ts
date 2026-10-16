@@ -164,12 +164,14 @@ async function main(): Promise<void> {
   // ── 1. Chunk under a simulated clock (run time, in ms) ────────────────────
   mock.timers.enable({ apis: ['setTimeout', 'Date'], now: 0 });
   const cut: { seq: number; text: string; at: number }[] = [];
+  const reasons = new Map<number, string>();
   let seq = 0;
   const chunker = new KoreanChunker({
     mode,
     direction,
     tuning,
     oracle,
+    onCut: (s, reason) => reasons.set(s, reason),
     nextSeq: () => ++seq,
     onChunk: async (text, s) => {
       cut.push({ seq: s, text, at: Date.now() / 1000 });
@@ -255,7 +257,7 @@ async function main(): Promise<void> {
     lastEmit = emitAt;
     const clipSec = english ? (english.length * rate) / speed : null;
     if (clipSec !== null) clips.push({ arrive: emitAt + fbDelay, dur: clipSec });
-    out.push({ t: +emitAt.toFixed(2), src: 'broadcaster', type: 'translation', seq: c.seq, korean: c.text, sermon: english, clipSec, dispatchedAt: +c.at.toFixed(2), translateMs: ms });
+    out.push({ t: +emitAt.toFixed(2), src: 'broadcaster', type: 'translation', seq: c.seq, korean: c.text, sermon: english, cutReason: reasons.get(c.seq), clipSec, dispatchedAt: +c.at.toFixed(2), translateMs: ms });
     if (clipSec !== null) out.push({ t: +(emitAt + fbDelay).toFixed(2), type: 'audio_chunk', seq: c.seq, bytes: 0 });
   }
   out.sort((a, b) => a.t - b.t);
