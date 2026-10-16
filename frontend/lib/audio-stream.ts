@@ -121,6 +121,12 @@ export class AudioStreamPlayer {
   onStalled: (() => void) | null = null;
   /** Listener opt-out for automatic catch-up speed (rate pins to 1.0). */
   catchUpEnabled = true;
+  /**
+   * The fastest catch-up rate. Korean output stays at 1.05: the Korean voice
+   * already says more syllables a second than the English one, and at 1.15
+   * (stacked on any TTS speed) Korean listeners found it too fast to follow.
+   */
+  maxCatchUpRate = 1.15;
   /** Where the catch-up ramp is heading (rates glide, never jump). */
   private rateTarget = 1.0;
   private healthTimer: ReturnType<typeof setInterval> | null = null;
@@ -200,7 +206,7 @@ export class AudioStreamPlayer {
     // reaching the 1.3-1.5x territory reviewers reject. Deep backlogs rely
     // on the Jump-to-live control, not speed.
     if (!this.catchUpEnabled) this.rateTarget = 1.0;
-    else if (ahead > 15) this.rateTarget = 1.15;
+    else if (ahead > 15) this.rateTarget = this.maxCatchUpRate;
     else if (ahead < 10) this.rateTarget = 1.0; // hysteresis: hold target between 10-15s
     // RAMP toward the target — abrupt rate jumps glitch audibly (a brief
     // stutter at every tier change). ~0.08 per 1.5s tick ≈ a gentle glide.

@@ -10,6 +10,11 @@ import { CaretDown, CaretRight, Pause, Play, SpeakerHigh } from '@phosphor-icons
 import { Seg } from '@/components/app/chrome';
 import '@/components/app/listener.css';
 
+/** Fastest automatic catch-up: Korean output plays near normal speed. */
+function maxRateFor(direction: string): number {
+  return direction === 'en-ko' ? 1.05 : 1.15;
+}
+
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 type TtsMode = 'elevenlabs' | 'browser' | 'off';
 
@@ -81,6 +86,12 @@ export default function ListenerView({ church }: { church: string }) {
   const [broadcastActive, setBroadcastActive] = useState(false);
   // Output language of the broadcast (from status messages); ko-en = English.
   const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en'>('ko-en');
+  // The player is built outside React state, so it reads the direction here.
+  const directionRef = useRef(direction);
+  useEffect(() => {
+    directionRef.current = direction;
+    if (streamRef.current) streamRef.current.maxCatchUpRate = maxRateFor(direction);
+  }, [direction]);
   const [ttsMode, setTtsMode] = useState<TtsMode>('elevenlabs');
   // Caption size — accessibility for older members. Persisted per device.
   const [textSize, setTextSize] = useState<'s' | 'm' | 'l'>('m');
@@ -322,6 +333,7 @@ export default function ListenerView({ church }: { church: string }) {
       build();
     };
     s.catchUpEnabled = autoCatchUpRef.current;
+    s.maxCatchUpRate = maxRateFor(directionRef.current);
     s.start();
     if (pausedRef.current) s.pause();
     streamRef.current = s;
