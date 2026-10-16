@@ -56,6 +56,20 @@ export const DEFAULT_KEYTERMS_ZH = [
   '以弗所书', '腓立比书', '希伯来书', '创世记', '诗篇', '以赛亚书', '启示录',
 ];
 
+/**
+ * Cantonese (zh-HK) returns Traditional characters, so its keyterms are the
+ * Traditional forms, plus the Hong Kong church words Mandarin lacks (聖餐,
+ * 崇拜, 浸禮) and colloquial forms of the address (弟兄姊妹 is shared).
+ * Not yet measured on Cantonese audio the way the Mandarin list was.
+ */
+export const DEFAULT_KEYTERMS_YUE = [
+  '弟兄姊妹', '耶穌', '耶穌基督', '聖靈', '天父', '恩典', '救恩', '福音', '祈禱', '代禱',
+  '團契', '查經', '靈修', '見證', '講道', '牧師', '師母', '傳道', '長老', '執事',
+  '崇拜', '聖餐', '浸禮', '洗禮', '阿們', '哈利路亞', '十字架', '復活', '悔改', '稱義', '撒但',
+  '約翰福音', '馬太福音', '馬可福音', '路加福音', '使徒行傳', '羅馬書', '哥林多前書',
+  '以弗所書', '腓立比書', '希伯來書', '創世記', '詩篇', '以賽亞書', '啟示錄',
+];
+
 export interface TranscriptEvent {
   text: string;
   isFinal: boolean;
@@ -68,6 +82,15 @@ export interface TranscriptEvent {
   audioEndSec?: number;
   /** Where this final's speech starts, on the same clock as audioEndSec. */
   audioStartSec?: number;
+  /**
+   * First and last spoken word, same clock. A final's span runs up to the
+   * next one with any silence folded in, so only word times show where the
+   * speaker actually paused.
+   */
+  firstWordSec?: number;
+  lastWordEndSec?: number;
+  /** Deepgram's speech_final: the speaker went quiet for the endpointing interval. */
+  speechFinal?: boolean;
 }
 
 /**
@@ -87,6 +110,18 @@ export function isDuplicateUtterance(text: string, recent: readonly string[]): b
   // Genuine re-sends are caught precisely by the audio-interval check in
   // handleMessage, which cannot confuse them with real repetition.
   return recent.some((prev) => norm(prev) === n);
+}
+
+/** First word start and last word end of a Deepgram result, when it has words. */
+function wordSpan(msg: any): { firstWordSec?: number; lastWordEndSec?: number } {
+  const words = msg.channel?.alternatives?.[0]?.words;
+  if (!Array.isArray(words) || words.length === 0) return {};
+  const first = words[0]?.start;
+  const last = words[words.length - 1]?.end;
+  return {
+    ...(typeof first === 'number' ? { firstWordSec: first } : {}),
+    ...(typeof last === 'number' ? { lastWordEndSec: last } : {}),
+  };
 }
 
 export class DeepgramSTT {
@@ -361,7 +396,12 @@ export class DeepgramSTT {
     if (this.recentUtterances.length > 5) this.recentUtterances.shift();
 
     this.drained?.push(transcript);
-    this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now(), audioEndSec, audioStartSec: startSec ?? undefined });
+    this.onTranscript({ text: transcript, isFinal: true, timestamp: Date.now(),
+      audioEndSec,
+      audioStartSec: startSec ?? undefined,
+      ...wordSpan(msg),
+      speechFinal: msg.speech_final === true,
+    });
   }
 
   private isDuplicate(text: string): boolean {

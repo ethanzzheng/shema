@@ -225,16 +225,45 @@ const ZH_TAGS = ['是吧', '对吧', '对不对', '是不是', '好不好', '对
  * translator then finished the sentence itself.
  */
 export function splitLastClauseZh(text: string, minHead = 6): { head: string; rest: string } | null {
+  return splitLastClauseWith(text, minHead, {
+    openers: ZH_SENTENCE_OPENERS,
+    tags: ZH_TAGS,
+    weakFinals: '了吗吧',
+    dangling: endsDanglingZh,
+  });
+}
+
+/** The cut points a language offers splitLastClauseWith. */
+export interface ClauseLexicon {
+  openers: string[];
+  tags: string[];
+  /** Particles after which a cut is acceptable when no strong cut works. */
+  weakFinals: string;
+  dangling: (text: string) => boolean;
+  /**
+   * Length-preserving normalisation applied before searching (Cantonese folds
+   * Traditional to Simplified). Offsets carry over to the original text.
+   */
+  fold?: (text: string) => string;
+}
+
+/** splitLastClauseZh's algorithm, over any language's cut points. */
+export function splitLastClauseWith(
+  text: string,
+  minHead: number,
+  lex: ClauseLexicon,
+): { head: string; rest: string } | null {
   const t = text.trim();
+  const f = lex.fold ? lex.fold(t) : t;
   // Strong cuts: a clause comma, the end of a tag question, or just before a
   // word that opens a new sentence.
   const strong = new Set<number>();
-  for (let i = 0; i < t.length; i++) if ('，,；;'.includes(t[i])) strong.add(i + 1);
-  for (const w of ZH_TAGS) {
-    for (let i = t.indexOf(w); i !== -1; i = t.indexOf(w, i + 1)) strong.add(i + w.length);
+  for (let i = 0; i < f.length; i++) if ('，,；;'.includes(f[i])) strong.add(i + 1);
+  for (const w of lex.tags) {
+    for (let i = f.indexOf(w); i !== -1; i = f.indexOf(w, i + 1)) strong.add(i + w.length);
   }
-  for (const w of ZH_SENTENCE_OPENERS) {
-    for (let i = t.indexOf(w, 1); i !== -1; i = t.indexOf(w, i + 1)) strong.add(i);
+  for (const w of lex.openers) {
+    for (let i = f.indexOf(w, 1); i !== -1; i = f.indexOf(w, i + 1)) strong.add(i);
   }
   // Weak cuts, used only when no strong one works: after a sentence-final
   // particle. Weak because 了 is just as often the verb suffix in the middle
@@ -242,8 +271,8 @@ export function splitLastClauseZh(text: string, minHead = 6): { head: string; re
   // in running speech those are a topic marker or a vocative as often as an
   // ending.
   const weak = new Set<number>();
-  for (let i = 0; i < t.length; i++) {
-    if ('了吗吧'.includes(t[i]) && i + 1 < t.length && !'，,。'.includes(t[i + 1])) weak.add(i + 1);
+  for (let i = 0; i < f.length; i++) {
+    if (lex.weakFinals.includes(f[i]) && i + 1 < f.length && !'，,。'.includes(f[i + 1])) weak.add(i + 1);
   }
   for (const cuts of [strong, weak]) {
     const ordered = [...cuts].sort((a, b) => b - a);
@@ -252,7 +281,7 @@ export function splitLastClauseZh(text: string, minHead = 6): { head: string; re
       const head = t.slice(0, at).trim();
       const rest = t.slice(at).trim();
       const core = head.replace(/[，,；;]$/, '');
-      if (rest.length > 0 && !endsDanglingZh(core)) return { head, rest };
+      if (rest.length > 0 && !lex.dangling(core)) return { head, rest };
     }
   }
   return null;
@@ -266,14 +295,20 @@ export function splitLastClauseZh(text: string, minHead = 6): { head: string; re
  * appeal the English can render), the rest are removed. `state.count` carries
  * the running count across segments.
  */
-export function thinTagQuestionsZh(text: string, state: { count: number }, keepEvery = 3): string {
+export function thinTagQuestionsZh(
+  text: string,
+  state: { count: number },
+  keepEvery = 3,
+  /** The tag words; Cantonese passes its own (係咪, 啱唔啱). */
+  tags = '是吧|对吧',
+): string {
   // A segment that is ONLY a tag stays: emptied, the translator was left with
   // nothing to translate and invented a Bible line from the context instead.
-  if (/^\s*(?:是吧|对吧)[，,。？?！!]?\s*$/.test(text)) {
+  if (new RegExp(`^\\s*(?:${tags})[，,。？?！!]?\\s*$`).test(text)) {
     state.count++;
     return text;
   }
-  return text.replace(/(是吧|对吧)([，,。？?！!]?)/g, (m, _tag, punct: string) => {
+  return text.replace(new RegExp(`(${tags})([，,。？?！!]?)`, 'g'), (m, _tag, punct: string) => {
     state.count++;
     if (state.count % keepEvery === 1) return m;
     // Keep a sentence end the tag was carrying; drop a comma.

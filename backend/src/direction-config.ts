@@ -14,7 +14,7 @@
  * translator, and requires ELEVENLABS_VOICE_ID_KO to be configured.
  */
 
-export type Direction = 'ko-en' | 'en-ko' | 'zh-en';
+export type Direction = 'ko-en' | 'en-ko' | 'zh-en' | 'yue-en';
 
 export interface DirectionConfig {
   /** Deepgram streaming `language` parameter for the INPUT speech. */
@@ -61,6 +61,15 @@ export interface DirectionConfig {
   translationModelEnvVar?: string;
   /** Which sentence-assembly grammar the chunker uses. */
   chunker: 'korean' | 'english' | 'chinese';
+  /**
+   * Ask a fast model whether the buffer ends at a complete thought (see
+   * boundary-oracle.ts). Chinese has no grammatical sentence ending for the
+   * chunker to read, so this stands in for one. BOUNDARY_ORACLE=0 turns it off.
+   */
+  boundaryOracle?: boolean;
+  /** Default ElevenLabs speaking rate for this direction; TTS_SPEED_<X> wins. */
+  ttsSpeed?: number;
+  ttsSpeedEnvVar?: string;
   /** False = the pipeline refuses to start a broadcast in this direction. */
   implemented: boolean;
 }
@@ -125,13 +134,45 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     translationModel: 'claude-sonnet-5-5',
     translationModelEnvVar: 'TRANSLATION_MODEL_ZH',
     chunker: 'chinese',
+    boundaryOracle: true,
+    ttsSpeedEnvVar: 'TTS_SPEED_ZH',
+    implemented: true,
+  },
+  // Cantonese. Deepgram nova-3 zh-HK returns Traditional characters, mostly
+  // in written-Chinese form with colloquial words left in (喺, 係, 啲, 嘅).
+  // Detection folds it to Simplified (zh-script.ts), so the Mandarin rules and
+  // Bible tables apply, plus Cantonese particles and openers on top.
+  'yue-en': {
+    sttLanguage: 'zh-HK',
+    sttModel: 'nova-3',
+    sttSmartFormat: false,
+    sttModelEnvVar: 'STT_MODEL_YUE',
+    sttLanguageEnvVar: 'STT_LANGUAGE_YUE',
+    sourceLang: 'zh',
+    targetLang: 'en',
+    sourceLabel: 'Cantonese',
+    targetLabel: 'English',
+    ttsVoiceIdEnvVars: ['ELEVENLABS_VOICE_ID_EN', 'ELEVENLABS_VOICE_ID'],
+    ttsModelEnvVars: ['TTS_MODEL'],
+    ttsModelId: 'eleven_flash_v2_5',
+    translator: 'yue-en',
+    translationModel: 'claude-sonnet-5-5',
+    translationModelEnvVar: 'TRANSLATION_MODEL_YUE',
+    chunker: 'chinese',
+    boundaryOracle: true,
+    ttsSpeedEnvVar: 'TTS_SPEED_YUE',
     implemented: true,
   },
 };
 
+/** Mandarin or Cantonese: the directions that share the Chinese pipeline. */
+export function isChinese(direction: Direction): boolean {
+  return direction === 'zh-en' || direction === 'yue-en';
+}
+
 /** Parse a client-supplied direction; anything unrecognized is ko-en. */
 export function normalizeDirection(raw: unknown): Direction {
-  return raw === 'en-ko' || raw === 'zh-en' ? raw : 'ko-en';
+  return raw === 'en-ko' || raw === 'zh-en' || raw === 'yue-en' ? raw : 'ko-en';
 }
 
 export function getDirectionConfig(direction: Direction): DirectionConfig {

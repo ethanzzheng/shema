@@ -21,7 +21,9 @@ import { getVerse, getVerseWindow, getVerseWindowKo } from './bible';
 import { matchSpokenVersesZh } from './verse-match-zh';
 import { thinTagQuestionsZh } from './text-zh';
 import { SermonBrief } from './sermon-brief';
-import { Direction, getDirectionConfig, resolveTranslationModel } from './direction-config';
+import { Direction, getDirectionConfig, isChinese, resolveTranslationModel } from './direction-config';
+import { foldToSimplified } from './zh-script';
+import { YUE_TAG_PATTERN } from './text-yue';
 
 export interface TranslationResult {
   direct_translation: string;
@@ -118,6 +120,42 @@ ABSOLUTE RULES:
 - TAG QUESTIONS (是吧 / 对吧 / 对不对 / 是不是 at the end of a clause) are the pastor's verbal tic inviting agreement, and a Mandarin preacher can say one every few sentences. Render one as an English tag only when it is a genuine appeal to the congregation — roughly one occurrence in three; check the previous segments and OMIT it if you used a tag recently. When you do render it, vary it ("Right?", "Isn't it?", "Don't you think?", "You see?") rather than writing "right?" every time. Observed: 27 tags in one sermon came out as 28 "right?"s.
 - EMPHATIC REPETITION: when the pastor repeats a phrase for emphasis, keep the emphasis but not the flat echo — render it at most twice, escalating rather than duplicating.
 - If the segment is empty, meaningless, or pure filler, return an empty response.`;
+
+/**
+ * Cantonese. The rules are Mandarin's (the recogniser's output is largely
+ * written Chinese) with three things replaced: the opening on what the
+ * recogniser does to Cantonese, Hong Kong romanisation instead of pinyin, and
+ * a section on colloquial Cantonese, its numbers and its church vocabulary.
+ */
+const ZH_RULES = SYSTEM_PROMPT_ZH_EN.slice(SYSTEM_PROMPT_ZH_EN.indexOf('ABSOLUTE RULES:'));
+const ZH_NAMES_RULE = ZH_RULES.match(/^- NAMES: romanize[^\n]*$/m)?.[0] ?? '';
+const ZH_PRONOUN_RULE = ZH_RULES.match(/^- PRONOUNS ARE A GUESS:[^\n]*$/m)?.[0] ?? '';
+const ZH_FILLER_RULE = ZH_RULES.match(/^- Silently drop Mandarin filler[^\n]*$/m)?.[0] ?? '';
+
+export const SYSTEM_PROMPT_YUE_EN = `You are a professional simultaneous interpreter translating a LIVE Cantonese church sermon into English, one spoken segment at a time, as the pastor speaks. The congregation is from Hong Kong or the Cantonese-speaking diaspora.
+
+You are given the PREVIOUS translated segments (for context only) and ONE new Cantonese segment. Translate ONLY the new segment.
+
+Return ONLY the English translation of the new segment, as plain text. No JSON, no quotes around it, no preamble, no labels. If the segment cannot be translated faithfully, return an empty response.
+
+IMPORTANT: The Cantonese text comes from automatic speech recognition of a live sermon. It WILL contain mistakes, and it is unusual in three ways:
+1. It is in Traditional characters, and the recogniser often turns colloquial Cantonese into written Chinese (我們 for 我哋, 這個 for 呢個, 是 for 係, 的 for 嘅, 他 for 佢), sometimes halfway through a sentence. Read the mixture as ONE spoken Cantonese sermon.
+2. Many Cantonese words have no standard character and come back as characters chosen for their sound. Read a word by its SOUND when the literal characters make no sense in a sermon and a common church word sounds the same. Never replace a word merely because the sermon's theme suggests one.
+3. Hong Kong preachers drop English words into Cantonese constantly, and the recogniser garbles them: into Latin-letter nonsense ("bsee" for busy, "psIto" for position, "Ooth" for oath, "sht客" for a mixed word) or into Chinese characters picked for their sound. Recover the English word from its sound when the sentence clearly needs it; otherwise translate around it.
+Never "repair" a garble by inventing content that is not plausibly there.
+
+CANTONESE (read these correctly; they are everywhere in this text):
+- Grammar words: 係 = is; 唔 = not; 冇 = not have / did not; 佢 = he, she or it, 佢哋 = they; 我哋 = we; 你哋 = you (plural); 嘅 = 's / of (like 的); 咗 = completed action; 緊 = ongoing (-ing); 過 = ever / have done; 喺 = at, in; 畀 = give, let, or by; 啲 = some / the (plural); 乜嘢 / 咩 = what; 點解 = why; 點樣 = how; 邊個 = who; 邊度 = where; 嚟 = come; 返 = go back / return; 識 = know (how to); 諗 = think; 睇 = see, read; 講 / 話 = say; 搵 = look for; 鍾意 = like; 而家 = now; 今日 = today; 琴日 = yesterday; 成日 = always; 好 before an adjective = very.
+- Sentence particles (啦 喇 囉 㗎 喎 噃 咩 吖 啩 嘛 呀 啊 嘞 咋 啫) carry tone, not words. Usually drop them; when the tone matters, carry it in the phrasing: 喎 reports what someone said or a realisation ("he said...", "it turns out"), 咩 is a surprised question ("really?"), 啩 is "I suppose", 咋 is "only, just".
+- 咁 / 噉 opening a sentence is "so" or "then", and is usually dropped; 咁 before an adjective is "so" (咁大 = so big); 係咁 / 係咁嘅 = "that's how it is".
+- Tag questions 係咪 / 係唔係 / 啱唔啱 at the end of a clause are the preacher's tic: treat them exactly like the TAG QUESTIONS rule below.
+- NUMBERS: 廿 = twenty (廿八 = 28), 卅 = thirty, 兩 = two. 至 or 到 between two verse numbers is a range: 十一至二十四節 = "verses 11 to 24". The recogniser sometimes runs a reference together into digits ("151124" for chapter 15, verses 11 to 24): read it as a reference only when a book name or 章/節 makes that clear, otherwise leave the digits out rather than guess.
+- CHURCH VOCABULARY as Hong Kong churches use it: 崇拜 = "worship service"; 聖餐 = "Communion"; 洗禮 / 浸禮 = "baptism"; 團契 = "fellowship"; 小組 = "small group"; 查經 = "Bible study"; 靈修 = "devotions"; 祈禱 = "pray" / "prayer"; 見證 = "testimony"; 傳道 = "the preacher" (an ordained minister below pastor); 宣教 = "missions"; 主任牧師 = "senior pastor"; 弟兄姊妹 = "brothers and sisters"; 天父 = "Heavenly Father"; 聖靈 = "the Holy Spirit"; 福音 = "the gospel"; 阿們 = "Amen". The Mandarin vocabulary below applies in its Traditional form too (團契 = 团契).
+
+${ZH_RULES.replace(ZH_NAMES_RULE, `- NAMES: romanize a Cantonese person's name the Hong Kong way, surname first: 陳 Chan, 黃 Wong, 王 Wong, 李 Lee, 張 Cheung, 梁 Leung, 林 Lam, 劉 Lau, 吳 Ng, 何 Ho, 郭 Kwok, 鄭 Cheng, 謝 Tse, 周 Chow, 楊 Yeung, 馮 Fung, 蔡 Choi, 曾 Tsang, 沈 Sum, 趙 Chiu, 徐 Tsui, 胡 Wu, 朱 Chu, 羅 Law, 葉 Yip, 蘇 So. Never pinyin (Chen, Huang, Zhang). Given names likewise in Hong Kong spelling, as one word or hyphenated as the church writes them; once a name has been rendered, reuse that exact spelling. Bible names keep their standard English forms (彼得 = Peter, 保羅 = Paul, 摩西 = Moses). Titles follow English order: 陳牧師 = "Pastor Chan".`)
+  .replace(ZH_PRONOUN_RULE, `- PRONOUNS ARE A GUESS: Cantonese 佢 is one word for he, she, and it, and when the recogniser writes 他/她/它 it is guessing. Decide he, she, or it from who the story is about (師母 is a woman; 神/主 is "he"; a church or a book is "it").`)
+  .replace(ZH_FILLER_RULE, `- Silently drop filler and hesitation, Cantonese and Mandarin alike (嗯, 呃, 即係 or 就係 used as a pause, 嗰個 / 那個, 咁樣, 跟住 used as "and then... and then", 對 used as a verbal tic) and false starts.`)
+  .replace(/Mandarin/g, 'Chinese')}`;
 
 export const SYSTEM_PROMPT_EN_KO = `You are a professional simultaneous interpreter translating a LIVE English church sermon into Korean, one spoken segment at a time, as the pastor speaks.
 
@@ -286,6 +324,28 @@ export function salvageTranslation(raw: string): string | null {
   return out.length > 0 ? out : null;
 }
 
+/**
+ * Chinese → English only. Fast Chinese preachers left no slack: the English
+ * took 90-97% as long as the sermon (Korean: 81%), so every delay became
+ * permanent and the listener fell further behind all service. Measured on
+ * replays, a length rule alone took the median delay on Cantonese from 15.4s
+ * to 12.0s with no rise in flagged lines.
+ */
+export const PACE_RULE = `- PACE (live interpretation): your English is spoken aloud while the pastor keeps preaching, and it must keep up with him. Aim for English that takes about four-fifths of the time his words took. Say each idea once, in the fewest words natural spoken English allows; prefer short plain words and short sentences ("We must forgive", not "It is necessary for us to be people who forgive"). Drop filler, hedges, false starts, and the restatements and repetitions a preacher uses for rhythm; merge clauses that say the same thing. Never drop or shorten a claim, a Bible reference, quoted Scripture wording, a name, a number, or a church term, and never change the meaning.`;
+
+/**
+ * How far behind the listeners are, as a per-segment instruction. It rides the
+ * USER message: the system prompt is cached and must not change mid-service.
+ */
+export function backlogHint(behindSec: number | undefined): string {
+  if (behindSec === undefined || behindSec < 6) return '';
+  const n = Math.round(behindSec);
+  if (behindSec < 12) {
+    return `PACE NOW: the listeners are about ${n} seconds behind the pastor. Give this segment its shortest faithful rendering: keep every claim, Scripture wording, name and number; drop repetition, asides, filler and restatement.\n\n`;
+  }
+  return `PACE NOW: the listeners are about ${n} seconds behind the pastor and must catch up. Condense this segment hard, the way a live interpreter does when far behind: one or two short sentences carrying its main point. Keep Scripture wording, names and numbers that carry the point; drop examples' extra detail, repetition, asides and filler. Never add anything.\n\n`;
+}
+
 export class ClaudeTranslator {
   private client: Anthropic;
   private model: string;
@@ -336,6 +396,12 @@ export class ClaudeTranslator {
       churchTerms?: GlossaryTerm[];
       /** Called per translation for terms that may change mid-broadcast. */
       getLiveTerms?: () => GlossaryTerm[];
+      /**
+       * Extra instructions appended to the direction's prompt. Evaluation
+       * only: the replay harness tries prompt variants with it. Production
+       * never passes it, so the prompt stays exactly the direction's own.
+       */
+      promptAddendum?: string;
     } = {},
   ) {
     // A hung request is worse here than a failed one: emission is ordered by
@@ -352,9 +418,16 @@ export class ClaudeTranslator {
     this.model = model || resolveTranslationModel(direction);
     this.direction = direction;
     const dirCfg = getDirectionConfig(direction);
-    this.systemPrompt = { 'ko-en': SYSTEM_PROMPT_KO_EN, 'en-ko': SYSTEM_PROMPT_EN_KO, 'zh-en': SYSTEM_PROMPT_ZH_EN }[
+    this.systemPrompt = {
+      'ko-en': SYSTEM_PROMPT_KO_EN,
+      'en-ko': SYSTEM_PROMPT_EN_KO,
+      'zh-en': SYSTEM_PROMPT_ZH_EN,
+      'yue-en': SYSTEM_PROMPT_YUE_EN,
+    }[
       dirCfg.translator
     ];
+    if (isChinese(direction)) this.systemPrompt += `\n${PACE_RULE}`;
+    if (opts.promptAddendum) this.systemPrompt += `\n\n${opts.promptAddendum}`;
     // Per-church terms: member names, ministry names, the church's own name.
     // These vary by deployment and must not require a code change, so they come
     // from CHURCH_GLOSSARY as "한국어=English" pairs, comma-separated. Appended
@@ -378,13 +451,21 @@ export class ClaudeTranslator {
     // On for Mandarin, where it was measured; SERMON_BRIEF=1/0 overrides per
     // deployment, so the Korean services that run every Sunday only change
     // when someone chooses to.
-    const briefOn = process.env.SERMON_BRIEF ? process.env.SERMON_BRIEF === '1' : direction === 'zh-en';
+    const briefOn = process.env.SERMON_BRIEF ? process.env.SERMON_BRIEF === '1' : isChinese(direction);
     this.brief = briefOn ? new SermonBrief(apiKey, this.srcLabel, this.tgtLabel) : null;
   }
 
-  async translate(sourceText: string, reference?: ScriptureRef | null, retries = 1, seq?: number): Promise<TranslationResult> {
+  async translate(
+    sourceText: string,
+    reference?: ScriptureRef | null,
+    retries = 1,
+    seq?: number,
+    /** Chinese only: seconds of English the listeners still have queued. */
+    pacing?: { behindSec?: number },
+  ): Promise<TranslationResult> {
     // Mandarin tag questions are thinned in code; the prompt alone did not.
     if (this.direction === 'zh-en') sourceText = thinTagQuestionsZh(sourceText, this.tagState);
+    if (this.direction === 'yue-en') sourceText = thinTagQuestionsZh(sourceText, this.tagState, 3, YUE_TAG_PATTERN);
     // Build context from recent translations.
     let contextBlock = '';
     if (this.recentTranslations.length > 0) {
@@ -432,8 +513,8 @@ export class ClaudeTranslator {
     //  3. no reference → nothing.
     let refBlock = '';
     const zhReading =
-      this.direction === 'zh-en' && reference?.book && reference.chapter !== undefined
-        ? matchSpokenVersesZh(sourceText, reference.book, reference.chapter)
+      isChinese(this.direction) && reference?.book && reference.chapter !== undefined
+        ? matchSpokenVersesZh(foldToSimplified(sourceText), reference.book, reference.chapter)
         : [];
     const refName = formatReference(reference ?? null);
     const window =
@@ -499,7 +580,7 @@ export class ClaudeTranslator {
     } else if (refName) {
       // Mandarin gets the stricter wording; Korean keeps the deployed line
       // until it is re-tested on Korean services.
-      refBlock = this.direction === 'zh-en'
+      refBlock = isChinese(this.direction)
         ? `The pastor is currently reading from ${refName}. If this segment quotes that passage, use the standard English wording for the words he actually spoke (never the parts of a verse he skipped or has not reached); otherwise translate the commentary normally.\n\n`
         : `The pastor is currently reading from ${refName}. If this segment quotes that passage, reproduce the standard English wording of the relevant verse(s); otherwise translate the commentary normally.\n\n`;
     }
@@ -519,7 +600,7 @@ export class ClaudeTranslator {
           messages: [
             {
               role: 'user',
-              content: `${contextBlock}${refBlock}Translate ONLY this new ${this.srcLabel} segment:\n\n${sourceText}`,
+              content: `${contextBlock}${refBlock}${isChinese(this.direction) ? backlogHint(pacing?.behindSec) : ''}Translate ONLY this new ${this.srcLabel} segment:\n\n${sourceText}`,
             },
           ],
         });
@@ -556,7 +637,7 @@ export class ClaudeTranslator {
 
         // Mandarin only for now: measured there, and Korean output must stay
         // exactly as the pilot runs it until this is tested on Korean.
-        const stripped = this.direction === 'zh-en' ? stripMetaPreamble(translated) : translated;
+        const stripped = isChinese(this.direction) ? stripMetaPreamble(translated) : translated;
         if (stripped !== translated) {
           console.warn('[Translation] Stripped translator-voice preamble:', translated.slice(0, 80));
           translated = stripped;
@@ -571,7 +652,7 @@ export class ClaudeTranslator {
         // A Chinese character in English output is read aloud IN CHINESE:
         // eleven_flash_v2_5 is multilingual and switches language per token.
         // The prompt forbids it; this guarantees it.
-        if (this.direction === 'zh-en' && /[\u4e00-\u9fff]/.test(translated)) {
+        if (isChinese(this.direction) && /[\u4e00-\u9fff]/.test(translated)) {
           console.warn('[Translation] Stripped Chinese characters from English output:', translated.slice(0, 80));
           translated = translated.replace(/[\u3000-\u303f\u4e00-\u9fff\uff00-\uffef]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
         }
@@ -634,9 +715,9 @@ export class ClaudeTranslator {
       ...[...source.matchAll(/([가-힣][가-힣\s]{1,18}?)(?:이)?라는/g)].map((m) => m[1].trim()),
       // Mandarin names a title with book-title brackets 《…》, or as
       // 叫(做)…的 + 歌/诗/书/电影 ("a song CALLED X").
-      ...(this.direction === 'zh-en' ? [...source.matchAll(/《([^《》]{1,20})》/g)].map((m) => m[1].trim()) : []),
-      ...(this.direction === 'zh-en'
-        ? [...source.matchAll(/叫做?([\u4e00-\u9fff]{2,12}?)的(?:歌|诗|书|电影|诗歌|赞美诗)/g)].map((m) => m[1].trim())
+      ...(isChinese(this.direction) ? [...source.matchAll(/《([^《》]{1,20})》/g)].map((m) => m[1].trim()) : []),
+      ...(isChinese(this.direction)
+        ? [...foldToSimplified(source).matchAll(/叫做?([\u4e00-\u9fff]{2,12}?)的(?:歌|诗|书|电影|诗歌|赞美诗)/g)].map((m) => m[1].trim())
         : []),
     ];
     if (titles.length === 0) return;

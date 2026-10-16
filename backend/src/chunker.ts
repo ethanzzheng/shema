@@ -23,10 +23,16 @@
 import { looksComplete, splitSentences, endsWithDanglingHead, endsMidThought, splitLastKoreanClause } from './text';
 import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
 import { looksCompleteZh, splitSentencesZh, endsDanglingZh, splitLastClauseZh } from './text-zh';
-import { Direction } from './direction-config';
+import { looksCompleteYue, splitSentencesYue, endsDanglingYue, splitLastClauseYue } from './text-yue';
+import { Direction, isChinese } from './direction-config';
+import type { BoundaryOracle } from './boundary-oracle';
 
 // Don't dispatch a lone tiny sentence ("네." alone) — group it with the next.
 const MIN_DISPATCH_CHARS = 10;
+
+// The oracle never ships a head shorter than this: a 4-character Chinese
+// "thought" is usually a greeting or a tag better kept with what follows.
+const ORACLE_MIN_HEAD = 8;
 
 // STT sometimes re-emits the tail of the previous final at the start of the
 // next one; only trim when the overlap is long enough to be a real re-send,
@@ -119,9 +125,20 @@ const BOUNDARY_DETECTORS: Record<Direction, BoundaryDetector> = {
     joiner: '',
     tinyChars: 6,
   },
+  // Cantonese: the Mandarin rules on folded text, plus Cantonese particles,
+  // dangling words and openers (text-yue.ts).
+  'yue-en': {
+    looksComplete: looksCompleteYue,
+    splitSentences: splitSentencesYue,
+    holdsForHead: endsDanglingYue,
+    splitSafe: splitLastClauseYue,
+    splitWhenExpired: true,
+    joiner: '',
+    tinyChars: 6,
+  },
 };
 
-interface ModeConfig {
+export interface ModeConfig {
   /** Grammatically complete sentence: dispatch after this brief beat. */
   completeMs: number;
   /**
@@ -144,6 +161,20 @@ interface ModeConfig {
   maxChars: number;
   /** Soft cap: past this, clause relief carves complete clauses off the front. */
   softChars?: number;
+  /**
+   * Pause-aware cutting (off when absent). If the speaker went quiet for at
+   * least this long after the latest final, a buffer that is not dangling is
+   * treated as a finished sentence. Chinese recognition emits little sentence
+   * punctuation, so the pause is the strongest boundary signal available, and
+   * it is known the moment the final arrives.
+   */
+  pauseCutMs?: number;
+}
+
+/** What the speech recogniser knows about the final being fed. */
+export interface FinalMeta {
+  /** Silence after the last word of this final, in ms. */
+  pauseAfterMs?: number;
 }
 
 // "Smooth" waits longer for the sentence to complete (most natural pausing);
@@ -166,6 +197,12 @@ const MODE_CONFIG: Record<Direction, Record<'fast' | 'smooth', ModeConfig>> = {
     fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 120, maxHoldMs: 8000 },
     smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 180, maxHoldMs: 14000 },
   },
+  // Cantonese starts from Mandarin's timing. Spoken Cantonese runs a little
+  // faster in characters, but the same caps measured fine on four sermons.
+  'yue-en': {
+    fast: { completeMs: 250, incompleteMaxMs: 2500, maxChars: 120, maxHoldMs: 8000 },
+    smooth: { completeMs: 350, incompleteMaxMs: 5000, maxChars: 180, maxHoldMs: 14000 },
+  },
   'en-ko': {
     fast: { completeMs: 350, incompleteMaxMs: 3000, maxChars: 340, softChars: 180, maxHoldMs: 9000 },
     smooth: { completeMs: 500, incompleteMaxMs: 6000, maxChars: 520, softChars: 240, maxHoldMs: 16000 },
@@ -179,6 +216,17 @@ interface ChunkerOptions {
   onChunk: ChunkCallback;
   /** Allocates the next sequence number, in spoken order, at dispatch time. */
   nextSeq: () => number;
+  /**
+   * Overrides for the direction's timing knobs. Evaluation only: the replay
+   * harness tries variants with it. Production never passes it, so absent
+   * means exactly the built-in config.
+   */
+  tuning?: Partial<ModeConfig>;
+  /**
+   * Completeness check for directions with no grammatical sentence ending
+   * (Chinese). Absent = rules and timers only, as before.
+   */
+  oracle?: BoundaryOracle;
 }
 
 // Class name is historical (it began Korean-only) — direction-aware since
@@ -215,21 +263,35 @@ export class KoreanChunker {
   private static readonly MAX_PARALLEL = 2;
   private pending: { text: string; seq: number; waitMs: number }[] = [];
   private inFlight = 0;
+  /** Silence after the latest final, when the caller knows it. */
+  private lastPauseMs: number | undefined;
+
+  private readonly oracle: BoundaryOracle | undefined;
+  /** One oracle call at a time; a newer buffer waits for the current answer. */
+  private oracleBusy = false;
+  private oracleWanted = false;
+  /** The exact buffer the oracle last judged complete. */
+  private oracleComplete: string | null = null;
 
   constructor(opts: ChunkerOptions) {
     this.onChunk = opts.onChunk;
     this.nextSeq = opts.nextSeq;
     this.direction = opts.direction ?? 'ko-en';
     this.detector = BOUNDARY_DETECTORS[this.direction];
-    this.cfg = MODE_CONFIG[this.direction][opts.mode];
+    this.tuning = opts.tuning;
+    this.cfg = { ...MODE_CONFIG[this.direction][opts.mode], ...this.tuning };
+    this.oracle = opts.oracle;
   }
+
+  private readonly tuning: Partial<ModeConfig> | undefined;
 
   setMode(mode: 'fast' | 'smooth'): void {
-    this.cfg = MODE_CONFIG[this.direction][mode];
+    this.cfg = { ...MODE_CONFIG[this.direction][mode], ...this.tuning };
   }
 
-  async feed(text: string, isFinal: boolean): Promise<void> {
+  async feed(text: string, isFinal: boolean, meta?: FinalMeta): Promise<void> {
     if (!text.trim()) return;
+    if (isFinal) this.lastPauseMs = meta?.pauseAfterMs;
 
     if (!isFinal) {
       // An interim result means the speaker is mid-word RIGHT NOW. Re-arm any
@@ -276,7 +338,7 @@ export class KoreanChunker {
       // shipped instantly — "另外," was spoken alone as "Also" 773ms after
       // it arrived.
       // Mandarin only: Korean keeps the deployed timing.
-      if (!group && this.direction === 'zh-en') this.bufferStartedAt = Date.now();
+      if (!group && isChinese(this.direction)) this.bufferStartedAt = Date.now();
     }
     if (!this.buffer) return;
 
@@ -310,6 +372,7 @@ export class KoreanChunker {
     // pauses and only cut at real sentence ends. A fragment ships only after
     // incompleteMaxMs of true quiet.
     this.armTimer();
+    this.consultOracle();
   }
 
   /** Flush + dispatch everything, then wait for in-flight translations to finish. */
@@ -363,7 +426,13 @@ export class KoreanChunker {
   private armTimer(): void {
     this.cancelTimer();
     let delay: number;
-    if (this.detector.looksComplete(this.buffer)) {
+    const pausedHere =
+      this.cfg.pauseCutMs !== undefined &&
+      this.lastPauseMs !== undefined &&
+      this.lastPauseMs >= this.cfg.pauseCutMs &&
+      this.buffer.length >= this.detector.tinyChars &&
+      !this.detector.holdsForHead?.(this.buffer);
+    if (this.detector.looksComplete(this.buffer) || pausedHere || this.oracleComplete === this.buffer) {
       delay = this.cfg.completeMs;
     } else if (this.detector.holdsForHead?.(this.buffer)) {
       // The head noun this modifier belongs to has not been spoken yet.
@@ -415,6 +484,54 @@ export class KoreanChunker {
     this.bufferStartedAt = Date.now(); // the tail gets its own budget
     this.armTimer();
     return true;
+  }
+
+  /**
+   * Ask the oracle about the current buffer, in the background. Only one call
+   * runs at a time; finals that arrive meanwhile are judged together once it
+   * returns. Skipped when the rules are already sure or the buffer is a shard.
+   */
+  private consultOracle(): void {
+    if (!this.oracle || !this.buffer) return;
+    if (this.buffer.length < Math.max(this.detector.tinyChars, ORACLE_MIN_HEAD)) return;
+    if (this.detector.looksComplete(this.buffer)) return;
+    if (this.oracleBusy) {
+      this.oracleWanted = true;
+      return;
+    }
+    this.oracleBusy = true;
+    const snap = this.buffer;
+    this.oracle(snap, { previous: this.dispatchedTail.slice(-60), pauseMs: this.lastPauseMs })
+      .then((v) => {
+        if (!v || !this.buffer.startsWith(snap)) return; // already shipped
+        if (v.complete) {
+          // Only for the very buffer it judged: words that arrived since may
+          // be the same sentence continuing. They get their own verdict.
+          if (this.buffer === snap) {
+            this.oracleComplete = snap;
+            this.armTimer();
+          }
+          return;
+        }
+        if (v.headLen === undefined) return;
+        // A complete thought inside the buffer, with the next one already
+        // begun: ship it now, as an interior sentence end would be.
+        const head = snap.slice(0, v.headLen).trim();
+        if (head.length < ORACLE_MIN_HEAD || this.detector.holdsForHead?.(head)) return;
+        this.cancelTimer();
+        this.dispatchText(head);
+        this.buffer = this.buffer.slice(v.headLen).trim();
+        this.bufferStartedAt = this.buffer ? Date.now() : -1;
+        if (this.buffer) this.armTimer();
+      })
+      .catch(() => {})
+      .finally(() => {
+        this.oracleBusy = false;
+        if (this.oracleWanted) {
+          this.oracleWanted = false;
+          this.consultOracle();
+        }
+      });
   }
 
   /** Queue one chunk for translation, assigning its spoken-order seq now. */

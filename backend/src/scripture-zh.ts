@@ -11,6 +11,7 @@
  * names, so one table serves both.
  */
 import { ScriptureRef } from './scripture';
+import { foldToSimplified } from './zh-script';
 
 /** CUV Simplified book name → English (BSB keys). Longest names matched first. */
 export const ZH_BOOK_MAP: Record<string, string> = {
@@ -52,20 +53,12 @@ const ZH_BOOK_NAMES = Object.keys({ ...ZH_BOOK_MAP, ...ZH_BOOK_ALIASES }).sort((
 const ALL_BOOKS: Record<string, string> = { ...ZH_BOOK_MAP, ...ZH_BOOK_ALIASES };
 
 /**
- * Traditional → Simplified, for exactly the characters that differ within the
- * book names and the 章/节 markers. Not a general converter; it does not need
- * to be one.
+ * Traditional input (Deepgram zh-HK for Cantonese, zh-TW, a Hong Kong or
+ * Taiwanese pastor) is folded to Simplified, so one table serves both. 廿 and
+ * 卅, Cantonese for twenty and thirty (廿八節 = verse 28), are spelled out.
  */
-const T2S: Record<string, string> = {
-  創: '创', 記: '记', 數: '数', 約: '约', 書: '书', 亞: '亚', 師: '师', 爾: '尔', 紀: '纪',
-  歷: '历', 詩: '诗', 傳: '传', 賽: '赛', 結: '结', 彌: '弥', 鴻: '鸿', 該: '该', 瑪: '玛',
-  馬: '马', 羅: '罗', 後: '后', 門: '门', 來: '来', 猶: '犹', 啟: '启', 錄: '录', 節: '节',
-  兩: '两', 個: '个', 這: '这', 經: '经', 篇: '篇',
-};
 function toSimplified(text: string): string {
-  let out = '';
-  for (const ch of text) out += T2S[ch] ?? ch;
-  return out;
+  return foldToSimplified(text).replace(/廿/g, '二十').replace(/卅/g, '三十');
 }
 
 const DIG: Record<string, number> = {

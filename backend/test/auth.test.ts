@@ -89,7 +89,7 @@ describe('isStartAuthorized (broadcast gate)', () => {
 });
 
 describe('allowedDirections', () => {
-  const ALL = ['ko-en', 'en-ko', 'zh-en'];
+  const ALL = ['ko-en', 'en-ko', 'zh-en', 'yue-en'];
   const DIRS = JSON.stringify({ hanmaum: ['ko-en', 'en-ko'], mandarin: ['zh-en'], broken: 'ko-en', none: ['xx'] });
 
   test('no AUTH_DIRECTIONS → every account keeps every direction', () => {

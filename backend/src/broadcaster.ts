@@ -18,7 +18,9 @@
 
 import { WebSocket } from 'ws';
 import { Session } from './session';
-import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS, DEFAULT_KEYTERMS_ZH } from './stt';
+import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS, DEFAULT_KEYTERMS_ZH, DEFAULT_KEYTERMS_YUE } from './stt';
+import { createBoundaryOracle } from './boundary-oracle';
+import { foldToSimplified } from './zh-script';
 import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
@@ -43,6 +45,7 @@ import {
   resolveTtsModelId,
   resolveTtsVoiceId,
   resolveStt,
+  isChinese,
 } from './direction-config';
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY!;
@@ -173,6 +176,11 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   // the English they translate, so en-ko can take TTS_SPEED_KO (falling back
   // to TTS_SPEED); ko-en uses TTS_SPEED alone.
   function ttsSpeed(direction: Direction): number | undefined {
+    const cfg = getDirectionConfig(direction);
+    if (isChinese(direction)) {
+      const v = parseFloat((cfg.ttsSpeedEnvVar && process.env[cfg.ttsSpeedEnvVar]) ?? process.env.TTS_SPEED ?? '');
+      return Number.isFinite(v) ? v : cfg.ttsSpeed;
+    }
     const raw =
       direction === 'en-ko'
         ? process.env.TTS_SPEED_KO ?? process.env.TTS_SPEED
@@ -231,7 +239,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       }
       currentRef = mergeReference(currentRef, detected);
       refAgeChunks = 0;
-    } else if (session.direction === 'zh-en' && keepReadingZh(currentRef, sourceText)) {
+    } else if (isChinese(session.direction) && keepReadingZh(currentRef, foldToSimplified(sourceText))) {
       // Still reading the passage: the spoken words match its verses.
       refAgeChunks = 0;
     } else if (currentRef && ++refAgeChunks > 12) {
@@ -245,7 +253,11 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // emission. Failures park a skip marker so the emitter never stalls.
     let translation;
     try {
-      translation = await translator.translate(sourceText, currentRef, 1, seq);
+      // Chinese only: tell the translator how far behind the listeners are,
+      // so it condenses while they catch up. Korean is called as deployed.
+      translation = isChinese(session.direction)
+        ? await translator.translate(sourceText, currentRef, 1, seq, { behindSec: listenerBehindSec() })
+        : await translator.translate(sourceText, currentRef, 1, seq);
     } catch (err) {
       console.error('[Pipeline] Translation failed:', err);
       emitter.finish(seq, null);
@@ -301,6 +313,20 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
    * which reached a live congregation as "verse 24 and 15".
    */
   let activeRange: { start: number; end: number } | null = null;
+  /**
+   * How far behind the pastor the listeners are, estimated from the audio
+   * already sent (mp3 at 128 kbps: 16 bytes a millisecond) plus the English
+   * still waiting to be spoken. Listeners play clips back to back, so a clip
+   * starts when it arrives or when the one before it ends, whichever is later.
+   */
+  let listenerPlayEnd = 0;
+  let queuedSpeechChars = 0;
+  const clipBytes = new Map<number, number>();
+  function listenerBehindSec(): number {
+    const playing = Math.max(0, listenerPlayEnd - Date.now()) / 1000;
+    return playing + queuedSpeechChars * 0.065;
+  }
+
   /** Previous sentence sent to TTS, for prosody continuity across clips. */
   let lastSynthText = '';
   /** Clips that came back under-driven and were raised to the normal level. */
@@ -321,8 +347,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       });
     },
     onStart: (job) => session.broadcast({ type: 'audio_start', seq: job.seq }),
-    onChunk: (job, chunk) =>
-      session.broadcast({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') }),
+    onChunk: (job, chunk) => {
+      clipBytes.set(job.seq, (clipBytes.get(job.seq) ?? 0) + chunk.length);
+      session.broadcast({ type: 'audio_chunk', seq: job.seq, data: chunk.toString('base64') });
+    },
     onEnd: (job, stats) => {
       // Stage (c): translation done → first audio byte (includes queue wait);
       // stage (d): first byte → last byte of the streamed clip.
@@ -339,6 +367,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         e2e: session.metrics.e2eLatencyMs,
       });
       session.broadcast({ type: 'audio_end', seq: job.seq });
+      const playMs = (clipBytes.get(job.seq) ?? 0) / 16;
+      clipBytes.delete(job.seq);
+      listenerPlayEnd = Math.max(listenerPlayEnd, stats.firstByteAt ?? Date.now()) + playMs;
+      queuedSpeechChars = Math.max(0, queuedSpeechChars - job.text.length);
       send(ws, {
         type: 'debug',
         chunkSize: job.chunkSize,
@@ -356,6 +388,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       if (ttsPipeline.depth === 0) audioStarvedSince = Date.now();
     },
     onError: (job, err) => {
+      queuedSpeechChars = Math.max(0, queuedSpeechChars - job.text.length);
       console.error(`[Pipeline] TTS stream failed (seq ${job.seq}):`, err);
       send(ws, { type: 'error', message: 'TTS generation failed' });
     },
@@ -430,12 +463,16 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     // out of order. Chaining them keeps the queue in the order the emitter
     // handed segments over.
     if (!session.demo) {
+      queuedSpeechChars += text.length;
       ttsPipeline.enqueue(job);
       return;
     }
     demoTtsGate = demoTtsGate
       .then(async () => {
-        if (await demoMaySpeak(text)) ttsPipeline.enqueue(job);
+        if (await demoMaySpeak(text)) {
+          queuedSpeechChars += text.length;
+          ttsPipeline.enqueue(job);
+        }
       })
       .catch(() => {
         /* a failed check already denied; never break the chain */
@@ -470,7 +507,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
     chunker = null;
     stt = null;
     preSttAudio = [];
-    if (session.direction !== 'zh-en') {
+    if (!isChinese(session.direction)) {
       // Korean and English→Korean: the deployed teardown, unchanged until the
       // last-sentence flush below is tested on those services.
       if (c) {
@@ -616,7 +653,14 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       direction,
       onChunk: processChunk,
       nextSeq: () => session.nextSeq(),
+      // Chinese has no grammatical sentence ending; a fast model stands in.
+      oracle:
+        cfg.boundaryOracle && process.env.BOUNDARY_ORACLE !== '0'
+          ? createBoundaryOracle(ANTHROPIC_API_KEY, cfg.sourceLabel)
+          : undefined,
     });
+    listenerPlayEnd = 0;
+    queuedSpeechChars = 0;
 
     // Provisional captions: interim STT text streams to listeners as a
     // dimmed "live" line (throttled), so they see words within ~1s while the
@@ -635,7 +679,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       session.glossaryAll.map((t) => t.sourceTerm),
       // Recognition bias must be in the SPOKEN language. Korean keyterms on
       // Mandarin audio would only bias it toward words nobody is saying.
-      cfg.sourceLang === 'zh' ? DEFAULT_KEYTERMS_ZH : DEFAULT_STT_KEYTERMS,
+      direction === 'yue-en' ? DEFAULT_KEYTERMS_YUE : cfg.sourceLang === 'zh' ? DEFAULT_KEYTERMS_ZH : DEFAULT_STT_KEYTERMS,
     );
     if (dropped.length > 0) {
       console.warn(
@@ -649,7 +693,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       model: sttCfg.model,
       smartFormat: sttCfg.smartFormat,
       keyterms,
-      onTranscript: async ({ text, isFinal, timestamp, audioEndSec, audioStartSec }) => {
+      onTranscript: async ({ text, isFinal, timestamp, audioEndSec, audioStartSec, firstWordSec, lastWordEndSec, speechFinal }) => {
         // Interims arrive many times per second and exist only to tell the
         // chunker that speech is still flowing — logging them would bury the
         // finals that actually matter.
@@ -663,7 +707,10 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         // socket traffic starved the audio sender badly enough to lose a
         // third of a test run. A live desk on church wi-fi would fare worse.
         if (isFinal) {
-          send(ws, { type: 'transcript', korean: text, isFinal, timestamp, audioStartSec, audioEndSec });
+          send(ws, {
+            type: 'transcript', korean: text, isFinal, timestamp,
+            audioStartSec, audioEndSec, firstWordSec, lastWordEndSec, speechFinal,
+          });
         } else if (text.trim()) {
           const now = Date.now();
           if (now - lastPartialSentAt >= 350) {
@@ -674,7 +721,15 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
         }
 
         // Feed into chunker
-        if (chunker) await chunker.feed(text, isFinal);
+        // Chinese also passes the silence after the last word: a boundary
+        // signal for the chunker. Korean is fed exactly as deployed.
+        if (chunker) {
+          if (isChinese(direction) && isFinal && typeof audioEndSec === 'number' && typeof lastWordEndSec === 'number') {
+            await chunker.feed(text, isFinal, { pauseAfterMs: Math.max(0, (audioEndSec - lastWordEndSec) * 1000) });
+          } else {
+            await chunker.feed(text, isFinal);
+          }
+        }
       },
       onError: (err) => {
         send(ws, { type: 'error', message: `STT error: ${err.message}` });
