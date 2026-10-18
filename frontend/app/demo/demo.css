@@ -43,7 +43,7 @@
   background: rgba(200, 162, 94, 0.1);
 }
 .dm-lang[aria-pressed='true'] .dm-lang-sub { color: rgba(244, 241, 234, 0.7); }
-.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; }
+.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; text-wrap: balance; }
 
 .dm-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
 .dm-btn {

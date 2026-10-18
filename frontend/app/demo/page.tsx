@@ -36,7 +36,7 @@ import { PreviewVoice, previewVoiceSupported } from '@/lib/preview-voice';
 import './demo.css';
 
 type Stage = 'pick' | 'live' | 'wall' | 'full' | 'done';
-type Direction = 'ko-en' | 'en-ko';
+type Direction = 'ko-en' | 'en-ko' | 'zh-en';
 
 interface Caption {
   seq: number;
@@ -44,7 +44,16 @@ interface Caption {
   output: string;
 }
 
-const SAMPLE_URL = '/demo/sample-sermon.mp3';
+/**
+ * A short scripted passage per source language. English → Korean has none of
+ * its own: its sample is the Korean one, as before.
+ */
+const SAMPLES = {
+  ko: { url: '/demo/sample-sermon.mp3', direction: 'ko-en', label: '한국어', name: 'Korean' },
+  zh: { url: '/demo/sample-sermon-zh.mp3', direction: 'zh-en', label: '中文', name: 'Mandarin' },
+} as const;
+
+const sampleFor = (d: Direction) => (d === 'zh-en' ? SAMPLES.zh : SAMPLES.ko);
 
 /**
  * Signing in can navigate away from the page entirely — a Google round trip,
@@ -150,7 +159,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
   /** Browser voice for the anonymous stage. Free, and audibly not ElevenLabs. */
   const [voiceOn, setVoiceOn] = useState(true);
   const [samplePaused, setSamplePaused] = useState(false);
-  /** The Korean clip. Muting it leaves only the translation, which is how a
+  /** The source clip. Muting it leaves only the translation, which is how a
    *  congregant with an earbud actually experiences a service. */
   const [sourceOn, setSourceOn] = useState(true);
 
@@ -236,7 +245,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
     playerRef.current?.setVolume(next ? 1 : 0);
   }, [voiceOn]);
 
-  /** The Korean source clip. */
+  /** The source clip. */
   const toggleSourceAudio = useCallback(() => {
     const next = !sourceOn;
     setSourceOn(next);
@@ -465,10 +474,11 @@ function Demo({ auth }: { auth: DemoAuth }) {
     setError('');
     try {
       const s = session ?? (await beginSession());
-      rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'sample', direction: 'ko-en' });
-      const pcm = await decodeSampleToPcm(SAMPLE_URL);
-      await connect(s.room, 'ko-en'); // the clip is Korean
-      setDirection('ko-en');
+      const sample = sampleFor(direction);
+      rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'sample', direction: sample.direction });
+      const pcm = await decodeSampleToPcm(sample.url);
+      await connect(s.room, sample.direction); // the clip's own language
+      setDirection(sample.direction);
       setUsingSample(true);
       setStage('live');
       reportDemoEvent('sample_played', { room: s.room });
@@ -481,7 +491,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
       // same fragility the listener player had to fix; attaching it also lets
       // the element be inspected when something sounds wrong.
       const audio = document.createElement('audio');
-      audio.src = SAMPLE_URL;
+      audio.src = sample.url;
       audio.volume = 0.9;
       audio.setAttribute('data-demo-sample', 'true');
       audio.style.display = 'none';
@@ -656,6 +666,10 @@ function Demo({ auth }: { auth: DemoAuth }) {
                   <span>한국어 to English</span>
                   <span className="dm-lang-sub">Korean preaching, English in the pews</span>
                 </button>
+                <button className="dm-lang" onClick={() => setDirection('zh-en')} aria-pressed={direction === 'zh-en'}>
+                  <span>中文 to English</span>
+                  <span className="dm-lang-sub">Mandarin preaching, English in the pews</span>
+                </button>
                 <button className="dm-lang" onClick={() => setDirection('en-ko')} aria-pressed={direction === 'en-ko'}>
                   <span>English to 한국어</span>
                   <span className="dm-lang-sub">English preaching, Korean in the pews</span>
@@ -729,7 +743,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
               )}
               {usingSample && stage === 'live' && (
                 <button className="dm-voice" aria-pressed={sourceOn} onClick={toggleSourceAudio}>
-                  한국어 {sourceOn ? 'on' : 'off'}
+                  {sampleFor(direction).label} {sourceOn ? 'on' : 'off'}
                 </button>
               )}
               {(stage === 'live' || stage === 'full') && (
@@ -760,7 +774,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
               {captions.length === 0 && (
                 <p className="dm-waiting">
                   {usingSample
-                    ? 'Playing a short Korean passage. The translation will appear here, and you will hear it spoken.'
+                    ? `Playing a short ${sampleFor(direction).name} passage. The translation will appear here, and you will hear it spoken.`
                     : 'Say something, and the translation will appear here.'}
                 </p>
               )}
