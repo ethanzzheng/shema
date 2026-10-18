@@ -8,6 +8,7 @@
  *     --media ../recordings/cantonese/audio/youtube/DScUejo8oKI.m4a \
  *     --start 600 --duration 300 [--language yue] [--direction yue-en]
  *     [--vad-silence 0.5]   (seconds of silence before Scribe commits)
+ *     [--no-verbatim]       (Scribe drops fillers and false starts itself)
  *
  * Each commit becomes a final, stamped with when it arrived and where its
  * words sit in the audio, the same fields a Deepgram final carries. Nothing
@@ -52,6 +53,7 @@ const params = new URLSearchParams({
   commit_strategy: 'vad',
   include_timestamps: 'true',
   ...(arg('--vad-silence') ? { vad_silence_threshold_secs: arg('--vad-silence') } : {}),
+  ...(process.argv.includes('--no-verbatim') ? { no_verbatim: 'true' } : {}),
 });
 const ws = new WebSocket(`wss://api.elevenlabs.io/v1/speech-to-text/realtime?${params}`, {
   headers: { 'xi-api-key': key },
@@ -112,7 +114,7 @@ ws.on('close', (code) => {
   fs.writeFileSync(path.join(dir, 'messages.jsonl'), msgs.map((m) => JSON.stringify(m)).join('\n') + '\n');
   fs.writeFileSync(path.join(dir, 'summary.json'), JSON.stringify({
     label, media, room: label, mode: 'smooth', direction, audioSeconds: durationSec, audioStartT: 0,
-    startSec, stt: 'scribe_v2_realtime', vadSilence: arg('--vad-silence') || null, finishedAt: new Date().toISOString(),
+    startSec, stt: 'scribe_v2_realtime', vadSilence: arg('--vad-silence') || null, noVerbatim: process.argv.includes('--no-verbatim'), finishedAt: new Date().toISOString(),
   }, null, 2));
   console.log(`[scribe] closed (${code}); ${msgs.length - 1} commits → ${dir}`, counts);
 });
