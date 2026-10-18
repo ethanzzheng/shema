@@ -18,6 +18,7 @@ import QRCode from 'qrcode';
 import { SignInButton, SignedIn, SignedOut, useAuth } from '@clerk/nextjs';
 
 import DeskPreview from './DeskPreview';
+import AudioSettings from './AudioSettings';
 import ShemaMark from '@/components/ShemaMark';
 import { WsClient, type ServerMessage } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
@@ -63,6 +64,20 @@ const sampleFor = (d: Direction) => (d === 'zh-en' ? SAMPLES.zh : SAMPLES.ko);
  * an empty picker, with the demo they just committed to orphaned.
  */
 const RESUME_KEY = 'shema.demo.resume';
+
+/** The visitor's microphone and speaker choice, kept for their next visit. */
+const MIC_KEY = 'shema.demo.mic';
+const OUT_KEY = 'shema.demo.out';
+
+function readPref(key: string): string {
+  try { return window.localStorage.getItem(key) ?? ''; } catch { return ''; }
+}
+
+function writePref(key: string, value: string): void {
+  try { window.localStorage.setItem(key, value); } catch { /* private mode */ }
+}
+
+type SinkElement = HTMLMediaElement & { setSinkId?: (id: string) => Promise<void> };
 
 interface Resume {
   room: string;
@@ -162,6 +177,10 @@ function Demo({ auth }: { auth: DemoAuth }) {
   /** The source clip. Muting it leaves only the translation, which is how a
    *  congregant with an earbud actually experiences a service. */
   const [sourceOn, setSourceOn] = useState(true);
+  /** Chosen devices; '' means the system default. */
+  const [micId, setMicId] = useState('');
+  const [outId, setOutId] = useState('');
+  const outIdRef = useRef('');
 
   const wsRef = useRef<WsClient | null>(null);
   const captureRef = useRef<AudioCapture | null>(null);
@@ -178,6 +197,27 @@ function Demo({ auth }: { auth: DemoAuth }) {
   const pausedAtRef = useRef(0);
   const startedAtRef = useRef(0);
   const roomRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    setMicId(readPref(MIC_KEY));
+    const out = readPref(OUT_KEY);
+    setOutId(out);
+    outIdRef.current = out;
+  }, []);
+
+  const chooseMic = useCallback((id: string) => {
+    setMicId(id);
+    writePref(MIC_KEY, id);
+  }, []);
+
+  /** Takes effect at once: the translated voice and the sample both move. */
+  const chooseOut = useCallback((id: string) => {
+    setOutId(id);
+    outIdRef.current = id;
+    writePref(OUT_KEY, id);
+    playerRef.current?.setSinkId(id);
+    (sampleAudioRef.current as SinkElement | null)?.setSinkId?.(id).catch(() => {});
+  }, []);
 
   useEffect(() => {
     fetchDemoConfig()
@@ -336,6 +376,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
     if (listenWsRef.current) return;
     const player = new AudioStreamPlayer();
     player.start();
+    if (outIdRef.current) player.setSinkId(outIdRef.current);
     playerRef.current = player;
     const lws = new WsClient({
       url: getBackendWsUrl(),
@@ -433,6 +474,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
       rememberDemo({ room: s.room, expiresAt: s.expiresAt, mode: 'mic', direction });
       const capture = new AudioCapture({
         chunkIntervalMs: 200,
+        deviceId: micId || undefined,
         onChunk: (pcm) => {
           wsRef.current?.sendBinary(pcm);
           const view = new Int16Array(pcm);
@@ -495,6 +537,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
       audio.volume = 0.9;
       audio.setAttribute('data-demo-sample', 'true');
       audio.style.display = 'none';
+      if (outIdRef.current) (audio as SinkElement).setSinkId?.(outIdRef.current).catch(() => {});
       document.body.appendChild(audio);
       sampleAudioRef.current = audio;
       // Autoplay is refused unless the browser counts this as a user gesture.
@@ -685,6 +728,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
                 </button>
               </div>
 
+
               {/* With no wall, say what the visitor gets rather than what
                   they must do to get it. */}
               {cfg && !cfg.requireSignIn && (
@@ -715,6 +759,8 @@ function Demo({ auth }: { auth: DemoAuth }) {
               </SignedIn>
               </>
               )}
+
+              <AudioSettings micId={micId} outId={outId} onMic={chooseMic} onOut={chooseOut} micLocked={false} />
             </div>
           </>
         )}
@@ -763,6 +809,14 @@ function Demo({ auth }: { auth: DemoAuth }) {
                 <span key={i} className={i < lit ? 'on' : ''} style={{ height: `${40 + (i % 4) * 18}%` }} />
               ))}
             </div>
+
+            <AudioSettings
+              micId={micId}
+              outId={outId}
+              onMic={chooseMic}
+              onOut={chooseOut}
+              micLocked={!usingSample}
+            />
 
             <div className="dm-captions" aria-live="polite">
               {captions.length > 0 && stage === 'live' && !ttsAllowed && voiceOn && previewVoiceSupported() && (

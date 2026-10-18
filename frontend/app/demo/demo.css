@@ -23,9 +23,11 @@
 .dm-sub { color: var(--text-muted); font-size: 1rem; line-height: 1.6; margin-top: 12px; max-width: 52ch; }
 
 .dm-step { margin-top: 30px; }
-.dm-langs { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 18px; }
+/* A grid, not a wrapping row: with three directions a row wrapped 2 + 1 on a
+   landscape phone, leaving one button alone at full width. */
+.dm-langs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
 .dm-lang {
-  flex: 1 1 200px; min-height: 64px;
+  min-height: 64px;
   display: flex; flex-direction: column; justify-content: center; gap: 3px;
   padding: 14px 18px; text-align: left;
   border: 1px solid var(--border); border-radius: var(--radius-sm);
@@ -114,7 +116,10 @@
 .dm-error { color: var(--alert); font-size: 0.9rem; margin-top: 14px; }
 
 @media (max-width: 640px) {
-  .dm-lang { flex: 1 1 100%; }
+  /* Stacked, and tighter than on desktop: three of them at full height
+     pushed "Play a sample" below the fold on an iPhone SE. */
+  .dm-langs { grid-template-columns: 1fr; gap: 8px; }
+  .dm-lang { min-height: 56px; padding: 10px 16px; gap: 2px; }
   .dm-btn { width: 100%; }
   .dm-actions { flex-direction: column; }
 }
@@ -269,3 +274,31 @@
   font-weight: 500; letter-spacing: -0.015em;
   color: var(--cream); text-wrap: balance;
 }
+
+/* Audio settings: folded away under the start buttons, for visitors with a
+   headset or USB mic plugged in. */
+.dm-audio { margin-top: 16px; }
+.dm-audio-toggle {
+  background: none; border: 0; padding: 8px 0; min-height: 40px;
+  color: var(--text-muted); font-family: var(--font-sans); font-size: 0.86rem;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.dm-audio-toggle:hover { color: var(--text); }
+.dm-audio-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-audio-panel {
+  display: grid; gap: 12px; margin-top: 6px; padding: 14px 16px; max-width: 460px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: rgba(244, 241, 234, 0.02);
+}
+.dm-audio-row { display: grid; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
+.dm-audio-row select {
+  width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg, #141418); color: var(--text);
+  font-family: var(--font-sans); font-size: 0.92rem;
+  text-overflow: ellipsis;
+}
+.dm-audio-row select:disabled { opacity: 0.55; }
+.dm-audio-row select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-audio-note { color: rgba(244, 241, 234, 0.45); font-size: 0.8rem; line-height: 1.5; }
+.dm-audio-panel .dm-link { justify-self: start; font-size: 0.86rem; }
