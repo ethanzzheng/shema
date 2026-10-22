@@ -221,6 +221,8 @@ test('Cantonese defaults to Scribe without the completeness check; env moves it 
   assert.equal(useBoundaryOracle('yue-en', { STT_PROVIDER_YUE: 'deepgram' }), true);
   assert.equal(resolveSttProvider('zh-en', {}), 'deepgram');
   assert.equal(useBoundaryOracle('zh-en', {}), true);
+  assert.equal(resolveSttProvider('zh-en', { STT_PROVIDER_ZH: 'scribe' }), 'scribe');
+  assert.equal(useBoundaryOracle('zh-en', { STT_PROVIDER_ZH: 'scribe' }), false);
   assert.equal(resolveSttProvider('ko-en', {}), 'deepgram');
   assert.equal(useBoundaryOracle('ko-en', {}), false);
 });
