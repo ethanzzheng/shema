@@ -28,3 +28,16 @@ export function foldToSimplified(text: string): string {
   for (let i = 0; i < text.length; i++) out += MAP.get(text[i]) ?? text[i];
   return out;
 }
+
+// Simplified → Traditional (Hong Kong forms), phrase-aware, for display: one
+// Simplified character can be several Traditional ones (发 → 發 or 髮), so the
+// table above cannot simply run backwards.
+// The cn2t build only: the full package also loads the reverse tables.
+// Required, not imported: this project's module resolution predates exports maps.
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const OpenCC: { Converter(o: { from: string; to: string }): (s: string) => string } = require('opencc-js/cn2t');
+let hk: ((s: string) => string) | undefined;
+export function toHongKongScript(text: string): string {
+  if (!hk) hk = OpenCC.Converter({ from: 'cn', to: 'hk' });
+  return hk(text);
+}

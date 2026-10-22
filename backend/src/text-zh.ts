@@ -315,3 +315,39 @@ export function thinTagQuestionsZh(
     return /[。？?！!]/.test(punct) ? '。' : '';
   });
 }
+
+/**
+ * Words a Chinese preacher says on their own to keep the room with him: 对。
+ * 是。 嗯。 OK。 Scribe without fillers commits them as whole lines (11 of 62
+ * on one Cantonese sermon), and each became its own "Right." clip, a second of
+ * speech that only pushed the next real sentence later.
+ */
+const ACK_WORDS = '对不对|對不對|对|對|是的|是|係|系|嗯|啊|呀|哦|喔|噢|呃|唔|哈|好的|好|ok|okay';
+const ACK_ONLY_RE = new RegExp(`^(?:(?:${ACK_WORDS})[\\s，,。.！!？?、…~～]*)+$`, 'i');
+/** Acknowledgment sentences, each ending in a full stop, before the real one. */
+const ACK_LEAD_RE = new RegExp(`^(?:\\s*(?:(?:${ACK_WORDS})[\\s，,]*)+[。.！!]\\s*)+`, 'i');
+
+/**
+ * Drop a final that is only acknowledgments, and an acknowledgment sentence
+ * that opens one ("对。他没有认输" → "他没有认输"). Returns '' for nothing left.
+ * A comma-led opener ("好，下一张") is a transition and stays.
+ */
+export function stripAcknowledgmentsZh(text: string): string {
+  const t = text.trim();
+  if (ACK_ONLY_RE.test(t)) return '';
+  const rest = t.replace(ACK_LEAD_RE, '');
+  return rest || t;
+}
+
+/**
+ * A final that opens with the tail of the sentence before it: "。一定有说话",
+ * "子。他非常开心". Scribe sometimes commits the last character of a sentence
+ * with the next one. Alone, the scrap means nothing, and one made the
+ * translator answer "I'll translate what is clear" into the service. Leading
+ * punctuation goes, and so does a single character ending in a full stop.
+ */
+export function stripLeadingScrapZh(text: string): string {
+  const t = text.replace(/^[\s。，、,.！!？?；;：:…—–-]+/, '');
+  const m = /^([㐀-鿿])[。！!？?]\s*(?=\S)/.exec(t);
+  return m ? t.slice(m[0].length) : t;
+}

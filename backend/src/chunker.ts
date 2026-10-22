@@ -22,7 +22,7 @@
 
 import { looksComplete, splitSentences, endsWithDanglingHead, endsMidThought, splitLastKoreanClause } from './text';
 import { looksCompleteEn, splitSentencesEn, splitLastClause } from './text-en';
-import { looksCompleteZh, splitSentencesZh, endsDanglingZh, splitLastClauseZh } from './text-zh';
+import { looksCompleteZh, splitSentencesZh, endsDanglingZh, splitLastClauseZh, stripAcknowledgmentsZh, stripLeadingScrapZh } from './text-zh';
 import { looksCompleteYue, splitSentencesYue, endsDanglingYue, splitLastClauseYue } from './text-yue';
 import { Direction, isChinese } from './direction-config';
 import type { BoundaryOracle } from './boundary-oracle';
@@ -300,6 +300,12 @@ export class KoreanChunker {
 
   async feed(text: string, isFinal: boolean, meta?: FinalMeta): Promise<void> {
     if (!text.trim()) return;
+    // Chinese: a lone 对。 or OK。 is not sent to be spoken, nor a scrap of the
+    // sentence before (text-zh.ts).
+    if (isFinal && isChinese(this.direction)) {
+      text = stripAcknowledgmentsZh(stripLeadingScrapZh(text));
+      if (!text) return;
+    }
     if (isFinal) this.lastPauseMs = meta?.pauseAfterMs;
 
     if (!isFinal) {

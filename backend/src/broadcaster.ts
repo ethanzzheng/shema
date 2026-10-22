@@ -18,9 +18,10 @@
 
 import { WebSocket } from 'ws';
 import { Session } from './session';
-import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS, DEFAULT_KEYTERMS_ZH, DEFAULT_KEYTERMS_YUE } from './stt';
+import { DeepgramSTT, DEFAULT_KEYTERMS as DEFAULT_STT_KEYTERMS, DEFAULT_KEYTERMS_ZH, DEFAULT_KEYTERMS_YUE, type SpeechToText, type TranscriptEvent } from './stt';
+import { ScribeSTT } from './stt-scribe';
 import { createBoundaryOracle } from './boundary-oracle';
-import { foldToSimplified } from './zh-script';
+import { foldToSimplified, toHongKongScript } from './zh-script';
 import { randomUUID } from 'crypto';
 import { loadChurchGlossary, loadSessionTerms } from './glossary/load';
 import { budgetKeyterms } from './glossary/merge';
@@ -45,6 +46,8 @@ import {
   resolveTtsModelId,
   resolveTtsVoiceId,
   resolveStt,
+  resolveSttProvider,
+  useBoundaryOracle,
   isChinese,
 } from './direction-config';
 
@@ -62,7 +65,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
   console.log(`[Broadcaster] New connection (room "${session.roomId}")`);
   session.addBroadcaster(ws);
 
-  let stt: DeepgramSTT | null = null;
+  let stt: SpeechToText | null = null;
   /** Records this broadcast to the database. Null when no database is reachable. */
   let transcript: TranscriptWriter | null = null;
   const recordingTranscript = (): boolean => transcript !== null;
@@ -659,7 +662,7 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       nextSeq: () => session.nextSeq(),
       // Chinese has no grammatical sentence ending; a fast model stands in.
       oracle:
-        cfg.boundaryOracle && process.env.BOUNDARY_ORACLE !== '0'
+        useBoundaryOracle(direction)
           ? createBoundaryOracle(ANTHROPIC_API_KEY, cfg.sourceLabel, { model: cfg.oracleModel })
           : undefined,
     });
@@ -691,13 +694,8 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
       );
     }
 
-    stt = new DeepgramSTT({
-      apiKey: DEEPGRAM_API_KEY,
-      language: sttCfg.language,
-      model: sttCfg.model,
-      smartFormat: sttCfg.smartFormat,
-      keyterms,
-      onTranscript: async ({ text, isFinal, timestamp, audioEndSec, audioStartSec, firstWordSec, lastWordEndSec, speechFinal }) => {
+    const sttHandlers = {
+      onTranscript: async ({ text, isFinal, timestamp, audioEndSec, audioStartSec, firstWordSec, lastWordEndSec, speechFinal }: TranscriptEvent) => {
         // Interims arrive many times per second and exist only to tell the
         // chunker that speech is still flowing — logging them would bury the
         // finals that actually matter.
@@ -735,14 +733,55 @@ export function handleBroadcasterConnection(ws: WebSocket, session: Session): vo
           }
         }
       },
-      onError: (err) => {
+      onError: (err: Error) => {
         send(ws, { type: 'error', message: `STT error: ${err.message}` });
       },
-      onStatusChange: (connected) => {
+      onStatusChange: (connected: boolean) => {
         session.metrics.sttConnected = connected;
         send(ws, { type: 'status', sttConnected: connected });
       },
-    });
+    };
+
+    const provider = resolveSttProvider(direction);
+    const makeDeepgram = () =>
+      new DeepgramSTT({
+        apiKey: DEEPGRAM_API_KEY,
+        language: sttCfg.language,
+        model: sttCfg.model,
+        smartFormat: sttCfg.smartFormat,
+        keyterms,
+        ...sttHandlers,
+      });
+    if (provider === 'scribe' && cfg.scribe) {
+      // Cantonese. Scribe writes Simplified, Mandarin-style Chinese; Hong Kong
+      // congregations read Traditional, so the desk, the captions and the
+      // transcript get Traditional unless YUE_SCRIPT=simplified.
+      const traditional = direction === 'yue-en' && process.env.YUE_SCRIPT !== 'simplified';
+      const scribe: ScribeSTT = new ScribeSTT({
+        apiKey: ELEVENLABS_API_KEY,
+        languageCode: cfg.scribe.languageCode,
+        vadSilenceSecs: cfg.scribe.vadSilenceSecs,
+        noVerbatim: cfg.scribe.noVerbatim,
+        // Scribe writes Simplified, so its bias terms are folded to match.
+        keyterms: [...new Set(keyterms.map(foldToSimplified))],
+        transform: traditional ? toHongKongScript : undefined,
+        ...sttHandlers,
+        // Scribe refused the session (key, quota, plan): carry on with
+        // Deepgram rather than leave the congregation without translation.
+        onUnavailable: (reason) => {
+          if (stt !== scribe) return;
+          console.error(`[Broadcaster] ${reason}; switching this broadcast to Deepgram`);
+          send(ws, { type: 'error', message: 'Switched to the backup speech recognizer.' });
+          const dg = makeDeepgram();
+          stt = dg;
+          dg.connect();
+          for (const pcm of scribe.unsentAudio) dg.sendAudio(pcm);
+        },
+      });
+      stt = scribe;
+    } else {
+      stt = makeDeepgram();
+    }
 
     stt.connect();
     if (preSttAudio.length > 0) {

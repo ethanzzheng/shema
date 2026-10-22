@@ -282,9 +282,13 @@ export function looksLikeMetaCommentary(text: string): boolean {
  * segment"), so the whole thing would have been spoken to the congregation.
  * Dropping the output would lose a correct translation behind the preamble, so
  * cut through the end of the last sentence that carries a marker instead.
+ * Also seen on Cantonese: "I'll translate what is clear. He was thrilled."
+ * And on Mandarin: 'The previous segment ended "...", and this one starts
+ * " ", which is most likely the tail of " ". So I translate it as "your
+ * word." your word, we ask the Holy Spirit to quiet our hearts.'
  */
 const META_PREAMBLE =
-  /\btranslat(?:e|ing) (?:only )?(?:this|the) (?:new )?(?:segment|input)\b|\b(?:this|the) (?:segment|input)\b/gi;
+  /\btranslat(?:e|ing) (?:only )?(?:this|the) (?:new )?(?:segment|input)\b|\b(?:this|the) (?:segment|input)\b|\bI(?:'ll| will) (?:only )?translate (?:what|the part)\b|\bthe previous segment\b|\bso I(?:'ll)? translate (?:it|this|that) as\b/gi;
 export function stripMetaPreamble(text: string): string {
   let last = -1;
   for (const m of text.matchAll(META_PREAMBLE)) last = (m.index ?? 0) + m[0].length;
@@ -295,6 +299,16 @@ export function stripMetaPreamble(text: string): string {
   const end = text.slice(last).search(/[.!?…]/);
   if (end < 0) return '';
   return text.slice(last + end + 1).replace(/^[\s"'“”‘’.\-–—]+/, '').trim();
+}
+
+/**
+ * Output that stands for "nothing to translate" rather than translating:
+ * "(empty response)", "[No translation]", "N/A", "…".
+ */
+const PLACEHOLDER_RE =
+  /^[\s\[(<*"'“‘]*(?:empty(?: response| output| string| segment)?|no (?:translation|output|content|response)(?: needed)?|nothing to translate|untranslatable|blank|n\/a|none|silence|빈 응답|\.{3}|…)[\s\])>*"'”’.]*$/i;
+export function isPlaceholderOutput(text: string): boolean {
+  return PLACEHOLDER_RE.test(text.trim());
 }
 
 /** Strip code fences and extract the first JSON object from a model response. */
@@ -666,6 +680,15 @@ export class ClaudeTranslator {
         // Guard: if the model described the input instead of translating, drop it.
         if (translated && looksLikeMetaCommentary(translated)) {
           console.warn('[Translation] Dropped meta-commentary output:', translated.slice(0, 80));
+          translated = '';
+        }
+
+        // The prompt says to return an empty response for a segment with
+        // nothing to translate, and the model sometimes writes the words
+        // instead: "(empty response)" went out as speech on Cantonese replays.
+        // Korean output stays exactly as the pilot runs it.
+        if (this.direction !== 'ko-en' && isPlaceholderOutput(translated)) {
+          console.warn('[Translation] Dropped placeholder output:', translated.slice(0, 40));
           translated = '';
         }
 

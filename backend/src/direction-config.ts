@@ -72,8 +72,30 @@ export interface DirectionConfig {
   /** Default ElevenLabs speaking rate for this direction; TTS_SPEED_<X> wins. */
   ttsSpeed?: number;
   ttsSpeedEnvVar?: string;
+  /**
+   * Which recognizer hears the speech. Deepgram unless set; Cantonese uses
+   * ElevenLabs Scribe. The env var (deepgram | scribe) wins, so a church can
+   * be moved back without a code change.
+   */
+  sttProvider?: SttProvider;
+  sttProviderEnvVar?: string;
+  /** Scribe's language and commit settings, when sttProvider is 'scribe'. */
+  scribe?: ScribeConfig;
   /** False = the pipeline refuses to start a broadcast in this direction. */
   implemented: boolean;
+}
+
+export type SttProvider = 'deepgram' | 'scribe';
+
+export interface ScribeConfig {
+  languageCode: string;
+  /**
+   * Seconds of silence before Scribe commits a transcript. Its default
+   * committed once every ~33s on a real sermon; 0.5 commits every ~6s.
+   */
+  vadSilenceSecs: number;
+  /** Scribe drops fillers and false starts itself (no_verbatim). */
+  noVerbatim: boolean;
 }
 
 export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
@@ -144,7 +166,18 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
   // in written-Chinese form with colloquial words left in (喺, 係, 啲, 嘅).
   // Detection folds it to Simplified (zh-script.ts), so the Mandarin rules and
   // Bible tables apply, plus Cantonese particles and openers on top.
+  //
+  // Speech goes to ElevenLabs Scribe instead (2026-10-22). On the same five
+  // minutes of a real Cantonese sermon, Scribe with fillers removed scored
+  // 4.57 for flow against Deepgram's 3.50, with 1 broken cut instead of 2,
+  // half the dead air, and a lower delay (12.0s against 14.3s). Scribe
+  // punctuates well enough that the completeness check added nothing on its
+  // text (4.17 with it, 4.33 without), so it is off with Scribe. The Deepgram
+  // settings stay below for STT_PROVIDER_YUE=deepgram.
   'yue-en': {
+    sttProvider: 'scribe',
+    sttProviderEnvVar: 'STT_PROVIDER_YUE',
+    scribe: { languageCode: 'yue', vadSilenceSecs: 0.5, noVerbatim: true },
     sttLanguage: 'zh-HK',
     sttModel: 'nova-3',
     sttSmartFormat: false,
@@ -165,6 +198,7 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     // Haiku cut garbled Cantonese mid-thought (45 broken cuts on four
     // sermons against 31 before); Sonnet 5.5 kept it at 31 and still took a
     // third off the delay. Mandarin stays on Haiku: none of its cuts broke.
+    // Deepgram only: see sttProvider above.
     oracleModel: 'claude-sonnet-5-5',
     ttsSpeedEnvVar: 'TTS_SPEED_YUE',
     implemented: true,
@@ -221,6 +255,25 @@ export function resolveStt(
     language: (cfg.sttLanguageEnvVar && env[cfg.sttLanguageEnvVar]) || cfg.sttLanguage,
     smartFormat: cfg.sttSmartFormat,
   };
+}
+
+/** Which recognizer this direction uses; the env var wins over the config. */
+export function resolveSttProvider(direction: Direction, env: NodeJS.ProcessEnv = process.env): SttProvider {
+  const cfg = DIRECTION_CONFIGS[direction];
+  const v = cfg.sttProviderEnvVar && env[cfg.sttProviderEnvVar];
+  if (v === 'deepgram' || v === 'scribe') return v;
+  return cfg.sttProvider ?? 'deepgram';
+}
+
+/**
+ * Whether to run the completeness check. It stands in for the sentence
+ * endings Deepgram's Chinese leaves out; Scribe punctuates, and on its text
+ * the check added nothing.
+ */
+export function useBoundaryOracle(direction: Direction, env: NodeJS.ProcessEnv = process.env): boolean {
+  const cfg = DIRECTION_CONFIGS[direction];
+  if (!cfg.boundaryOracle || env.BOUNDARY_ORACLE === '0') return false;
+  return resolveSttProvider(direction, env) === 'deepgram';
 }
 
 /** The translation model for this direction: per-direction env, its default, then the global one. */

@@ -93,6 +93,16 @@ export interface TranscriptEvent {
   speechFinal?: boolean;
 }
 
+/** A streaming recognizer: Deepgram, or Scribe for Cantonese (stt-scribe.ts). */
+export interface SpeechToText {
+  readonly isConnected: boolean;
+  connect(): void;
+  sendAudio(pcm: Buffer): void;
+  /** Flush the utterance in progress, return its finals, and disconnect. */
+  finish(timeoutMs?: number): Promise<string[]>;
+  disconnect(): void;
+}
+
 /**
  * Is this final the same speech we already forwarded?
  *
@@ -124,7 +134,7 @@ function wordSpan(msg: any): { firstWordSec?: number; lastWordEndSec?: number } 
   };
 }
 
-export class DeepgramSTT {
+export class DeepgramSTT implements SpeechToText {
   private apiKey: string;
   private language: string;
   private model: string;

@@ -127,4 +127,4 @@ export function splitLastClauseYue(text: string, minHead = 6): { head: string; r
 }
 
 /** Tag words for thinTagQuestionsZh, as they appear in RAW (unfolded) text. */
-export const YUE_TAG_PATTERN = '係咪呀|係咪|系咪|啱唔啱|是吧|对吧|對吧';
+export const YUE_TAG_PATTERN = '係咪呀|係咪|系咪|啱唔啱|是吧|对吧|對吧|对不对|對不對';
