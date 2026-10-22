@@ -31,7 +31,7 @@ export default function KioskView({ church }: { church: string }) {
   const gate = useRequireAuth();
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
-  const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en'>('ko-en');
+  const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en' | 'yue-en'>('ko-en');
   const [started, setStarted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [wakeLockState, setWakeLockState] = useState<'active' | 'unavailable' | 'off'>('off');
@@ -204,7 +204,7 @@ export default function KioskView({ church }: { church: string }) {
     switch (msg.type) {
       case 'status': {
         const s = msg as { type: 'status'; active?: boolean; direction?: string };
-        if (s.direction === 'ko-en' || s.direction === 'en-ko' || s.direction === 'zh-en') setDirection(s.direction);
+        if (s.direction === 'ko-en' || s.direction === 'en-ko' || s.direction === 'zh-en' || s.direction === 'yue-en') setDirection(s.direction);
         if (typeof s.active === 'boolean') {
           setBroadcastActive(s.active);
           if (s.active) {

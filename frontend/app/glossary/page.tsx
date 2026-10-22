@@ -65,7 +65,7 @@ export default function GlossaryPage() {
     if (gate !== 'ok') return;
     let cancelled = false;
     fetchAllowedDirections().then((list) => {
-      if (!cancelled && list && list.length > 0 && list.every((d) => d === 'zh-en')) setSource('zh');
+      if (!cancelled && list && list.length > 0 && list.every((d) => d === 'zh-en' || d === 'yue-en')) setSource('zh');
     });
     return () => { cancelled = true; };
   }, [gate]);

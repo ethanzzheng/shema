@@ -43,13 +43,14 @@ const OUTPUT_DEVICE_STORAGE_KEY = 'shema-output-device';
 const LOCAL_VOLUME_STORAGE_KEY = 'shema-local-volume';
 
 type Mode = 'fast' | 'smooth';
-type Direction = 'ko-en' | 'en-ko' | 'zh-en';
+type Direction = 'ko-en' | 'en-ko' | 'zh-en' | 'yue-en';
 type ConnState = 'disconnected' | 'connecting' | 'connected';
 
 const DIRECTION_LABELS: Record<Direction, string> = {
   'ko-en': '한국어 → EN',
   'en-ko': 'EN → 한국어',
   'zh-en': '中文 → EN',
+  'yue-en': '粵語 → EN',
 };
 
 /** How each direction's source and translation columns are labelled and typeset. */
@@ -71,6 +72,11 @@ const DIRECTION_META: Record<
     title: 'Mandarin sermon in, English audio out',
     srcLabel: '中文 · Spoken', tgtLabel: 'English · Sent to the pews',
     srcClass: 'serif-zh', srcLang: 'zh-Hans', tgtClass: 'serif-en', tgtLang: 'en',
+  },
+  'yue-en': {
+    title: 'Cantonese sermon in, English audio out',
+    srcLabel: '粵語 · Spoken', tgtLabel: 'English · Sent to the pews',
+    srcClass: 'serif-zh-hant', srcLang: 'yue-Hant', tgtClass: 'serif-en', tgtLang: 'en',
   },
 };
 
@@ -241,7 +247,7 @@ export default function SpeakPage() {
   // Restore the last-used direction (persists across services).
   useEffect(() => {
     const saved = window.localStorage.getItem(DIRECTION_STORAGE_KEY);
-    if (saved === 'ko-en' || saved === 'en-ko' || saved === 'zh-en') {
+    if (saved === 'ko-en' || saved === 'en-ko' || saved === 'zh-en' || saved === 'yue-en') {
       setDirection(saved);
       directionRef.current = saved;
     }
@@ -255,7 +261,7 @@ export default function SpeakPage() {
     let cancelled = false;
     fetchAllowedDirections().then((list) => {
       if (cancelled || !list) return;
-      const allowed = (['ko-en', 'en-ko', 'zh-en'] as const).filter((d) => list.includes(d));
+      const allowed = (['ko-en', 'en-ko', 'zh-en', 'yue-en'] as const).filter((d) => list.includes(d));
       setAllowedDirections(allowed);
       if (allowed.length > 0 && !allowed.includes(directionRef.current)) {
         setDirection(allowed[0]);
@@ -865,7 +871,7 @@ export default function SpeakPage() {
 
   // ── Derived ──────────────────────────────────────────────────────────────
   const meta = DIRECTION_META[direction];
-  const termExample = glossaryExample(direction === 'zh-en' ? 'zh' : 'ko');
+  const termExample = glossaryExample(direction === 'zh-en' || direction === 'yue-en' ? 'zh' : 'ko');
   const hearing = broadcasting && debug.sttConnected;
   const onAir = broadcasting && connState === 'connected';
 
@@ -949,7 +955,7 @@ export default function SpeakPage() {
               value={direction}
               onChange={handleDirectionChange}
               disabled={broadcasting}
-              options={(allowedDirections ?? (['ko-en', 'en-ko', 'zh-en'] as const)).map((d) => ({
+              options={(allowedDirections ?? (['ko-en', 'en-ko', 'zh-en', 'yue-en'] as const)).map((d) => ({
                 v: d,
                 l: DIRECTION_LABELS[d],
                 title: DIRECTION_META[d].title,

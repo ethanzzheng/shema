@@ -119,6 +119,11 @@ input, select, textarea {
   font-family: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', 'PingFang SC', 'Microsoft YaHei', serif;
 }
 
+/* Cantonese is shown in Traditional characters, in Hong Kong glyph forms. */
+.serif-zh-hant {
+  font-family: 'Songti TC', 'Noto Serif TC', 'Source Han Serif TC', 'PingFang HK', 'Microsoft JhengHei', serif;
+}
+
 .prose-serif {
   font-family: var(--font-display, serif), var(--font-serif, serif);
 }

@@ -85,7 +85,7 @@ export default function ListenerView({ church }: { church: string }) {
   const [connState, setConnState] = useState<ConnState>('disconnected');
   const [broadcastActive, setBroadcastActive] = useState(false);
   // Output language of the broadcast (from status messages); ko-en = English.
-  const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en'>('ko-en');
+  const [direction, setDirection] = useState<'ko-en' | 'en-ko' | 'zh-en' | 'yue-en'>('ko-en');
   // The player is built outside React state, so it reads the direction here.
   const directionRef = useRef(direction);
   useEffect(() => {
@@ -417,7 +417,7 @@ export default function ListenerView({ church }: { church: string }) {
       switch (msg.type) {
         case 'status': {
           const s = msg as { type: 'status'; active?: boolean; direction?: string };
-          if (s.direction === 'ko-en' || s.direction === 'en-ko' || s.direction === 'zh-en') setDirection(s.direction);
+          if (s.direction === 'ko-en' || s.direction === 'en-ko' || s.direction === 'zh-en' || s.direction === 'yue-en') setDirection(s.direction);
           if (typeof s.active === 'boolean') {
             setBroadcastActive(s.active);
             if (s.active) {
@@ -555,7 +555,7 @@ export default function ListenerView({ church }: { church: string }) {
   // lang attributes so each script gets its own line breaking and glyph forms
   // (Korean wraps between words; Chinese must not get Korean glyph shapes).
   const outLangAttr = direction === 'en-ko' ? 'ko' : 'en';
-  const srcLangAttr = direction === 'en-ko' ? 'en' : direction === 'zh-en' ? 'zh' : 'ko';
+  const srcLangAttr = direction === 'en-ko' ? 'en' : direction === 'zh-en' ? 'zh' : direction === 'yue-en' ? 'yue-Hant' : 'ko';
 
   const connLabel =
     connState === 'connected'
