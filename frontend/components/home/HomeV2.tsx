@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, ArrowsLeftRight, Microphone, Translate, Headphones, Check, Play, QrCode } from '@phosphor-icons/react';
+import { ArrowRight, ArrowsLeftRight, Microphone, Translate, Headphones, Check, Play, QrCode, Church, EnvelopeSimple, Globe, Plus, UsersThree } from '@phosphor-icons/react';
 import ShemaMark from '@/components/ShemaMark';
 import { LANGS, LANG_ORDER, STEPS, type LangId } from './data';
 import { LangPicker, langPhrase, useVerseCycle } from './shared';
@@ -158,11 +158,64 @@ function PauseDemo({ lang, reduced }: { lang: LangId; reduced: boolean }) {
   );
 }
 
+// ── Try-it-live preview ────────────────────────────────────────────────────
+
+const TRY_LINES = [
+  { ko: '하나님은 우리를 먼저 사랑하셨습니다.', en: 'God loved us first.' },
+  { ko: '오늘 본문은 요한복음 15장입니다.', en: "Today's passage is John chapter 15." },
+  { ko: '포도나무에 붙어 있으십시오.', en: 'Remain in the vine.' },
+];
+// Fixed bar heights so the waveform reads as speech, not a uniform meter.
+const WAVE = Array.from({ length: 44 }, (_, i) => 0.25 + 0.75 * Math.abs(Math.sin(i * 1.7) * Math.cos(i * 0.45)));
+
+/** A miniature of the live demo: a session header with a running clock, the
+ *  speaker's waveform, and a Korean line followed by its English. */
+function TryPreview({ reduced }: { reduced: boolean }) {
+  const [line, setLine] = useState(0);
+  const [secs, setSecs] = useState(14);
+  useEffect(() => {
+    if (reduced) return;
+    const clock = setInterval(() => setSecs((s) => s + 1), 1000);
+    const lines = setInterval(() => setLine((l) => (l + 1) % TRY_LINES.length), 4200);
+    return () => { clearInterval(clock); clearInterval(lines); };
+  }, [reduced]);
+  const t = TRY_LINES[line];
+  return (
+    <div className="v2-try-visual" aria-hidden>
+      <div className="v2-tv-bar">
+        <span className="v2-tv-live">Live</span>
+        <span className="v2-tv-dir">Korean <ArrowRight weight="bold" /> English</span>
+        <span className="v2-tv-time">{String(Math.floor(secs / 60)).padStart(2, '0')}:{String(secs % 60).padStart(2, '0')}</span>
+      </div>
+      <div className="v2-tv-wave">
+        {WAVE.map((h, i) => (
+          <span key={i} style={{ height: `${Math.round(h * 100)}%`, animationDelay: `${-((i * 0.137) % 1.3).toFixed(2)}s`, animationDuration: `${(1 + (i % 5) * 0.18).toFixed(2)}s` }} />
+        ))}
+      </div>
+      <div className="v2-tv-lines" key={line}>
+        <p className="v2-tv-src" lang="ko">{t.ko}</p>
+        <p className="v2-tv-en">{t.en}</p>
+      </div>
+      <div className="v2-tv-foot">
+        <span className="v2-tv-mic"><Microphone weight="fill" /></span>
+        <span>Your microphone</span>
+        <span className="v2-tv-or">or</span>
+        <span className="v2-tv-sample"><Play weight="fill" /> Sample sermon</span>
+      </div>
+    </div>
+  );
+}
+
 // ── Demo request form ──────────────────────────────────────────────────────
 
 type SubmitState = 'idle' | 'sending' | 'success' | 'error';
 
-function DemoForm({ selected }: { selected: LangId | null }) {
+const SIZES = ['Under 100', '100 – 300', '300 – 800', '800+'];
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Posts a form to /api/contact. Returns the first required field left empty
+ *  (or a bad email), else sends and reports the result through setState. */
+function useContactSubmit(required: string[], subject: string) {
   const [state, setState] = useState<SubmitState>('idle');
   const [invalid, setInvalid] = useState('');
   const formRef = useRef<HTMLFormElement>(null);
@@ -174,11 +227,14 @@ function DemoForm({ selected }: { selected: LangId | null }) {
     if (!form) return;
     const data = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
     setInvalid('');
-    for (const name of ['church', 'language', 'size', 'email']) {
+    for (const name of required) {
       const v = (data[name] ?? '').trim();
-      if (!v || (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))) {
+      if (!v || (name === 'email' && !EMAIL_RE.test(v))) {
         setInvalid(name);
-        (form.elements.namedItem(name) as HTMLElement | null)?.focus();
+        // Radio groups come back as a list; focus their first option.
+        const el = form.elements.namedItem(name);
+        const target = el instanceof RadioNodeList ? (el[0] as HTMLElement | undefined) : (el as HTMLElement | null);
+        target?.focus();
         return;
       }
     }
@@ -187,7 +243,7 @@ function DemoForm({ selected }: { selected: LangId | null }) {
       const res = await fetch('/api/contact', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ ...data, _subject: 'New demo request — Shema', _replyto: data.email }),
+        body: JSON.stringify({ ...data, _subject: subject, _replyto: data.email }),
       });
       const body = await res.json().catch(() => ({}));
       if (!body.success) throw new Error('send failed');
@@ -195,102 +251,152 @@ function DemoForm({ selected }: { selected: LangId | null }) {
     } catch {
       setState('error');
     }
-  }, [state]);
+  }, [state, required, subject]);
 
-  const field = (name: string) => `v2-input${invalid === name ? ' invalid' : ''}`;
+  return { state, invalid, setInvalid, formRef, onSubmit };
+}
+
+const DEMO_REQUIRED = ['church', 'language', 'size', 'email'];
+const LANG_REQUIRED = ['language', 'email'];
+
+function DemoForm({ selected }: { selected: LangId | null }) {
+  const { state, invalid, setInvalid, formRef, onSubmit } = useContactSubmit(DEMO_REQUIRED, 'New demo request — Shema');
+  const [lang, setLang] = useState<string>(selected ? LANGS[selected].name : '');
+  useEffect(() => { if (selected) setLang(LANGS[selected].name); }, [selected]);
+  const clear = (name: string) => { if (invalid === name) setInvalid(''); };
+
+  if (state === 'success') {
+    return (
+      <div className="v2-form-done" role="status">
+        <span className="v2-form-done-icon"><Check weight="bold" aria-hidden /></span>
+        <h3>Thank you. We&apos;ll be in touch.</h3>
+        <p>Expect a reply within two business days, usually sooner. We&apos;ll ask for a recent sermon recording to tune it to your pastor.</p>
+      </div>
+    );
+  }
+
   return (
     <form ref={formRef} className="v2-form" onSubmit={onSubmit} noValidate>
-      <div className="v2-field">
+      <div className="v2-form-head">
+        <span className="v2-form-step">Live demo</span>
+        <span className="v2-form-free">Free · no commitment</span>
+      </div>
+
+      <div className={`v2-float${invalid === 'church' ? ' invalid' : ''}`}>
+        <Church weight="duotone" aria-hidden className="v2-float-icon" />
+        <input id="v2-church" name="church" placeholder=" " autoComplete="organization" onInput={() => clear('church')} />
         <label htmlFor="v2-church">Church name</label>
-        <input id="v2-church" name="church" className={field('church')} placeholder="Your church" autoComplete="organization" />
       </div>
-      <div className="v2-field-row">
-        <div className="v2-field">
-          <label htmlFor="v2-language">Preached in</label>
-          <select id="v2-language" name="language" className={field('language')} key={selected ?? 'none'} defaultValue={selected ? LANGS[selected].name : ''}>
-            <option value="" disabled>Choose</option>
-            {LANG_ORDER.map((id) => <option key={id} value={LANGS[id].name}>{LANGS[id].name}{LANGS[id].status === 'soon' ? ' (early access)' : ''}</option>)}
-            <option value="Other">Another language</option>
-          </select>
+
+      <fieldset className={`v2-choice${invalid === 'language' ? ' invalid' : ''}`}>
+        <legend>Preached in</legend>
+        <div className="v2-chips">
+          {LANG_ORDER.map((id) => (
+            <label key={id} className="v2-chip">
+              <input type="radio" name="language" value={LANGS[id].name} checked={lang === LANGS[id].name} onChange={(e) => { setLang(e.target.value); clear('language'); }} />
+              <span>
+                <span lang={id === 'yue' ? 'zh-Hant' : id}>{SHORT[id]}</span>
+                {LANGS[id].name}
+                {LANGS[id].status === 'soon' && <em>early</em>}
+              </span>
+            </label>
+          ))}
+          <label className="v2-chip">
+            <input type="radio" name="language" value="Other" checked={lang === 'Other'} onChange={(e) => { setLang(e.target.value); clear('language'); }} />
+            <span><Plus weight="bold" aria-hidden /> Another</span>
+          </label>
         </div>
-        <div className="v2-field">
-          <label htmlFor="v2-size">Congregation size</label>
-          <select id="v2-size" name="size" className={field('size')} defaultValue="Under 100">
-            <option>Under 100</option>
-            <option>100 – 300</option>
-            <option>300 – 800</option>
-            <option>800+</option>
-          </select>
+        {lang === 'Other' && (
+          <div className="v2-float v2-float-sm">
+            <input id="v2-language-other" name="languageOther" placeholder=" " autoFocus />
+            <label htmlFor="v2-language-other">Which language?</label>
+          </div>
+        )}
+      </fieldset>
+
+      <fieldset className="v2-choice">
+        <legend><UsersThree weight="bold" aria-hidden /> Congregation size</legend>
+        <div className="v2-seg">
+          {SIZES.map((s, i) => (
+            <label key={s}>
+              <input type="radio" name="size" value={s} defaultChecked={i === 0} />
+              <span>{s}</span>
+            </label>
+          ))}
         </div>
-      </div>
-      <div className="v2-field">
+      </fieldset>
+
+      <div className={`v2-float${invalid === 'email' ? ' invalid' : ''}`}>
+        <EnvelopeSimple weight="duotone" aria-hidden className="v2-float-icon" />
+        <input id="v2-email" name="email" type="email" placeholder=" " autoComplete="email" onInput={() => clear('email')} />
         <label htmlFor="v2-email">Your email</label>
-        <input id="v2-email" name="email" type="email" className={field('email')} placeholder="you@church.org" autoComplete="email" />
       </div>
-      <button type="submit" className="v2-btn v2-btn-ink v2-form-submit" disabled={state === 'sending' || state === 'success'}>
-        {state === 'success' ? <><Check weight="bold" aria-hidden /> Thank you. We&apos;ll be in touch.</> : state === 'sending' ? 'Sending…' : <>Request a demo <ArrowRight weight="bold" aria-hidden /></>}
+
+      <button type="submit" className="v2-btn v2-btn-ink v2-form-submit" disabled={state === 'sending'}>
+        {state === 'sending' ? <><span className="v2-spin" aria-hidden /> Sending…</> : <>Request a demo <ArrowRight weight="bold" aria-hidden className="v2-arrow" /></>}
       </button>
       <p className="v2-form-note" role="status">
         {state === 'error'
           ? <>That didn&apos;t send. Email us at <a href="mailto:shematranslate@gmail.com?subject=Demo%20request">shematranslate@gmail.com</a> instead.</>
-          : invalid
-            ? 'Please fill in the highlighted field.'
-            : 'We reply within two business days.'}
+          : invalid === 'email'
+            ? 'Please enter a valid email address.'
+            : invalid
+              ? 'Please fill in the highlighted field.'
+              : 'We reply within two business days.'}
       </p>
     </form>
   );
 }
 
-// ── Language request (kept from the previous homepage) ─────────────────────
+// ── Language request ───────────────────────────────────────────────────────
+
+const ASKED_FOR = ['Spanish', 'Vietnamese', 'Tagalog', 'Portuguese', 'Japanese', 'Russian'];
 
 function LanguageForm() {
-  const [state, setState] = useState<SubmitState>('idle');
-  const [invalid, setInvalid] = useState('');
-  const formRef = useRef<HTMLFormElement>(null);
+  const { state, invalid, setInvalid, formRef, onSubmit } = useContactSubmit(LANG_REQUIRED, 'New language request — Shema');
+  const [language, setLanguage] = useState('');
 
-  const onSubmit = useCallback(async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (state === 'sending' || state === 'success') return;
-    const form = formRef.current;
-    if (!form) return;
-    const data = Object.fromEntries(new FormData(form).entries()) as Record<string, string>;
-    setInvalid('');
-    for (const name of ['language', 'email']) {
-      const v = (data[name] ?? '').trim();
-      if (!v || (name === 'email' && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v))) {
-        setInvalid(name);
-        (form.elements.namedItem(name) as HTMLElement | null)?.focus();
-        return;
-      }
-    }
-    setState('sending');
-    try {
-      const res = await fetch('/api/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
-        body: JSON.stringify({ ...data, _subject: 'New language request — Shema', _replyto: data.email }),
-      });
-      const body = await res.json().catch(() => ({}));
-      if (!body.success) throw new Error('send failed');
-      setState('success');
-    } catch {
-      setState('error');
-    }
-  }, [state]);
+  if (state === 'success') {
+    return (
+      <div className="v2-langdone" role="status">
+        <span className="v2-form-done-icon"><Check weight="bold" aria-hidden /></span>
+        <p><strong>{language || 'Your language'} is on our list.</strong> We&apos;ll email you when it&apos;s ready.</p>
+      </div>
+    );
+  }
 
   return (
     <form ref={formRef} className="v2-langform" onSubmit={onSubmit} noValidate>
-      <label className="v2-sr" htmlFor="v2-lang-req">Your language</label>
-      <input id="v2-lang-req" name="language" className={`v2-input${invalid === 'language' ? ' invalid' : ''}`} placeholder="Your language" />
-      <label className="v2-sr" htmlFor="v2-lang-email">Your email</label>
-      <input id="v2-lang-email" name="email" type="email" className={`v2-input${invalid === 'email' ? ' invalid' : ''}`} placeholder="you@church.org" autoComplete="email" />
-      <button type="submit" className="v2-btn v2-btn-ghost" disabled={state === 'sending' || state === 'success'}>
-        {state === 'success' ? <><Check weight="bold" aria-hidden /> Thank you</> : state === 'sending' ? 'Sending…' : 'Request it'}
-      </button>
+      <div className="v2-capsule">
+        <div className={`v2-capsule-field${invalid === 'language' ? ' invalid' : ''}`}>
+          <Globe weight="duotone" aria-hidden />
+          <label className="v2-sr" htmlFor="v2-lang-req">Your language</label>
+          <input id="v2-lang-req" name="language" placeholder="Your language" value={language}
+            onChange={(e) => { setLanguage(e.target.value); if (invalid === 'language') setInvalid(''); }} />
+        </div>
+        <div className={`v2-capsule-field${invalid === 'email' ? ' invalid' : ''}`}>
+          <EnvelopeSimple weight="duotone" aria-hidden />
+          <label className="v2-sr" htmlFor="v2-lang-email">Your email</label>
+          <input id="v2-lang-email" name="email" type="email" placeholder="you@church.org" autoComplete="email"
+            onInput={() => { if (invalid === 'email') setInvalid(''); }} />
+        </div>
+        <button type="submit" className="v2-btn v2-btn-ink v2-capsule-btn" disabled={state === 'sending'}>
+          {state === 'sending' ? <><span className="v2-spin" aria-hidden /> Sending</> : <>Request it <ArrowRight weight="bold" aria-hidden className="v2-arrow" /></>}
+        </button>
+      </div>
+      <div className="v2-asked">
+        <span>Often asked for</span>
+        {ASKED_FOR.map((l) => (
+          <button key={l} type="button" className={`v2-asked-chip${language === l ? ' on' : ''}`}
+            onClick={() => { setLanguage(l); if (invalid === 'language') setInvalid(''); }}>
+            {l}
+          </button>
+        ))}
+      </div>
       <p className="v2-form-note" role="status">
         {state === 'error'
           ? <>That didn&apos;t send. Email <a href="mailto:shematranslate@gmail.com?subject=Language%20request">shematranslate@gmail.com</a> instead.</>
-          : state === 'success' ? "Thank you. We'll tell you when it's ready." : invalid ? 'Please fill in the highlighted field.' : ''}
+          : invalid === 'email' ? 'Please enter a valid email address.' : invalid ? 'Please tell us the language.' : ''}
       </p>
     </form>
   );
@@ -385,17 +491,7 @@ export default function HomeV2({ selected, onSelect, hero, holdRef, reduced, fli
                 : ' The live demo runs Korean ⇄ English today.'}
             </p>
           </div>
-          <div className="v2-try-visual" aria-hidden>
-            <div className="v2-try-mic">
-              <span className="v2-try-ring" />
-              <span className="v2-try-ring v2-try-ring-2" />
-              <Microphone weight="fill" />
-            </div>
-            <div className="v2-try-meter">
-              {Array.from({ length: 18 }, (_, i) => <span key={i} style={{ animationDelay: `${(i % 6) * 0.12}s` }} />)}
-            </div>
-            <div className="v2-try-sample"><Play weight="fill" /> No mic? Play a sample sermon</div>
-          </div>
+          <TryPreview reduced={reduced} />
         </a>
       </section>
 
@@ -535,7 +631,8 @@ export default function HomeV2({ selected, onSelect, hero, holdRef, reduced, fli
         </div>
       </section>
 
-      <section className="v2-section v2-langs">
+      <section className="v2-section">
+        <div className="v2-langs-panel v2-langs">
         <div>
           <h2 className="v2-h2">Preaching in another language?</h2>
           <p className="v2-muted v2-gap">
@@ -543,6 +640,7 @@ export default function HomeV2({ selected, onSelect, hero, holdRef, reduced, fli
           </p>
         </div>
         <LanguageForm />
+        </div>
       </section>
 
       <section className="v2-section v2-closing">
