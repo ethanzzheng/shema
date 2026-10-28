@@ -214,15 +214,15 @@ test('translator commentary seen on Chinese runs is cut; sermon sentences are no
   }
 });
 
-test('Cantonese defaults to Scribe without the completeness check; env moves it back', () => {
+test('Cantonese and Mandarin default to Scribe without the completeness check; env moves them back', () => {
   assert.equal(resolveSttProvider('yue-en', {}), 'scribe');
   assert.equal(useBoundaryOracle('yue-en', {}), false);
   assert.equal(resolveSttProvider('yue-en', { STT_PROVIDER_YUE: 'deepgram' }), 'deepgram');
   assert.equal(useBoundaryOracle('yue-en', { STT_PROVIDER_YUE: 'deepgram' }), true);
-  assert.equal(resolveSttProvider('zh-en', {}), 'deepgram');
-  assert.equal(useBoundaryOracle('zh-en', {}), true);
-  assert.equal(resolveSttProvider('zh-en', { STT_PROVIDER_ZH: 'scribe' }), 'scribe');
-  assert.equal(useBoundaryOracle('zh-en', { STT_PROVIDER_ZH: 'scribe' }), false);
+  assert.equal(resolveSttProvider('zh-en', {}), 'scribe');
+  assert.equal(useBoundaryOracle('zh-en', {}), false);
+  assert.equal(resolveSttProvider('zh-en', { STT_PROVIDER_ZH: 'deepgram' }), 'deepgram');
+  assert.equal(useBoundaryOracle('zh-en', { STT_PROVIDER_ZH: 'deepgram' }), true);
   assert.equal(resolveSttProvider('ko-en', {}), 'deepgram');
   assert.equal(useBoundaryOracle('ko-en', {}), false);
 });

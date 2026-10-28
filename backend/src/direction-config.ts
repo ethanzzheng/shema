@@ -144,13 +144,13 @@ export const DIRECTION_CONFIGS: Record<Direction, DirectionConfig> = {
     sttSmartFormat: false,
     sttModelEnvVar: 'STT_MODEL_ZH',
     sttLanguageEnvVar: 'STT_LANGUAGE_ZH',
-    // Scribe is ready but not the default while a church runs on Deepgram.
-    // Replayed on the same 10 minutes of a real service (spoken part), it cut
-    // the median delay from 10.3s to 8.2s and the 95th percentile from 17.7s
-    // to 12.3s, at the same quality (flow 4.33 against 4.50 and 4.00 on two
-    // Deepgram replays). Unlike Deepgram it also transcribes sung worship, so
-    // songs would be translated. STT_PROVIDER_ZH=scribe turns it on.
-    sttProvider: 'deepgram',
+    // Scribe by default. Replayed on the same 10 minutes of a real service
+    // (spoken part), it cut the median delay from 10.3s to 8.2s and the 95th
+    // percentile from 17.7s to 12.3s, at the same quality (flow 4.33 against
+    // 4.50 and 4.00 on two Deepgram replays). Unlike Deepgram it also
+    // transcribes sung worship, so songs are translated. The Deepgram
+    // settings above stay for STT_PROVIDER_ZH=deepgram and for the fallback.
+    sttProvider: 'scribe',
     sttProviderEnvVar: 'STT_PROVIDER_ZH',
     scribe: { languageCode: 'zho', vadSilenceSecs: 0.5, noVerbatim: true },
     sourceLang: 'zh',
