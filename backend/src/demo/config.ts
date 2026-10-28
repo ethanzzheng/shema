@@ -53,11 +53,13 @@ export const demoConfig = {
    * minute this is roughly $0.04-0.08 a visitor.
    */
   /**
-   * With the wall off this is a visitor's entire speech allowance: two
-   * minutes, roughly $0.18-0.36 each. The daily ceiling is what actually
-   * caps the bill — this only stops one visitor draining it alone.
+   * With the wall off this is a visitor's entire speech allowance. It covers
+   * the whole demo (plus headroom, since the character conversion below is an
+   * estimate), so a visitor never hears the voice cut out partway: the demo's
+   * own length is the real limit, roughly $0.30-1.00 a full demo. The daily
+   * ceiling is what caps the bill; this only stops one visitor draining it.
    */
-  anonTtsSeconds: () => num('DEMO_ANON_TTS_SECONDS', 120),
+  anonTtsSeconds: () => num('DEMO_ANON_TTS_SECONDS', num('DEMO_ANON_SECONDS', 180) + 30),
 
   /**
    * Signed-in stage, per account, for the life of that account. Five minutes

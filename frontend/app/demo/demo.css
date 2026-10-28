@@ -3,125 +3,223 @@
  *
  * Same night/cream palette and gold accent as the product, but composed for a
  * stranger arriving from a cold email on a phone: one thing to do per screen,
- * and the captions are the hero because they are the proof.
+ * and the captions are the hero because they are the proof. Each screen is one
+ * card, so the steps and the controls read as a single tool.
  */
 
-.dm-root { min-height: 100dvh; display: flex; flex-direction: column; background: var(--bg); }
+.dm-root {
+  min-height: 100dvh; display: flex; flex-direction: column;
+  background:
+    radial-gradient(900px 420px at 50% -120px, rgba(200, 162, 94, 0.09), transparent 70%),
+    var(--bg);
+  --line: rgba(244, 241, 234, 0.09);
+  --line-2: rgba(244, 241, 234, 0.16);
+  --card: rgba(244, 241, 234, 0.025);
+}
 
 .dm-bar {
+  position: sticky; top: 0; z-index: 10;
   display: flex; align-items: center; gap: 12px;
-  padding: 14px clamp(16px, 4vw, 28px);
-  border-bottom: 1px solid rgba(244, 241, 234, 0.08);
+  min-height: 60px;
+  padding: 10px clamp(16px, 4vw, 28px);
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
 }
-.dm-brand { display: inline-flex; align-items: center; gap: 8px; color: var(--gold); text-decoration: none; }
+.dm-brand { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--gold); text-decoration: none; }
 .dm-brand-name { font-family: var(--font-mono, monospace); font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; }
 .dm-bar-end { margin-left: auto; display: inline-flex; align-items: center; gap: 12px; }
 
-.dm-main { flex: 1; width: 100%; max-width: 760px; margin: 0 auto; padding: clamp(28px, 6vw, 56px) clamp(16px, 5vw, 24px) 64px; }
+.dm-main { flex: 1; width: 100%; max-width: 780px; margin: 0 auto; padding: clamp(32px, 7vw, 72px) clamp(16px, 5vw, 24px) 72px; }
 
-.dm-lede { font-size: clamp(1.5rem, 5.5vw, 2.1rem); font-weight: 500; line-height: 1.25; letter-spacing: -0.01em; }
-.dm-sub { color: var(--text-muted); font-size: 1rem; line-height: 1.6; margin-top: 12px; max-width: 52ch; }
+/* ── Intro ───────────────────────────────────────────────────────────────── */
+.dm-hero { margin-bottom: clamp(24px, 4vw, 36px); }
+.dm-kicker {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; border-radius: 999px;
+  border: 1px solid rgba(147, 181, 160, 0.3); background: rgba(147, 181, 160, 0.08);
+  color: var(--sage); font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.dm-lede { margin-top: 16px; font-size: clamp(2rem, 6vw, 2.9rem); font-weight: 600; line-height: 1.1; letter-spacing: -0.025em; text-wrap: balance; }
+.dm-intro { color: var(--text-muted); font-size: clamp(1rem, 2.4vw, 1.1rem); line-height: 1.6; margin-top: 14px; max-width: 54ch; }
 
-.dm-step { margin-top: 30px; }
+/* ── Card ────────────────────────────────────────────────────────────────── */
+.dm-card {
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: linear-gradient(180deg, rgba(244, 241, 234, 0.04), rgba(244, 241, 234, 0.015));
+  box-shadow: inset 0 1px 0 rgba(244, 241, 234, 0.05), 0 30px 60px -30px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+.dm-card-sec { padding: clamp(18px, 3.5vw, 26px); }
+.dm-card-sec + .dm-card-sec { border-top: 1px solid var(--line); }
+.dm-card-foot { border-top: 1px solid var(--line); background: rgba(0, 0, 0, 0.14); }
+.dm-step-head { display: flex; align-items: center; gap: 10px; font-size: 0.9rem; font-weight: 600; color: var(--text); }
+.dm-num {
+  display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%;
+  background: rgba(200, 162, 94, 0.14); color: var(--gold);
+  font-size: 0.72rem; font-weight: 700; font-variant-numeric: tabular-nums;
+}
+
 /* A grid, not a wrapping row: with three directions a row wrapped 2 + 1 on a
    landscape phone, leaving one button alone at full width. */
-.dm-langs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 18px; }
+.dm-langs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .dm-lang {
-  min-height: 64px;
-  display: flex; flex-direction: column; justify-content: center; gap: 3px;
-  padding: 14px 18px; text-align: left;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  position: relative;
+  min-height: 84px;
+  display: flex; flex-direction: column; justify-content: center; gap: 6px;
+  padding: 14px 40px 14px 16px; text-align: left;
+  border: 1px solid var(--line-2); border-radius: 14px;
   background: rgba(244, 241, 234, 0.02); color: var(--text);
   font-family: var(--font-sans); font-size: 1rem; cursor: pointer;
-  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), box-shadow 160ms var(--ease), transform 120ms var(--ease);
 }
-.dm-lang:hover { border-color: rgba(200, 162, 94, 0.5); background: rgba(200, 162, 94, 0.05); }
-.dm-lang:active { transform: translateY(1px); }
+.dm-lang:hover { border-color: rgba(200, 162, 94, 0.45); background: rgba(200, 162, 94, 0.04); }
+.dm-lang:active { transform: scale(0.99); }
 .dm-lang:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-lang-pair { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; font-size: 1.02rem; }
+.dm-lang-pair svg { width: 13px; height: 13px; color: var(--text-muted); flex: none; }
+.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; line-height: 1.4; text-wrap: balance; }
 /* aria-pressed alone is invisible. A prospect picking a direction has to see
    which one is picked, not read a sentence underneath to find out. */
+.dm-lang-check {
+  position: absolute; top: 12px; right: 12px;
+  display: grid; place-items: center; width: 20px; height: 20px; border-radius: 50%;
+  border: 1.5px solid var(--line-2); color: transparent; font-size: 11px;
+  transition: background-color 160ms var(--ease), border-color 160ms var(--ease), color 160ms var(--ease);
+}
 .dm-lang[aria-pressed='true'] {
   border-color: var(--gold);
-  background: rgba(200, 162, 94, 0.1);
+  background: rgba(200, 162, 94, 0.08);
+  box-shadow: 0 0 0 3px rgba(200, 162, 94, 0.12);
 }
-.dm-lang[aria-pressed='true'] .dm-lang-sub { color: rgba(244, 241, 234, 0.7); }
-.dm-lang-sub { color: var(--text-muted); font-size: 0.8rem; text-wrap: balance; }
+.dm-lang[aria-pressed='true'] .dm-lang-check { background: var(--gold); border-color: var(--gold); color: var(--night); }
+.dm-lang[aria-pressed='true'] .dm-lang-sub { color: rgba(244, 241, 234, 0.72); }
 
-.dm-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+/* ── Buttons ─────────────────────────────────────────────────────────────── */
+.dm-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 16px; }
 .dm-btn {
-  min-height: 48px; padding: 13px 22px;
-  border-radius: var(--radius-sm); border: 1px solid var(--border);
-  background: none; color: var(--text);
-  font-family: var(--font-sans); font-size: 0.95rem; font-weight: 500;
-  cursor: pointer; white-space: nowrap;
-  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease);
+  display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+  min-height: 52px; padding: 12px 22px;
+  border-radius: 12px; border: 1px solid var(--line-2);
+  background: rgba(244, 241, 234, 0.03); color: var(--text);
+  font-family: var(--font-sans); font-size: 0.97rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap; text-decoration: none;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease), transform 120ms var(--ease), box-shadow 160ms var(--ease);
 }
-.dm-btn:hover:not(:disabled) { border-color: rgba(244, 241, 234, 0.3); background: rgba(244, 241, 234, 0.04); }
-.dm-btn:active:not(:disabled) { transform: translateY(1px); }
-.dm-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.dm-btn svg { width: 17px; height: 17px; flex: none; }
+.dm-btn:hover:not(:disabled) { border-color: rgba(244, 241, 234, 0.32); background: rgba(244, 241, 234, 0.06); }
+.dm-btn:active:not(:disabled) { transform: scale(0.985); }
+.dm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 .dm-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.dm-btn-primary { background: var(--gold); border-color: var(--gold); color: var(--night); font-weight: 600; }
+.dm-btn-primary {
+  background: linear-gradient(180deg, var(--gold-hover), var(--gold)); border-color: var(--gold); color: var(--night);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.25), 0 8px 24px -10px rgba(200, 162, 94, 0.6);
+}
 .dm-btn-primary:hover:not(:disabled) { background: var(--gold-hover); border-color: var(--gold-hover); color: var(--night); }
+.dm-btn-sm { min-height: 40px; padding: 8px 14px; font-size: 0.85rem; border-radius: 10px; }
+.dm-btn-sm svg { width: 14px; height: 14px; }
+.dm-spin { width: 15px; height: 15px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: dmSpin 0.7s linear infinite; }
+@keyframes dmSpin { to { transform: rotate(360deg); } }
 
 /* ── Live ────────────────────────────────────────────────────────────────── */
-.dm-live-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
-.dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: 0 0 auto; }
-.dm-listening { font-family: var(--font-mono, monospace); font-size: 0.66rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--sage); display: inline-flex; align-items: center; gap: 7px; }
+.dm-session .dm-live-head, .dm-session .dm-tools, .dm-session .dm-captions { padding-inline: clamp(16px, 3.5vw, 24px); }
+.dm-live-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-block: 14px; border-bottom: 1px solid var(--line); }
+.dm-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sage); flex: 0 0 auto; box-shadow: 0 0 0 0 rgba(147, 181, 160, 0.5); animation: dmPulse 2s ease-out infinite; }
+@keyframes dmPulse { 0% { box-shadow: 0 0 0 0 rgba(147, 181, 160, 0.5); } 70%, 100% { box-shadow: 0 0 0 7px rgba(147, 181, 160, 0); } }
+.dm-listening {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 5px 11px; border-radius: 999px;
+  background: rgba(147, 181, 160, 0.1); color: var(--sage);
+  font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em;
+}
+.dm-listening.paused { background: rgba(244, 241, 234, 0.06); color: var(--text-muted); }
+.dm-listening.paused .dm-dot { background: rgba(244, 241, 234, 0.35); animation: none; }
+.dm-dir { display: inline-flex; align-items: center; gap: 6px; color: var(--text-muted); font-size: 0.85rem; font-weight: 500; }
+.dm-dir svg { width: 11px; height: 11px; }
+.dm-left {
+  margin-left: auto; display: inline-flex; align-items: center; gap: 6px;
+  padding: 5px 10px; border-radius: 8px; border: 1px solid var(--line);
+  font-family: var(--font-mono, monospace); font-size: 0.75rem; color: var(--text-muted); font-variant-numeric: tabular-nums;
+}
+.dm-left svg { width: 13px; height: 13px; }
+
+.dm-tools { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 14px; border-bottom: 1px solid var(--line); }
+/* The meter is the proof the mic is actually working, before a word lands. */
+.dm-meter { flex: 1 1 160px; min-width: 120px; display: flex; gap: 3px; align-items: center; height: 26px; }
+.dm-meter span { flex: 1; max-width: 6px; border-radius: 2px; background: rgba(244, 241, 234, 0.12); transition: background-color 120ms linear; }
+.dm-meter span.on { background: var(--sage); }
+.dm-toggles { display: flex; gap: 6px; flex-wrap: wrap; }
 /* Sits with the live status rather than in a settings panel: it controls
    something the listener is hearing right now. */
 .dm-voice {
-  font-family: var(--font-mono, monospace);
-  font-size: 0.62rem; letter-spacing: 0.1em; text-transform: uppercase;
-  padding: 6px 11px; border-radius: 999px;
-  border: 1px solid var(--border); background: none; color: var(--text-muted);
+  display: inline-flex; align-items: center; gap: 7px;
+  min-height: 38px; padding: 0 12px; border-radius: 10px;
+  border: 1px solid var(--line-2); background: rgba(244, 241, 234, 0.03); color: var(--text-muted);
+  font-family: var(--font-sans); font-size: 0.84rem; font-weight: 500;
   cursor: pointer; white-space: nowrap;
   transition: color 140ms var(--ease), border-color 140ms var(--ease), background-color 140ms var(--ease);
 }
+.dm-voice svg { width: 15px; height: 15px; flex: none; }
 .dm-voice:hover { color: var(--text); border-color: rgba(244, 241, 234, 0.3); }
 .dm-voice:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.dm-voice[aria-pressed='true'] { color: var(--sage); border-color: rgba(147, 181, 160, 0.45); background: rgba(147, 181, 160, 0.08); }
+.dm-voice[aria-pressed='true'] { color: var(--sage); border-color: rgba(147, 181, 160, 0.4); background: rgba(147, 181, 160, 0.08); }
+.dm-voice[aria-pressed='false'] { color: rgba(244, 241, 234, 0.45); }
 
-.dm-left { margin-left: auto; font-family: var(--font-mono, monospace); font-size: 0.72rem; color: var(--text-muted); font-variant-numeric: tabular-nums; }
-
-/* The meter is the proof the mic is actually working, before a word lands. */
-.dm-meter { display: flex; gap: 3px; align-items: flex-end; height: 20px; margin-top: 16px; }
-.dm-meter span { flex: 1; border-radius: 1px; background: rgba(244, 241, 234, 0.12); transition: background-color 120ms linear; }
-.dm-meter span.on { background: var(--sage); }
-
-.dm-captions { margin-top: 24px; display: flex; flex-direction: column; gap: 18px; min-height: 180px; }
-.dm-cap { animation: dmIn 260ms var(--ease) both; }
+.dm-captions { display: flex; flex-direction: column; gap: 20px; min-height: 220px; padding-block: 22px 26px; }
+.dm-cap { animation: dmIn 260ms var(--ease) both; padding-left: 14px; border-left: 2px solid transparent; transition: border-color 300ms var(--ease); }
+.dm-cap:last-child { border-left-color: var(--gold); }
 .dm-cap-src { color: rgba(244, 241, 234, 0.5); font-size: 0.92rem; line-height: 1.55; }
-.dm-cap-out { color: var(--text); font-size: 1.12rem; line-height: 1.5; margin-top: 4px; }
+.dm-cap-out { color: var(--text); font-size: 1.18rem; line-height: 1.5; margin-top: 4px; letter-spacing: -0.005em; }
+.dm-cap:not(:last-child) .dm-cap-out { color: rgba(244, 241, 234, 0.78); }
 @keyframes dmIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
-@media (prefers-reduced-motion: reduce) { .dm-cap { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .dm-cap, .dm-dot, .dm-spin { animation: none; } }
 
-.dm-waiting { color: rgba(244, 241, 234, 0.35); font-size: 0.95rem; font-style: italic; }
+.dm-waiting { color: rgba(244, 241, 234, 0.4); font-size: 0.98rem; line-height: 1.6; max-width: 46ch; }
 
-/* ── Wall ────────────────────────────────────────────────────────────────── */
+/* ── Wall / QR ───────────────────────────────────────────────────────────── */
 .dm-wall {
-  margin-top: 26px; padding: 24px;
-  border: 1px solid rgba(200, 162, 94, 0.4);
-  background: rgba(200, 162, 94, 0.06);
-  border-radius: var(--radius);
+  margin-top: 20px; padding: clamp(20px, 3.5vw, 28px);
+  border: 1px solid rgba(200, 162, 94, 0.32);
+  background:
+    radial-gradient(120% 100% at 100% 0%, rgba(200, 162, 94, 0.1), transparent 60%),
+    rgba(200, 162, 94, 0.03);
+  border-radius: 20px;
 }
-.dm-wall h2 { font-size: 1.2rem; font-weight: 500; }
-.dm-wall p { color: var(--text-muted); font-size: 0.94rem; line-height: 1.6; margin-top: 8px; max-width: 46ch; }
+.dm-wall h2 { font-size: 1.22rem; font-weight: 600; letter-spacing: -0.01em; }
+.dm-wall p { color: var(--text-muted); font-size: 0.95rem; line-height: 1.6; margin-top: 8px; max-width: 46ch; }
+.dm-wall .dm-actions { margin-top: 18px; }
 
-.dm-qr { display: flex; gap: 18px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
-.dm-qr img { width: 132px; height: 132px; border-radius: 10px; background: #fff; padding: 8px; }
+.dm-qr { display: flex; gap: 22px; align-items: center; flex-wrap: wrap; margin-top: 18px; }
+.dm-qr img { width: 136px; height: 136px; border-radius: 14px; background: #fff; padding: 10px; box-shadow: 0 10px 30px -12px rgba(0, 0, 0, 0.6); }
 .dm-qr-copy { flex: 1 1 220px; min-width: 0; }
-.dm-qr-copy p { color: var(--text-muted); font-size: 0.9rem; line-height: 1.55; }
+.dm-qr-copy p { color: var(--text-muted); font-size: 0.93rem; line-height: 1.6; margin-top: 0; }
 
-.dm-note { color: rgba(244, 241, 234, 0.4); font-size: 0.82rem; margin-top: 14px; line-height: 1.55; }
+.dm-note { color: rgba(244, 241, 234, 0.48); font-size: 0.84rem; margin-top: 14px; line-height: 1.55; }
+.dm-note-icon { display: flex; gap: 8px; align-items: flex-start; }
+.dm-note-icon svg { width: 15px; height: 15px; flex: none; margin-top: 2px; }
 .dm-error { color: var(--alert); font-size: 0.9rem; margin-top: 14px; }
+
+.dm-closing {
+  margin: 40px 0 0;
+  font-size: clamp(20px, 3.4vw, 26px);
+  font-weight: 600; letter-spacing: -0.015em;
+  color: var(--cream); text-wrap: balance;
+}
 
 @media (max-width: 640px) {
   /* Stacked, and tighter than on desktop: three of them at full height
      pushed "Play a sample" below the fold on an iPhone SE. */
   .dm-langs { grid-template-columns: 1fr; gap: 8px; }
-  .dm-lang { min-height: 56px; padding: 10px 16px; gap: 2px; }
+  .dm-lang { min-height: 60px; padding: 11px 44px 11px 14px; gap: 3px; }
+  .dm-lang-check { top: 50%; transform: translateY(-50%); right: 14px; }
+  .dm-actions { grid-template-columns: 1fr; }
   .dm-btn { width: 100%; }
-  .dm-actions { flex-direction: column; }
+  .dm-bar .dm-btn { width: auto; }
+  .dm-tools { gap: 12px; }
+  .dm-meter { flex-basis: 100%; }
+  .dm-left { margin-left: 0; }
+  .dm-live-head .dm-left { margin-left: auto; }
 }
 
 /* A sign-in offer inside a sentence, not another button competing with the
@@ -268,37 +366,101 @@
   max-width: 62ch;
 }
 
-.dm-sub {
-  margin: 34px 0 0;
-  font-size: clamp(20px, 3.4vw, 26px);
-  font-weight: 500; letter-spacing: -0.015em;
-  color: var(--cream); text-wrap: balance;
-}
-
-/* Audio settings: folded away under the start buttons, for visitors with a
-   headset or USB mic plugged in. */
-.dm-audio { margin-top: 16px; }
+/* Audio settings: a folded row at the foot of the card, for visitors with a
+   headset or USB mic plugged in. The closed row says what is in use. */
 .dm-audio-toggle {
-  background: none; border: 0; padding: 8px 0; min-height: 40px;
-  color: var(--text-muted); font-family: var(--font-sans); font-size: 0.86rem;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  width: 100%; display: flex; align-items: center; gap: 10px;
+  min-height: 52px; padding: 10px clamp(16px, 3.5vw, 24px);
+  background: none; border: 0; text-align: left;
+  color: var(--text); font-family: var(--font-sans); font-size: 0.9rem;
+  cursor: pointer;
 }
-.dm-audio-toggle:hover { color: var(--text); }
-.dm-audio-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-audio-toggle:hover .dm-audio-title { color: var(--text); }
+.dm-audio-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.dm-audio-icon { width: 17px; height: 17px; color: var(--text-muted); flex: none; }
+.dm-audio-title { font-weight: 600; color: rgba(244, 241, 234, 0.85); flex: none; }
+.dm-audio-sum {
+  flex: 1; min-width: 0; color: var(--text-muted); font-size: 0.84rem;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right;
+}
+.dm-audio-caret { width: 14px; height: 14px; color: var(--text-muted); flex: none; transition: transform 200ms var(--ease); }
+.dm-audio.open .dm-audio-caret { transform: rotate(180deg); }
 .dm-audio-panel {
-  display: grid; gap: 12px; margin-top: 6px; padding: 14px 16px; max-width: 460px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: rgba(244, 241, 234, 0.02);
+  display: grid; gap: 14px;
+  padding: 4px clamp(16px, 3.5vw, 24px) 20px;
+  animation: dmIn 220ms var(--ease) both;
 }
-.dm-audio-row { display: grid; gap: 6px; font-size: 0.82rem; color: var(--text-muted); }
-.dm-audio-row select {
-  width: 100%; min-width: 0; min-height: 44px; padding: 10px 12px;
-  border: 1px solid var(--border); border-radius: var(--radius-sm);
-  background: var(--bg, #141418); color: var(--text);
-  font-family: var(--font-sans); font-size: 0.92rem;
-  text-overflow: ellipsis;
+.dm-audio-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.dm-audio-row { display: grid; gap: 7px; align-content: start; min-width: 0; }
+.dm-audio-label { font-size: 0.78rem; font-weight: 600; color: var(--text-muted); letter-spacing: 0.01em; }
+.dm-select { position: relative; display: block; min-width: 0; }
+.dm-select > svg:first-child { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; color: var(--text-muted); pointer-events: none; }
+.dm-select-caret { position: absolute; right: 13px; top: 50%; transform: translateY(-50%); width: 12px; height: 12px; color: var(--text-muted); pointer-events: none; }
+.dm-select select {
+  appearance: none; -webkit-appearance: none;
+  width: 100%; min-width: 0; min-height: 46px; padding: 10px 34px 10px 38px;
+  border: 1px solid var(--line-2); border-radius: 11px;
+  background: rgba(19, 19, 24, 0.9); color: var(--text);
+  font-family: var(--font-sans); font-size: 16px; /* 16px stops iOS zooming in */
+  text-overflow: ellipsis; cursor: pointer;
+  transition: border-color 160ms var(--ease), box-shadow 160ms var(--ease);
 }
-.dm-audio-row select:disabled { opacity: 0.55; }
-.dm-audio-row select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-select select:hover:not(:disabled) { border-color: rgba(244, 241, 234, 0.3); }
+.dm-select select:focus-visible { outline: none; border-color: var(--gold); box-shadow: 0 0 0 3px rgba(200, 162, 94, 0.18); }
+.dm-select select:disabled { opacity: 0.5; cursor: not-allowed; }
 .dm-audio-note { color: rgba(244, 241, 234, 0.45); font-size: 0.8rem; line-height: 1.5; }
-.dm-audio-panel .dm-link { justify-self: start; font-size: 0.86rem; }
+.dm-audio-ask {
+  justify-self: start; min-height: 40px; padding: 0 14px; border-radius: 10px;
+  border: 1px dashed var(--line-2); background: none; color: var(--gold);
+  font-family: var(--font-sans); font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease);
+}
+.dm-audio-ask:hover:not(:disabled) { border-color: var(--gold); border-style: solid; background: rgba(200, 162, 94, 0.06); }
+.dm-audio-ask:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-audio-tip {
+  display: flex; gap: 10px; align-items: flex-start;
+  padding: 11px 13px; border-radius: 11px;
+  background: rgba(244, 241, 234, 0.035);
+  color: var(--text-muted); font-size: 0.82rem; line-height: 1.5;
+}
+.dm-audio-tip svg { width: 18px; height: 18px; flex: none; color: var(--gold); margin-top: 1px; }
+@media (max-width: 640px) {
+  .dm-audio-fields { grid-template-columns: 1fr; }
+  .dm-audio-sum { display: none; }
+  .dm-audio-ask { justify-self: stretch; min-height: 44px; }
+}
+.dm-audio-sep { margin: 0 8px; opacity: 0.6; }
+/* Shown when the browser blocks the sample's autoplay: inside the card, above
+   the captions, where the visitor is already looking. */
+.dm-tap {
+  display: flex; align-items: center; gap: 10px; width: calc(100% - 2 * clamp(16px, 3.5vw, 24px));
+  margin: 14px clamp(16px, 3.5vw, 24px) 0; min-height: 48px; padding: 10px 14px;
+  border: 1px solid rgba(200, 162, 94, 0.4); border-radius: 12px;
+  background: rgba(200, 162, 94, 0.08); color: var(--text);
+  font-family: var(--font-sans); font-size: 0.9rem; text-align: left; cursor: pointer;
+  transition: background-color 160ms var(--ease);
+}
+.dm-tap:hover { background: rgba(200, 162, 94, 0.14); }
+.dm-tap:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dm-tap svg { width: 18px; height: 18px; color: var(--gold); flex: none; }
+.dm-tap strong { color: var(--gold); font-weight: 600; }
+/* Narrow phones: status and timer share the header row, and the three audio
+   toggles share one row of equal buttons. */
+@media (max-width: 420px) {
+  .dm-dir { display: none; }
+  .dm-toggles { width: 100%; flex-wrap: nowrap; }
+  .dm-voice { flex: 1 1 0; justify-content: center; padding: 0 8px; min-width: 0; }
+  .dm-hide-sm { display: none; }
+  .dm-qr { justify-content: center; }
+}
+/* Says up front where the demo works best: speaking into a computer while the
+   phone is the listener. */
+.dm-desktop {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin-top: 18px; padding: 11px 14px; max-width: 54ch;
+  border: 1px solid var(--line); border-radius: 12px;
+  background: rgba(244, 241, 234, 0.03);
+  color: var(--text-muted); font-size: 0.88rem; line-height: 1.5;
+}
+.dm-desktop svg { width: 19px; height: 19px; flex: none; color: var(--gold); margin-top: 1px; }
+.dm-desktop strong { color: var(--text); font-weight: 600; }

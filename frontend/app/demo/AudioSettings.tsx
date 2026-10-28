@@ -14,6 +14,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { CaretDown, Headphones, Microphone, SlidersHorizontal, SpeakerHigh } from '@phosphor-icons/react';
 
 interface Props {
   micId: string;
@@ -69,59 +70,83 @@ export default function AudioSettings({ micId, outId, onMic, onOut, micLocked }:
   };
 
   const label = (d: MediaDeviceInfo, i: number, kind: string) => d.label || `${kind} ${i + 1}`;
+  // Shown on the closed row, so a visitor can see what is in use without opening it.
+  const current = (list: MediaDeviceInfo[], id: string, kind: string, fallback: string) => {
+    const i = list.findIndex((d) => d.deviceId === id);
+    return i >= 0 ? label(list[i], i, kind) : fallback;
+  };
 
   return (
-    <div className="dm-audio">
+    <div className={`dm-audio${open ? ' open' : ''}`}>
       <button
         type="button"
         className="dm-audio-toggle"
         aria-expanded={open}
         onClick={() => setOpen((o) => !o)}
       >
-        <span aria-hidden>{open ? '▾' : '▸'}</span> Audio settings
+        <SlidersHorizontal weight="bold" aria-hidden className="dm-audio-icon" />
+        <span className="dm-audio-title">Audio settings</span>
+        <span className="dm-audio-sum">
+          {current(inputs, micId, 'Microphone', 'Default mic')}
+          {sinkSupported && <><span className="dm-audio-sep" aria-hidden>·</span>{current(outputs, outId, 'Output', 'Default speakers')}</>}
+        </span>
+        <CaretDown weight="bold" aria-hidden className="dm-audio-caret" />
       </button>
 
       {open && (
         <div className="dm-audio-panel">
-          <label className="dm-audio-row">
-            <span>Microphone</span>
-            <select value={micId} onChange={(e) => onMic(e.target.value)} disabled={micLocked}>
-              <option value="">System default</option>
-              {inputs.map((d, i) => (
-                <option key={d.deviceId} value={d.deviceId}>{label(d, i, 'Microphone')}</option>
-              ))}
-            </select>
-          </label>
-          {micLocked && <p className="dm-audio-note">Start over to switch microphones.</p>}
-
-          {sinkSupported ? (
+          <div className="dm-audio-fields">
             <label className="dm-audio-row">
-              <span>Speakers or headphones</span>
-              <select value={outId} onChange={(e) => onOut(e.target.value)}>
-                <option value="">System default</option>
-                {outputs.map((d, i) => (
-                  <option key={d.deviceId} value={d.deviceId}>{label(d, i, 'Output')}</option>
-                ))}
-              </select>
+              <span className="dm-audio-label">Microphone</span>
+              <span className="dm-select">
+                <Microphone weight="bold" aria-hidden />
+                <select value={micId} onChange={(e) => onMic(e.target.value)} disabled={micLocked}>
+                  <option value="">System default</option>
+                  {inputs.map((d, i) => (
+                    <option key={d.deviceId} value={d.deviceId}>{label(d, i, 'Microphone')}</option>
+                  ))}
+                </select>
+                <CaretDown weight="bold" aria-hidden className="dm-select-caret" />
+              </span>
+              {micLocked && <span className="dm-audio-note">Start over to switch microphones.</span>}
             </label>
-          ) : (
-            <p className="dm-audio-note">
-              This browser plays through your device&apos;s current output. Plug in or connect
-              headphones before you start.
-            </p>
-          )}
+
+            {sinkSupported ? (
+              <label className="dm-audio-row">
+                <span className="dm-audio-label">Speakers or headphones</span>
+                <span className="dm-select">
+                  <SpeakerHigh weight="bold" aria-hidden />
+                  <select value={outId} onChange={(e) => onOut(e.target.value)}>
+                    <option value="">System default</option>
+                    {outputs.map((d, i) => (
+                      <option key={d.deviceId} value={d.deviceId}>{label(d, i, 'Output')}</option>
+                    ))}
+                  </select>
+                  <CaretDown weight="bold" aria-hidden className="dm-select-caret" />
+                </span>
+              </label>
+            ) : (
+              <p className="dm-audio-note dm-audio-row">
+                This browser plays through your device&apos;s current output. Plug in or connect
+                headphones before you start.
+              </p>
+            )}
+          </div>
 
           {/* Until the microphone is allowed, browsers list no devices at all,
               only the default. One tap asks, then fills both lists. */}
           {!named && (
-            <button type="button" className="dm-link" onClick={showNames} disabled={asking}>
+            <button type="button" className="dm-audio-ask" onClick={showNames} disabled={asking}>
               {asking ? 'Asking…' : 'List my microphones and headphones'}
             </button>
           )}
 
-          <p className="dm-audio-note">
-            Using laptop speakers? Headphones keep the translated voice from being picked up by
-            your microphone.
+          <p className="dm-audio-tip">
+            <Headphones weight="duotone" aria-hidden />
+            <span>
+              Using laptop speakers? Headphones keep the translated voice from being picked up by
+              your microphone.
+            </span>
           </p>
         </div>
       )}

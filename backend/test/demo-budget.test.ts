@@ -175,3 +175,21 @@ test('the sign-in wall', async (t) => {
     }
   });
 });
+
+test('an anonymous visitor hears the natural voice for the whole demo by default', async () => {
+  const { demoConfig, anonCharCap } = await import('../src/demo/config');
+  const saved = { tts: process.env.DEMO_ANON_TTS_SECONDS, len: process.env.DEMO_ANON_SECONDS };
+  try {
+    delete process.env.DEMO_ANON_TTS_SECONDS;
+    delete process.env.DEMO_ANON_SECONDS;
+    assert.ok(demoConfig.anonTtsSeconds() >= demoConfig.anonSeconds(), 'voice allowance covers the demo');
+    assert.equal(anonCharCap(), Math.round(demoConfig.anonTtsSeconds() * demoConfig.charsPerSecond()));
+    process.env.DEMO_ANON_SECONDS = '240';
+    assert.ok(demoConfig.anonTtsSeconds() >= 240, 'follows a longer demo');
+    process.env.DEMO_ANON_TTS_SECONDS = '60';
+    assert.equal(demoConfig.anonTtsSeconds(), 60, 'an explicit setting still wins');
+  } finally {
+    if (saved.tts === undefined) delete process.env.DEMO_ANON_TTS_SECONDS; else process.env.DEMO_ANON_TTS_SECONDS = saved.tts;
+    if (saved.len === undefined) delete process.env.DEMO_ANON_SECONDS; else process.env.DEMO_ANON_SECONDS = saved.len;
+  }
+});

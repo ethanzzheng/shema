@@ -20,6 +20,7 @@ import { SignInButton, SignedIn, SignedOut, useAuth } from '@clerk/nextjs';
 import DeskPreview from './DeskPreview';
 import AudioSettings from './AudioSettings';
 import ShemaMark from '@/components/ShemaMark';
+import { ArrowRight, ArrowCounterClockwise, Check, Desktop, Info, Microphone, Pause, Play, SpeakerHigh, SpeakerSlash, Timer } from '@phosphor-icons/react';
 import { WsClient, type ServerMessage } from '@/lib/ws-client';
 import { AudioCapture } from '@/lib/audio-capture';
 import { AudioStreamPlayer } from '@/lib/audio-stream';
@@ -33,7 +34,6 @@ import {
   type DemoSession,
 } from '@/lib/demo';
 import { getBackendWsUrl } from '@/lib/backend-config';
-import { PreviewVoice, previewVoiceSupported } from '@/lib/preview-voice';
 import './demo.css';
 
 type Stage = 'pick' | 'live' | 'wall' | 'full' | 'done';
@@ -54,7 +54,20 @@ const SAMPLES = {
   zh: { url: '/demo/sample-sermon-zh.mp3', direction: 'zh-en', label: '中文', name: 'Mandarin' },
 } as const;
 
+/** "3 minutes", "90 seconds", "1 minute": whole minutes when it divides evenly. */
+function formatLength(seconds: number): string {
+  if (seconds >= 60 && seconds % 60 === 0) return `${seconds / 60} minute${seconds === 60 ? '' : 's'}`;
+  return `${seconds} seconds`;
+}
+
 const sampleFor = (d: Direction) => (d === 'zh-en' ? SAMPLES.zh : SAMPLES.ko);
+
+/** The direction cards on the first screen, and the labels the live screen uses. */
+const DIRECTIONS: { id: Direction; from: string; to: string; fromLang: string; toLang: string; sub: string; voice: string }[] = [
+  { id: 'ko-en', from: '한국어', to: 'English', fromLang: 'ko', toLang: 'en', sub: 'Korean preaching, English in the pews', voice: 'English' },
+  { id: 'zh-en', from: '中文', to: 'English', fromLang: 'zh', toLang: 'en', sub: 'Mandarin preaching, English in the pews', voice: 'English' },
+  { id: 'en-ko', from: 'English', to: '한국어', fromLang: 'en', toLang: 'ko', sub: 'English preaching, Korean in the pews', voice: 'Korean' },
+];
 
 /**
  * Signing in can navigate away from the page entirely — a Google round trip,
@@ -157,12 +170,14 @@ function Demo({ auth }: { auth: DemoAuth }) {
   const [cfg, setCfg] = useState<DemoConfig | null>(null);
   const [session, setSession] = useState<DemoSession | null>(null);
   const [stage, setStage] = useState<Stage>('pick');
+  /** For callbacks that must not end a demo that has already moved on. */
+  const stageRef = useRef<Stage>('pick');
+  stageRef.current = stage;
   const [direction, setDirection] = useState<Direction>('ko-en');
   const [captions, setCaptions] = useState<Caption[]>([]);
   const [error, setError] = useState('');
   const [level, setLevel] = useState(0);
   const [secondsLeft, setSecondsLeft] = useState<number | null>(null);
-  const [ttsAllowed, setTtsAllowed] = useState(false);
   const [ttsNote, setTtsNote] = useState('');
   const [qr, setQr] = useState('');
   const [listenUrl, setListenUrl] = useState('');
@@ -174,6 +189,8 @@ function Demo({ auth }: { auth: DemoAuth }) {
   /** Browser voice for the anonymous stage. Free, and audibly not ElevenLabs. */
   const [voiceOn, setVoiceOn] = useState(true);
   const [samplePaused, setSamplePaused] = useState(false);
+  /** Time ran out with no wall: capture has stopped and this is the closing screen. */
+  const [finished, setFinished] = useState(false);
   /** The source clip. Muting it leaves only the translation, which is how a
    *  congregant with an earbud actually experiences a service. */
   const [sourceOn, setSourceOn] = useState(true);
@@ -189,7 +206,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
   const levelRef = useRef(0);
   const sampleStopRef = useRef<(() => void) | null>(null);
   const sampleAudioRef = useRef<HTMLAudioElement | null>(null);
-  const previewVoiceRef = useRef<PreviewVoice | null>(null);
   /** Read by the sample pump, which must stop sending audio when paused. */
   const samplePausedRef = useRef(false);
   /** Milliseconds spent paused, excluded from the free-preview countdown. */
@@ -243,7 +259,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
     setSourceOn(true);
     samplePausedRef.current = false;
     pausedMsRef.current = 0;
-    previewVoiceRef.current?.stop();
     captureRef.current?.stop();
     captureRef.current = null;
     wsRef.current?.disconnect();
@@ -259,6 +274,23 @@ function Demo({ auth }: { auth: DemoAuth }) {
     forgetDemo();
     teardown();
   }, [teardown]);
+
+  /** Back to the first screen with nothing carried over from the last session. */
+  const startOver = useCallback(() => {
+    endDemo();
+    setStage('pick');
+    setCaptions([]);
+    setSession(null);
+    roomRef.current = null;
+    setNeedsAudioTap(false);
+    setFinished(false);
+    setSecondsLeft(null);
+    setError('');
+    setQr('');
+    setListenUrl('');
+    setTtsNote('');
+    levelRef.current = 0;
+  }, [endDemo]);
 
   useEffect(() => teardown, [teardown]);
 
@@ -277,11 +309,10 @@ function Demo({ auth }: { auth: DemoAuth }) {
    * heard, and the visitor would return to captions for audio that never
    * played.
    */
-  /** The translated audio: the real voice, and the browser fallback after it. */
+  /** The translated voice. */
   const toggleTranslationAudio = useCallback(() => {
     const next = !voiceOn;
     setVoiceOn(next);
-    previewVoiceRef.current?.setEnabled(next);
     playerRef.current?.setVolume(next ? 1 : 0);
   }, [voiceOn]);
 
@@ -299,7 +330,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
     if (next) {
       pausedAtRef.current = Date.now();
       sampleAudioRef.current?.pause();
-      previewVoiceRef.current?.stop();
     } else {
       pausedMsRef.current += Date.now() - pausedAtRef.current;
       if (sampleAudioRef.current) sampleAudioRef.current.muted = !sourceOn;
@@ -317,6 +347,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
     // account the visitor was never told they would need.
     const gated = cfgRef.current?.requireSignIn ?? false;
     setStage(gated ? 'wall' : 'full');
+    setFinished(!gated);
     reportDemoEvent(gated ? 'wall_hit' : 'demo_finished', { room: roomRef.current });
   }, []);
 
@@ -330,11 +361,14 @@ function Demo({ auth }: { auth: DemoAuth }) {
       const left = Math.max(0, Math.ceil(cfg.anonSeconds - elapsed));
       setSecondsLeft(left);
       // The countdown owns the wall. A separate timeout would fire while the
-      // demo sat paused, ending a preview the visitor had stopped.
-      if (left <= 0 && !ttsAllowed) hitWall();
+      // demo sat paused, ending a preview the visitor had stopped. It ends the
+      // demo whether or not the voice is still allowed: it used to wait for the
+      // voice to stop first, so a quiet visitor who never used up the voice
+      // sat at "0:00 left" with the microphone still streaming.
+      if (left <= 0) hitWall();
     }, 250);
     return () => clearInterval(t);
-  }, [stage, cfg, ttsAllowed, hitWall]);
+  }, [stage, cfg, hitWall]);
 
   const handleMessage = useCallback(
     (raw: ServerMessage) => {
@@ -345,26 +379,25 @@ function Demo({ auth }: { auth: DemoAuth }) {
           source: String(msg.korean ?? msg.source ?? ''),
           output: String(msg.sermon ?? ''),
         };
-        // Say it out loud. Once ElevenLabs is unlocked the real voice arrives
-        // over the listener socket, so the browser voice stands down rather
-        // than talking over it.
-        if (!ttsAllowed) previewVoiceRef.current?.speak(caption.output);
+        // The voice arrives separately, over the listener socket, while the
+        // server allows it. Past that the demo goes on as captions only: a
+        // robotic browser voice undersold the product at the moment that
+        // mattered, so there is no fallback voice.
 
         setCaptions((prev) => {
           if (prev.length === 0) reportDemoEvent('first_caption', { room: roomRef.current });
           const next = [...prev, caption];
           // Anonymous runs end on segments or seconds, whichever lands first.
-          if (cfg && next.length >= cfg.anonSegments && !ttsAllowed) setTimeout(hitWall, 400);
+          if (cfg && next.length >= cfg.anonSegments && stageRef.current === 'live') setTimeout(hitWall, 400);
           return next.slice(-40);
         });
       } else if (msg.type === 'demo_tts_stopped') {
-        setTtsAllowed(false);
         setTtsNote(String(msg.message ?? 'Voice preview finished.'));
       } else if (msg.type === 'error') {
         setError(String(msg.message ?? 'Something went wrong.'));
       }
     },
-    [cfg, ttsAllowed, hitWall],
+    [cfg, hitWall],
   );
 
   /**
@@ -412,13 +445,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
       });
       wsRef.current = ws;
 
-      // Prepared inside the click that started the demo: iOS will not let
-      // speech begin outside a user gesture.
-      const voice = new PreviewVoice();
-      voice.setEnabled(voiceOn);
-      void voice.prepare(dir === 'en-ko' ? 'ko' : 'en');
-      previewVoiceRef.current = voice;
-
       ws.connect();
       await new Promise<void>((resolve) => {
         const started = Date.now();
@@ -439,7 +465,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
       }
       // The real voice starts immediately; the server decides when it stops.
       openListener(room);
-      setTtsAllowed(true);
     },
     [handleMessage, voiceOn, openListener, isSignedIn],
   );
@@ -598,8 +623,6 @@ function Demo({ auth }: { auth: DemoAuth }) {
       const token = await getToken();
       if (!token) throw new Error('Sign-in did not complete.');
       const up = await upgradeDemoSession(session.room, token);
-      setTtsAllowed(up.ttsAllowed);
-      if (up.ttsAllowed) previewVoiceRef.current?.stop();
       openListener(session.room);
       if (!up.ttsAllowed) setTtsNote("This account's voice preview is already used up.");
 
@@ -672,7 +695,8 @@ function Demo({ auth }: { auth: DemoAuth }) {
     if (isSignedIn && stage === 'wall') void unlock();
   }, [isSignedIn, stage, unlock]);
 
-  const lit = Math.round(Math.min(1, level * 6) * 14);
+  const lit = Math.round(Math.min(1, level * 6) * 24);
+  const dirMeta = DIRECTIONS.find((d) => d.id === direction) ?? DIRECTIONS[0];
 
   return (
     <div className="dm-root">
@@ -684,11 +708,10 @@ function Demo({ auth }: { auth: DemoAuth }) {
         <span className="dm-bar-end">
           {stage !== 'pick' && (
             <button
-              className="dm-btn"
-              style={{ minHeight: 38, padding: '8px 14px', fontSize: '0.84rem' }}
-              onClick={() => { teardown(); setStage('pick'); setCaptions([]); setSession(null); roomRef.current = null; }}
+              className="dm-btn dm-btn-sm"
+              onClick={startOver}
             >
-              Start over
+              <ArrowCounterClockwise weight="bold" aria-hidden /> Start over
             </button>
           )}
         </span>
@@ -697,43 +720,57 @@ function Demo({ auth }: { auth: DemoAuth }) {
       <main className="dm-main">
         {stage === 'pick' && (
           <>
-            <h1 className="dm-lede">Hear your own words translated, live.</h1>
-            <p className="dm-sub">
-              Speak for a few seconds and watch the translation appear as it would for someone
-              sitting in your congregation. No account, no install.
-            </p>
+            <div className="dm-hero">
+              <span className="dm-kicker"><span className="dm-dot" aria-hidden /> Live demo</span>
+              <h1 className="dm-lede">Hear your own words translated, live.</h1>
+              <p className="dm-intro">
+                Speak for a few seconds and watch the translation appear as it would for someone
+                sitting in your congregation. No account, no install.
+              </p>
+              <p className="dm-desktop">
+                <Desktop weight="duotone" aria-hidden />
+                <span>
+                  <strong>Best on a desktop or laptop.</strong> Speak into your computer, then scan
+                  the QR code with your phone to hear it the way your congregation would.
+                </span>
+              </p>
+            </div>
 
-            <div className="dm-step">
-              <div className="dm-langs">
-                <button className="dm-lang" onClick={() => setDirection('ko-en')} aria-pressed={direction === 'ko-en'}>
-                  <span>한국어 to English</span>
-                  <span className="dm-lang-sub">Korean preaching, English in the pews</span>
-                </button>
-                <button className="dm-lang" onClick={() => setDirection('zh-en')} aria-pressed={direction === 'zh-en'}>
-                  <span>中文 to English</span>
-                  <span className="dm-lang-sub">Mandarin preaching, English in the pews</span>
-                </button>
-                <button className="dm-lang" onClick={() => setDirection('en-ko')} aria-pressed={direction === 'en-ko'}>
-                  <span>English to 한국어</span>
-                  <span className="dm-lang-sub">English preaching, Korean in the pews</span>
-                </button>
+            <div className="dm-card">
+              <div className="dm-card-sec">
+                <div className="dm-step-head"><span className="dm-num">1</span> Choose a direction</div>
+                <div className="dm-langs">
+                  {DIRECTIONS.map((d) => (
+                    <button key={d.id} className="dm-lang" onClick={() => setDirection(d.id)} aria-pressed={direction === d.id}>
+                      <span className="dm-lang-pair">
+                        <span lang={d.fromLang}>{d.from}</span>
+                        <ArrowRight weight="bold" aria-hidden />
+                        <span lang={d.toLang}>{d.to}</span>
+                      </span>
+                      <span className="dm-lang-sub">{d.sub}</span>
+                      <span className="dm-lang-check" aria-hidden><Check weight="bold" /></span>
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="dm-actions">
-                <button className="dm-btn dm-btn-primary" onClick={startWithMic} disabled={busy}>
-                  {busy ? 'Starting…' : 'Use my microphone'}
-                </button>
-                <button className="dm-btn" onClick={startWithSample} disabled={busy}>
-                  No mic? Play a sample
-                </button>
-              </div>
-
+              <div className="dm-card-sec">
+                <div className="dm-step-head"><span className="dm-num">2</span> Start the demo</div>
+                <div className="dm-actions">
+                  <button className="dm-btn dm-btn-primary" onClick={startWithMic} disabled={busy}>
+                    {busy ? <><span className="dm-spin" aria-hidden /> Starting…</> : <><Microphone weight="fill" aria-hidden /> Use my microphone</>}
+                  </button>
+                  <button className="dm-btn" onClick={startWithSample} disabled={busy}>
+                    <Play weight="fill" aria-hidden /> No mic? Play a sample
+                  </button>
+                </div>
 
               {/* With no wall, say what the visitor gets rather than what
                   they must do to get it. */}
               {cfg && !cfg.requireSignIn && (
-                <p className="dm-note">
-                  Runs for {Math.round((cfg.anonSeconds ?? 180) / 60)} minutes with the real voice,
+                <p className="dm-note dm-note-icon">
+                  <Info weight="bold" aria-hidden />
+                  Runs for {formatLength(cfg.anonSeconds ?? 180)} with the real voice,
                   and gives you a QR code to hear it on your own phone. No account, no install.
                 </p>
               )}
@@ -760,21 +797,24 @@ function Demo({ auth }: { auth: DemoAuth }) {
               </>
               )}
 
-              <AudioSettings micId={micId} outId={outId} onMic={chooseMic} onOut={chooseOut} micLocked={false} />
+              </div>
+
+              <div className="dm-card-foot">
+                <AudioSettings micId={micId} outId={outId} onMic={chooseMic} onOut={chooseOut} micLocked={false} />
+              </div>
             </div>
           </>
         )}
 
         {(stage === 'live' || stage === 'full') && (
           <>
+            <div className="dm-card dm-session">
             <div className="dm-live-head">
-              <span className="dm-listening" style={samplePaused ? { color: 'var(--text-muted)' } : undefined}>
-                <span
-                  className="dm-dot"
-                  aria-hidden
-                  style={samplePaused ? { background: 'rgba(244,241,234,0.3)' } : undefined}
-                />
-                {stage === 'full'
+              <span className={`dm-listening${samplePaused || finished ? ' paused' : ''}`}>
+                <span className="dm-dot" aria-hidden />
+                {finished
+                  ? 'Demo finished'
+                  : stage === 'full'
                   ? 'Live with voice'
                   : usingSample
                     ? samplePaused
@@ -782,49 +822,55 @@ function Demo({ auth }: { auth: DemoAuth }) {
                       : 'Playing sample'
                     : 'Listening'}
               </span>
-              {usingSample && stage === 'live' && (
-                <button className="dm-voice" onClick={toggleSamplePause}>
-                  {samplePaused ? 'Resume' : 'Pause'}
-                </button>
-              )}
-              {usingSample && stage === 'live' && (
-                <button className="dm-voice" aria-pressed={sourceOn} onClick={toggleSourceAudio}>
-                  {sampleFor(direction).label} {sourceOn ? 'on' : 'off'}
-                </button>
-              )}
-              {(stage === 'live' || stage === 'full') && (
-                <button className="dm-voice" aria-pressed={voiceOn} onClick={toggleTranslationAudio}>
-                  English {voiceOn ? 'on' : 'off'}
-                </button>
-              )}
+              <span className="dm-dir">{dirMeta.from} <ArrowRight weight="bold" aria-hidden /> {dirMeta.to}</span>
               {stage === 'live' && secondsLeft !== null && (
-                <span className="dm-left">
-                  {secondsLeft}s left {cfg?.requireSignIn ? 'in the free preview' : 'in this demo'}
+                <span className="dm-left" title={cfg?.requireSignIn ? 'Left in the free preview' : 'Left in this demo'}>
+                  <Timer weight="bold" aria-hidden />
+                  {Math.floor(secondsLeft / 60)}:{String(secondsLeft % 60).padStart(2, '0')} left
                 </span>
               )}
             </div>
 
-            <div className="dm-meter" aria-hidden>
-              {Array.from({ length: 14 }, (_, i) => (
-                <span key={i} className={i < lit ? 'on' : ''} style={{ height: `${40 + (i % 4) * 18}%` }} />
-              ))}
+            <div className="dm-tools">
+              <div className="dm-meter" aria-hidden>
+                {Array.from({ length: 24 }, (_, i) => (
+                  <span key={i} className={i < lit ? 'on' : ''} style={{ height: `${30 + Math.abs(Math.sin(i * 1.3)) * 70}%` }} />
+                ))}
+              </div>
+              <div className="dm-toggles">
+                {usingSample && stage === 'live' && (
+                  <button className="dm-voice" onClick={toggleSamplePause}>
+                    {samplePaused ? <Play weight="fill" aria-hidden /> : <Pause weight="fill" aria-hidden />}
+                    {samplePaused ? 'Resume' : 'Pause'}
+                  </button>
+                )}
+                {usingSample && stage === 'live' && (
+                  <button className="dm-voice" aria-pressed={sourceOn} onClick={toggleSourceAudio}>
+                    {sourceOn ? <SpeakerHigh weight="bold" aria-hidden /> : <SpeakerSlash weight="bold" aria-hidden />}
+                    {sampleFor(direction).label}
+                  </button>
+                )}
+                <button className="dm-voice" aria-pressed={voiceOn} onClick={toggleTranslationAudio}>
+                  {voiceOn ? <SpeakerHigh weight="bold" aria-hidden /> : <SpeakerSlash weight="bold" aria-hidden />}
+                  {dirMeta.voice}<span className="dm-hide-sm">&nbsp;voice</span>
+                </button>
+              </div>
             </div>
 
-            <AudioSettings
-              micId={micId}
-              outId={outId}
-              onMic={chooseMic}
-              onOut={chooseOut}
-              micLocked={!usingSample}
-            />
+            {needsAudioTap && (
+              <button
+                className="dm-tap"
+                onClick={() => {
+                  void sampleAudioRef.current?.play();
+                  setNeedsAudioTap(false);
+                }}
+              >
+                <SpeakerHigh weight="fill" aria-hidden />
+                <span>Your browser paused the sermon audio. <strong>Tap to hear it.</strong></span>
+              </button>
+            )}
 
             <div className="dm-captions" aria-live="polite">
-              {captions.length > 0 && stage === 'live' && !ttsAllowed && voiceOn && previewVoiceSupported() && (
-                <p className="dm-note" style={{ marginTop: 0 }}>
-                  The natural voice ran out, so your browser is reading the rest. Sign in to get it
-                  back.
-                </p>
-              )}
               {captions.length === 0 && (
                 <p className="dm-waiting">
                   {usingSample
@@ -840,25 +886,25 @@ function Demo({ auth }: { auth: DemoAuth }) {
               ))}
             </div>
 
-            {needsAudioTap && (
-              <button
-                className="dm-btn"
-                style={{ marginTop: 14 }}
-                onClick={() => {
-                  void sampleAudioRef.current?.play();
-                  setNeedsAudioTap(false);
-                }}
-              >
-                Tap to hear the sermon audio
-              </button>
-            )}
+            <div className="dm-card-foot">
+              <AudioSettings
+                micId={micId}
+                outId={outId}
+                onMic={chooseMic}
+                onOut={chooseOut}
+                micLocked={!usingSample}
+              />
+            </div>
+            </div>
+
 
             {ttsNote && <p className="dm-note">{ttsNote}</p>}
 
             {(stage === 'full' || stage === 'live') && qr && (
-              <div className="dm-wall">
+              <div className="dm-wall dm-wall-qr">
                 <h2>Now hear it the way your congregation would</h2>
                 <div className="dm-qr">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={qr} alt={`QR code to open the listener view at ${listenUrl}`} />
                   <div className="dm-qr-copy">
                     <p>
@@ -870,10 +916,10 @@ function Demo({ auth }: { auth: DemoAuth }) {
                       href={listenUrl}
                       target="_blank"
                       rel="noreferrer"
-                      style={{ display: 'inline-block', marginTop: 12, textDecoration: 'none' }}
+                      style={{ marginTop: 14, textDecoration: 'none' }}
                       onClick={() => reportDemoEvent('listener_opened', { room: session?.room })}
                     >
-                      Open the listener view
+                      Open the listener view <ArrowRight weight="bold" aria-hidden />
                     </a>
                   </div>
                 </div>
@@ -884,7 +930,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
                 operator's, so show that before asking for the meeting. */}
             {stage === 'full' && (
               <>
-                <h2 className="dm-sub">And this is the other side of it.</h2>
+                <h2 className="dm-closing">And this is the other side of it.</h2>
                 <DeskPreview />
               </>
             )}
@@ -893,7 +939,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
               <div className="dm-actions">
                 <Link
                   className="dm-btn dm-btn-primary"
-                  href="/#contact"
+                  href="/#demo"
                   style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                   onClick={() => reportDemoEvent('cta_clicked', { room: session?.room })}
                 >
@@ -924,7 +970,7 @@ function Demo({ auth }: { auth: DemoAuth }) {
               </SignedIn>
               <Link
                 className="dm-btn"
-                href="/#contact"
+                href="/#demo"
                 style={{ textDecoration: 'none', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                 onClick={() => reportDemoEvent('cta_clicked', { room: session?.room })}
               >
