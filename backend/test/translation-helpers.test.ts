@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   sanitizeForSpeech,
   looksLikeMetaCommentary,
+  isTranslatorNote,
   stripMetaPreamble,
   extractJsonObject,
   salvageTranslation,
@@ -63,6 +64,31 @@ test('looksLikeMetaCommentary: catches translator-voice analysis and refusals', 
   assert.equal(looksLikeMetaCommentary('As an interpreter, I would render this as...'), true);
   assert.equal(looksLikeMetaCommentary("I'm unable to translate this fragment"), true);
   assert.equal(looksLikeMetaCommentary('I am unable to provide a translation'), true);
+});
+
+test('isTranslatorNote: the notes Korean services heard are dropped', () => {
+  // Every one of these was spoken to hanmaum's congregation (Oct 11 - Nov 1).
+  for (const t of [
+    '(no meaningful content to translate)',
+    '(No meaningful content to translate.)',
+    '(no translatable content)',
+    '(This is left empty, as "여기서 관리." carries no clear meaning on its own.)',
+    '[nothing meaningful to translate]',
+    'Nothing to translate.',
+  ]) assert.equal(isTranslatorNote(t), true, t);
+});
+
+test('isTranslatorNote: real lines with brackets are kept', () => {
+  // All from the same services' transcripts.
+  for (const t of [
+    '(laughs) Persimmons?',
+    "(It's) finished.",
+    '[He] embraced them.',
+    "(Also, there's a Thanksgiving event coming up.)",
+    'Only when we understand that, does the story become meaningful to us.',
+    'The NIV translates this as "night creature."',
+    'Nothing is impossible for God.',
+  ]) assert.equal(isTranslatorNote(t), false, t);
 });
 
 test('looksLikeMetaCommentary: normal translations pass through', () => {

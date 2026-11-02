@@ -302,6 +302,24 @@ export function stripMetaPreamble(text: string): string {
 }
 
 /**
+ * A note in place of a translation, as heard by Korean congregations:
+ * "(No meaningful content to translate.)", "(no translatable content)",
+ * '(This is left empty, as "여기서 관리." carries no clear meaning on its own.)'.
+ * Only a WHOLE output in brackets that talks about translating, meaning or
+ * being left empty counts, so "(laughs) Persimmons?", "[He] embraced them." and
+ * a real line the model bracketed, "(Also, there's a Thanksgiving event coming
+ * up.)", are kept. Bare "Nothing to translate." is caught too.
+ */
+const NOTE_IN_BRACKETS = /^\s*[(\[]([^()\[\]]*)[)\]][\s.]*$/;
+const NOTE_WORDS =
+  /\btranslat|\bmeaningful\b|\bmeaningless\b|\bno (?:clear |real )?meaning\b|\bleft (?:empty|blank)\b|\bno (?:meaningful |translatable |real )?content\b|\bnothing (?:meaningful )?to\b/i;
+const BARE_NOTE = /^\s*(?:no|nothing)\b[^.!?]{0,40}\bto translate\W*$/i;
+export function isTranslatorNote(text: string): boolean {
+  const inner = NOTE_IN_BRACKETS.exec(text)?.[1];
+  return (inner !== undefined && NOTE_WORDS.test(inner)) || BARE_NOTE.test(text);
+}
+
+/**
  * Output that stands for "nothing to translate" rather than translating:
  * "(empty response)", "[No translation]", "N/A", "…".
  */
@@ -689,6 +707,12 @@ export class ClaudeTranslator {
         // Korean output stays exactly as the pilot runs it.
         if (this.direction !== 'ko-en' && isPlaceholderOutput(translated)) {
           console.warn('[Translation] Dropped placeholder output:', translated.slice(0, 40));
+          translated = '';
+        }
+        // Every direction, Korean included: "(No meaningful content to
+        // translate.)" was spoken to the congregation on Korean services.
+        if (translated && isTranslatorNote(translated)) {
+          console.warn('[Translation] Dropped translator note:', translated.slice(0, 80));
           translated = '';
         }
 
